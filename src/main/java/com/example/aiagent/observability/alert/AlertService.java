@@ -2,6 +2,8 @@ package com.example.aiagent.observability.alert;
 
 import com.example.aiagent.observability.service.TokenUsageService;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.distribution.ValueAtPercentile;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -92,17 +94,23 @@ public class AlertService {
     public void checkP99Latency() {
         try {
             // find().timer() 返回可能为 null 的 Timer，需要手动判空
-            io.micrometer.core.instrument.Timer timer =
-                    meterRegistry.find("llm_call_duration_seconds").timer();
+            Timer timer = meterRegistry.find("llm_call_duration_seconds").timer();
 
             if (timer == null) {
                 log.debug("P99 延迟检查跳过：指标尚未产生数据");
                 return;
             }
 
-            // takeSnapshot() 获取快照，percentile() 返回的是秒，乘以 1000 换算成毫秒
-            double p99Ms = timer.takeSnapshot()
-                    .percentile(0.99, TimeUnit.MILLISECONDS);
+            // takeSnapshot() 获取快照，遍历 percentileValues() 找到 P99，value(MILLISECONDS) 换算为毫秒
+            ValueAtPercentile[] percentiles = timer.takeSnapshot().percentileValues();
+            double p99Ms = 0.0;
+            for (ValueAtPercentile vap : percentiles) {
+                if (Math.abs(vap.percentile() - 0.99) < 0.001) {
+                    p99Ms = vap.value(TimeUnit.MILLISECONDS);
+                    break;
+                }
+            }
+
 
             if (p99Ms > p99LatencyThresholdMs) {
                 sendAlert("LLM_HIGH_P99_LATENCY",

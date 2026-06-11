@@ -6,10 +6,10 @@ import com.example.aiagent.rag.model.RetrievedChunk;
 import com.example.aiagent.rag.query.QueryRewriter;
 import com.example.aiagent.rag.reranker.RerankerService;
 import com.example.aiagent.rag.retrieval.RrfFusionRanker;
-import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
+import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -146,8 +146,12 @@ public class HybridRagPipeline {
 
     /** 向量检索（封装 LangChain4j EmbeddingStore） */
     private List<RetrievedChunk> vectorSearch(String query, int topK) {
-        Embedding queryEmbedding = embeddingModel.embed(query).content();
-        List<EmbeddingMatch<TextSegment>> matches = embeddingStore.findRelevant(queryEmbedding, topK, vectorThreshold);
+        EmbeddingSearchRequest request = EmbeddingSearchRequest.builder()
+                .queryEmbedding(embeddingModel.embed(query).content())
+                .maxResults(topK)
+                .minScore(vectorThreshold)
+                .build();
+        List<EmbeddingMatch<TextSegment>> matches = embeddingStore.search(request).matches();
 
         return matches.stream().map(match -> {
             TextSegment segment = match.embedded();

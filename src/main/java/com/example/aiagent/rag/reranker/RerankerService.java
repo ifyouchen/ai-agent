@@ -4,10 +4,18 @@ import com.example.aiagent.rag.model.RetrievedChunk;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -115,13 +123,19 @@ public class RerankerService {
     private List<Double> rerankWithBge(String query, List<String> documents) {
         try {
             Map<String, Object> request = Map.of("query", query, "documents", documents);
-            @SuppressWarnings("unchecked")
-            Map<String, Object> response = restTemplate.postForObject(bgeUrl, request, Map.class);
+            Map<String, Object> response = restTemplate.exchange(
+                    bgeUrl,
+                    HttpMethod.POST,
+                    new HttpEntity<>(request),
+                    new ParameterizedTypeReference<Map<String, Object>>() {}
+            ).getBody();
 
             if (response == null || !response.containsKey("scores")) {
                 throw new RuntimeException("BGE Reranker 返回空响应");
             }
-            return (List<Double>) response.get("scores");
+            @SuppressWarnings("unchecked")
+            List<Double> scores = (List<Double>) response.get("scores");
+            return scores;
         } catch (Exception e) {
             log.error("BGE Reranker 调用失败，降级为原始顺序: {}", e.getMessage());
             // 降级：保持 RRF 原始顺序，返回线性递减得分
@@ -137,9 +151,9 @@ public class RerankerService {
 
     private List<Double> rerankWithCohere(String query, List<String> documents) {
         try {
-            var headers = new org.springframework.http.HttpHeaders();
+            HttpHeaders headers = new HttpHeaders();
             headers.setBearerAuth(cohereApiKey);
-            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+            headers.setContentType(MediaType.APPLICATION_JSON);
 
             Map<String, Object> body = Map.of(
                     "query", query,
@@ -149,17 +163,16 @@ public class RerankerService {
                     "return_documents", false
             );
 
-            var entity = new org.springframework.http.HttpEntity<>(body, headers);
-            var response = restTemplate.exchange(
+            Map<String, Object> responseBody = restTemplate.exchange(
                     COHERE_RERANK_URL,
-                    org.springframework.http.HttpMethod.POST,
-                    entity,
-                    Map.class
-            );
+                    HttpMethod.POST,
+                    new HttpEntity<>(body, headers),
+                    new ParameterizedTypeReference<Map<String, Object>>() {}
+            ).getBody();
 
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> results =
-                    (List<Map<String, Object>>) Objects.requireNonNull(response.getBody()).get("results");
+                    (List<Map<String, Object>>) Objects.requireNonNull(responseBody).get("results");
 
             // Cohere 返回按得分排序，需还原到原始顺序
             double[] scores = new double[documents.size()];
