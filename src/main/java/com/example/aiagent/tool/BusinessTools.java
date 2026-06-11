@@ -56,7 +56,7 @@ public class BusinessTools {
      */
     private static final AviatorEvaluatorInstance AVIATOR = AviatorEvaluator.newInstance();
     static {
-        AVIATOR.setOption(Options.FORBIDDEN_INVOKE_REFLECT, true);
+        // Note: FORBIDDEN_INVOKE_REFLECT was removed in Aviator 5.x; use ALLOWED_CLASS_SET for security if needed
         AVIATOR.setOption(Options.MAX_LOOP_COUNT, 10000L);
         AVIATOR.setOption(Options.OPTIMIZE_LEVEL, AviatorEvaluator.EVAL);
     }

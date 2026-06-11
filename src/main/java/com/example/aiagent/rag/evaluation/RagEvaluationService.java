@@ -170,30 +170,22 @@ public class RagEvaluationService {
      * 让 LLM 从答案提取原子陈述，再判断每条是否有文档支撑
      */
     private double evalFaithfulness(String answer, String context) {
-        String prompt = """
-                你是一个 RAG 系统质量评估专家。请评估以下答案的"忠实度"。
-
-                忠实度定义：答案中的每个具体陈述，是否都能在给定的上下文文档中找到明确支撑。
-
-                **上下文文档：**
-                %s
-
-                **待评估答案：**
-                %s
-
-                **评估步骤：**
-                1. 从答案中提取所有具体陈述（每行一条，编号）
-                2. 对每条陈述判断：Y=有文档支撑，N=无文档支撑
-                3. 计算分数 = Y的数量 / 总陈述数
-
-                **输出格式（严格遵守）：**
-                陈述1: Y
-                陈述2: N
-                ...
-                SCORE: 0.XX
-
-                只输出上述格式，不要其他内容。
-                """.formatted(truncate(context, 3000), truncate(answer, 1500));
+        String prompt = "你是一个 RAG 系统质量评估专家。请评估以下答案的\"忠实度\"。\n\n"
+                + "忠实度定义：答案中的每个具体陈述，是否都能在给定的上下文文档中找到明确支撑。\n\n"
+                + "**上下文文档：**\n"
+                + truncate(context, 3000) + "\n\n"
+                + "**待评估答案：**\n"
+                + truncate(answer, 1500) + "\n\n"
+                + "**评估步骤：**\n"
+                + "1. 从答案中提取所有具体陈述（每行一条，编号）\n"
+                + "2. 对每条陈述判断：Y=有文档支撑，N=无文档支撑\n"
+                + "3. 计算分数 = Y的数量 / 总陈述数\n\n"
+                + "**输出格式（严格遵守）：**\n"
+                + "陈述1: Y\n"
+                + "陈述2: N\n"
+                + "...\n"
+                + "SCORE: 0.XX\n\n"
+                + "只输出上述格式，不要其他内容。\n";
 
         try {
             String response = chatModel.generate(prompt);
@@ -209,26 +201,18 @@ public class RagEvaluationService {
      * 让 LLM 直接打分：答案是否回答了问题
      */
     private double evalAnswerRelevance(String question, String answer) {
-        String prompt = """
-                你是一个 RAG 系统质量评估专家。请评估以下答案与问题的"相关性"。
-
-                相关性定义：答案是否直接回答了用户的问题（而不是跑题或回避）。
-
-                **问题：** %s
-
-                **答案：** %s
-
-                **评估标准：**
-                - 1.0：完全切题，完整回答了问题
-                - 0.7：基本切题，但有部分遗漏
-                - 0.4：部分相关，但有较多跑题
-                - 0.0：完全不相关，或拒绝回答
-
-                **输出格式（严格遵守）：**
-                SCORE: 0.XX
-
-                只输出上述格式，不要其他内容。
-                """.formatted(question, truncate(answer, 1500));
+        String prompt = "你是一个 RAG 系统质量评估专家。请评估以下答案与问题的\"相关性\"。\n\n"
+                + "相关性定义：答案是否直接回答了用户的问题（而不是跑题或回避）。\n\n"
+                + "**问题：** " + question + "\n\n"
+                + "**答案：** " + truncate(answer, 1500) + "\n\n"
+                + "**评估标准：**\n"
+                + "- 1.0：完全切题，完整回答了问题\n"
+                + "- 0.7：基本切题，但有部分遗漏\n"
+                + "- 0.4：部分相关，但有较多跑题\n"
+                + "- 0.0：完全不相关，或拒绝回答\n\n"
+                + "**输出格式（严格遵守）：**\n"
+                + "SCORE: 0.XX\n\n"
+                + "只输出上述格式，不要其他内容。\n";
 
         try {
             String response = chatModel.generate(prompt);
@@ -244,30 +228,22 @@ public class RagEvaluationService {
      * 参考答案中有多少信息点能在检索文档中找到
      */
     private double evalContextRecall(String referenceAnswer, String context) {
-        String prompt = """
-                你是一个 RAG 系统质量评估专家。请评估检索到的上下文对参考答案的"覆盖程度"。
-
-                召回率定义：参考答案中的关键信息点，有多少比例能在上下文文档中找到。
-
-                **参考答案（标准答案）：**
-                %s
-
-                **检索到的上下文文档：**
-                %s
-
-                **评估步骤：**
-                1. 从参考答案中提取关键信息点（每行一条，编号）
-                2. 对每个信息点判断：Y=上下文中可以找到，N=上下文中找不到
-                3. 分数 = Y的数量 / 总信息点数
-
-                **输出格式（严格遵守）：**
-                信息点1: Y
-                信息点2: N
-                ...
-                SCORE: 0.XX
-
-                只输出上述格式，不要其他内容。
-                """.formatted(truncate(referenceAnswer, 1000), truncate(context, 2500));
+        String prompt = "你是一个 RAG 系统质量评估专家。请评估检索到的上下文对参考答案的\"覆盖程度\"。\n\n"
+                + "召回率定义：参考答案中的关键信息点，有多少比例能在上下文文档中找到。\n\n"
+                + "**参考答案（标准答案）：**\n"
+                + truncate(referenceAnswer, 1000) + "\n\n"
+                + "**检索到的上下文文档：**\n"
+                + truncate(context, 2500) + "\n\n"
+                + "**评估步骤：**\n"
+                + "1. 从参考答案中提取关键信息点（每行一条，编号）\n"
+                + "2. 对每个信息点判断：Y=上下文中可以找到，N=上下文中找不到\n"
+                + "3. 分数 = Y的数量 / 总信息点数\n\n"
+                + "**输出格式（严格遵守）：**\n"
+                + "信息点1: Y\n"
+                + "信息点2: N\n"
+                + "...\n"
+                + "SCORE: 0.XX\n\n"
+                + "只输出上述格式，不要其他内容。\n";
 
         try {
             String response = chatModel.generate(prompt);
@@ -290,28 +266,20 @@ public class RagEvaluationService {
             sb.append(String.format("[%d] %s\n\n", i + 1, truncate(contexts.get(i), 300)));
         }
 
-        String prompt = """
-                你是一个 RAG 系统质量评估专家。请评估检索到的文档块对回答问题的"有用程度"。
-
-                **问题：** %s
-
-                **检索到的文档块（按检索排名排列）：**
-                %s
-
-                **评估步骤：**
-                对每个文档块判断：Y=对回答问题有用，N=对回答问题无用或噪音
-
-                **输出格式（严格遵守）：**
-                [1]: Y
-                [2]: N
-                ...
-                SCORE: 0.XX
-
-                注意：SCORE 应为加权平均精确率（排名靠前的有用文档权重更高），
-                若所有文档都有用则为 1.0，都无用则为 0.0。
-
-                只输出上述格式，不要其他内容。
-                """.formatted(question, sb);
+        String prompt = "你是一个 RAG 系统质量评估专家。请评估检索到的文档块对回答问题的\"有用程度\"。\n\n"
+                + "**问题：** " + question + "\n\n"
+                + "**检索到的文档块（按检索排名排列）：**\n"
+                + sb.toString() + "\n"
+                + "**评估步骤：**\n"
+                + "对每个文档块判断：Y=对回答问题有用，N=对回答问题无用或噪音\n\n"
+                + "**输出格式（严格遵守）：**\n"
+                + "[1]: Y\n"
+                + "[2]: N\n"
+                + "...\n"
+                + "SCORE: 0.XX\n\n"
+                + "注意：SCORE 应为加权平均精确率（排名靠前的有用文档权重更高），\n"
+                + "若所有文档都有用则为 1.0，都无用则为 0.0。\n\n"
+                + "只输出上述格式，不要其他内容。\n";
 
         try {
             String response = chatModel.generate(prompt);
@@ -389,10 +357,27 @@ public class RagEvaluationService {
      * @param question        用户问题（必填）
      * @param referenceAnswer 参考答案（可为 null，null 时跳过 contextRecall 计算）
      */
-    public record EvalTestCase(String question, String referenceAnswer) {
+    public static class EvalTestCase {
+        private final String question;
+        private final String referenceAnswer;
+
+        public EvalTestCase(String question, String referenceAnswer) {
+            this.question = question;
+            this.referenceAnswer = referenceAnswer;
+        }
+
+        public String question() {
+            return question;
+        }
+
+        public String referenceAnswer() {
+            return referenceAnswer;
+        }
+
         public static EvalTestCase of(String question) {
             return new EvalTestCase(question, null);
         }
+
         public static EvalTestCase of(String question, String referenceAnswer) {
             return new EvalTestCase(question, referenceAnswer);
         }

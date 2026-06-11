@@ -199,14 +199,12 @@ public class ElasticsearchConfig {
      */
     private void ensureMapping(ElasticsearchClient client) {
         try {
-            String additionalMapping = """
-                    {
-                      "properties": {
-                        "kbId":     { "type": "keyword" },
-                        "tenantId": { "type": "keyword" }
-                      }
-                    }
-                    """;
+            String additionalMapping = "{"
+                    + "\"properties\": {"
+                    + "\"kbId\":     { \"type\": \"keyword\" },"
+                    + "\"tenantId\": { \"type\": \"keyword\" }"
+                    + "}"
+                    + "}";
             client.indices().putMapping(PutMappingRequest.of(m -> m
                     .index(indexName)
                     .withJson(new java.io.StringReader(additionalMapping))

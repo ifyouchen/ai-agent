@@ -137,9 +137,11 @@ public class LlmObservabilityAspect {
     }
 
     /** 从 LangChain4j Response 提取 TokenUsage */
+    @SuppressWarnings("unchecked")
     private TokenUsage extractTokenUsage(Object result) {
         try {
-            if (result instanceof Response<?> response) {
+            if (result instanceof Response) {
+                Response<?> response = (Response<?>) result;
                 return response.tokenUsage();
             }
         } catch (Exception ignored) {}
@@ -154,11 +156,14 @@ public class LlmObservabilityAspect {
     }
 
     /** 提取输出内容摘要 */
+    @SuppressWarnings("unchecked")
     private String extractOutputSnippet(Object result) {
         try {
-            if (result instanceof Response<?> response) {
+            if (result instanceof Response) {
+                Response<?> response = (Response<?>) result;
                 Object content = response.content();
-                if (content instanceof AiMessage msg) {
+                if (content instanceof AiMessage) {
+                    AiMessage msg = (AiMessage) content;
                     String text = msg.text();
                     return text != null && text.length() > 200
                             ? text.substring(0, 200) + "..."
