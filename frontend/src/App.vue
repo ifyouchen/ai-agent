@@ -2,17 +2,25 @@
   <aside class="sidebar">
     <div class="sidebar-logo">
       <h1><span class="logo-icon"><LogoMark /></span>AI Agent</h1>
+      <div class="sidebar-tools">
+        <button class="icon-btn" type="button" title="搜索">
+          <svg viewBox="0 0 24 24" fill="none"><path d="m21 21-4.2-4.2m2.2-5.3a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <button class="icon-btn" type="button" title="侧边栏">
+          <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="14" rx="3" stroke="currentColor" stroke-width="2"/><path d="M10 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
     </div>
 
     <div class="sidebar-section">
       <button class="new-chat-btn" type="button" @click="newSession">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13H13V19H11V13H5V11H11V5H13V11H19V13Z"/></svg>
-        新建对话
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="2"/><path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        开启新对话
       </button>
     </div>
 
     <div class="sidebar-section">
-      <div class="sidebar-section-title">最近对话</div>
+      <div class="sidebar-section-title">最近</div>
     </div>
     <div class="session-list">
       <div v-if="sessions.length === 0" class="session-empty">暂无历史对话</div>
@@ -44,10 +52,27 @@
         <button class="logout-btn" type="button" title="退出登录" @click="handleLogout">⎋</button>
       </div>
       <div class="sidebar-section-title model-title">当前模型</div>
-      <select class="model-selector" v-model="model">
-        <option value="deepseek">DeepSeek（默认）</option>
-        <option value="claude">Claude</option>
-      </select>
+      <div class="model-select" :class="{ open: modelMenuOpen }">
+        <button class="model-select-trigger" type="button" @click="modelMenuOpen = !modelMenuOpen">
+          <span class="model-dot"></span>
+          <span>{{ currentModelLabel }}</span>
+          <svg viewBox="0 0 24 24" fill="none"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div v-if="modelMenuOpen" class="model-menu">
+          <button
+            v-for="option in modelOptions"
+            :key="option.value"
+            class="model-option"
+            :class="{ active: model === option.value }"
+            type="button"
+            @click="selectModel(option.value)"
+          >
+            <span class="model-option-main">{{ option.label }}</span>
+            <span class="model-option-desc">{{ option.desc }}</span>
+            <svg v-if="model === option.value" viewBox="0 0 24 24" fill="none"><path d="m5 12 4 4L19 6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
     </div>
   </aside>
 
@@ -71,11 +96,15 @@
         <div ref="chatMessagesEl" class="chat-messages">
           <div v-if="messages.length === 0" class="welcome">
             <div class="welcome-icon"><LogoMark /></div>
-            <h2>你好，我是 AI Agent</h2>
-            <p>我可以回答问题、查询信息、帮你完成各种任务</p>
-            <div class="quick-prompts">
-              <button v-for="prompt in quickPrompts" :key="prompt.message" class="quick-prompt" type="button" @click="sendQuick(prompt.message)">
-                {{ prompt.label }}
+            <h2>使用快速模式开始对话</h2>
+            <div class="welcome-modes">
+              <button class="welcome-mode active" type="button" @click="streamEnabled = true; reactEnabled = false">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="m13 2-8 12h6l-1 8 9-13h-6l1-7Z"/></svg>
+                快速模式
+              </button>
+              <button class="welcome-mode" type="button" @click="reactEnabled = true">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 9.8 12 7.8l3.5 2-3.5 2-3.5-2Z" stroke="currentColor" stroke-width="1.8"/></svg>
+                专家模式
               </button>
             </div>
           </div>
@@ -98,21 +127,30 @@
               @input="autoResize"
               @keydown.ctrl.enter.prevent="sendMessage"
             ></textarea>
-            <button class="send-btn" type="button" :disabled="isSending || !messageInput.trim()" @click="sendMessage">
-              <svg v-if="!isSending" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-              <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
-            </button>
+            <div class="composer-footer">
+              <div class="composer-tools">
+                <button class="quick-prompt tool-chip" type="button" @click="streamEnabled = !streamEnabled" :class="{ active: streamEnabled }">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="m13 2-8 12h6l-1 8 9-13h-6l1-7Z"/></svg>
+                  快速模式
+                </button>
+                <button class="quick-prompt tool-chip" type="button" @click="toggleReact" :class="{ active: reactEnabled }">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 9.8 12 7.8l3.5 2-3.5 2-3.5-2Z" stroke="currentColor" stroke-width="1.8"/></svg>
+                  深度思考
+                </button>
+              </div>
+              <div class="composer-actions">
+                <button class="attach-btn" type="button" title="上传附件">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="m20 11.5-7.7 7.7a5.2 5.2 0 0 1-7.4-7.4l8.4-8.4a3.6 3.6 0 0 1 5.1 5.1l-8.4 8.4a2 2 0 0 1-2.8-2.8l7.6-7.6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <button class="send-btn" type="button" :disabled="isSending || !messageInput.trim()" @click="sendMessage">
+                  <svg v-if="!isSending" viewBox="0 0 24 24" fill="none"><path d="M12 19V5M6 11l6-6 6 6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <svg v-else viewBox="0 0 24 24" fill="currentColor"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
+                </button>
+              </div>
+            </div>
           </div>
           <div class="input-hints">
             <span class="hint-text">Ctrl+Enter 发送 · Enter 换行</span>
-            <label class="stream-toggle" title="开启后文字逐步显示">
-              <button class="toggle" :class="{ on: streamEnabled }" type="button" @click="streamEnabled = !streamEnabled"></button>
-              <span>流式输出</span>
-            </label>
-            <label class="stream-toggle" title="适合复杂任务，多步推理自动拆解">
-              <button class="toggle" :class="{ on: reactEnabled }" type="button" @click="toggleReact"></button>
-              <span>深度推理</span>
-            </label>
           </div>
         </div>
       </section>
@@ -284,6 +322,79 @@
       </div>
     </div>
   </div>
+
+  <div v-if="dialog.visible" class="modal-overlay app-dialog-overlay" @click.self="resolveDialog(false)">
+    <div class="modal-content app-dialog" :class="`dialog-${dialog.variant}`">
+      <div class="dialog-icon">
+        <svg v-if="dialog.variant === 'danger'" viewBox="0 0 24 24" fill="none"><path d="M12 8v5M12 17h.01M10.3 4.2 2.8 17.1A2 2 0 0 0 4.5 20h15a2 2 0 0 0 1.7-2.9L13.7 4.2a2 2 0 0 0-3.4 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg v-else viewBox="0 0 24 24" fill="none"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 9.8 12 7.8l3.5 2-3.5 2-3.5-2Z" stroke="currentColor" stroke-width="1.8"/></svg>
+      </div>
+      <div class="dialog-main">
+        <div class="dialog-header">
+          <h3>{{ dialog.title }}</h3>
+          <button class="modal-close" type="button" @click="resolveDialog(false)">×</button>
+        </div>
+        <p v-if="dialog.message" class="dialog-message">{{ dialog.message }}</p>
+        <div v-if="dialog.type === 'prompt'" class="dialog-fields">
+          <label class="dialog-field-label" :for="dialog.inputId">{{ dialog.inputLabel }}</label>
+          <input
+            :id="dialog.inputId"
+            v-model.trim="dialog.inputValue"
+            class="dialog-input"
+            type="text"
+            :placeholder="dialog.placeholder"
+            @keydown.enter.prevent="resolveDialog(true)"
+            @keydown.esc.prevent="resolveDialog(false)"
+          >
+        </div>
+        <div v-if="dialog.type === 'form'" class="dialog-fields">
+          <label
+            v-for="field in dialog.fields"
+            :key="field.key"
+            class="dialog-field"
+          >
+            <span class="dialog-field-label">{{ field.label }}</span>
+            <textarea
+              v-if="field.multiline"
+              v-model.trim="dialog.formValues[field.key]"
+              class="dialog-input dialog-textarea"
+              :placeholder="field.placeholder"
+              rows="3"
+              @keydown.esc.prevent="resolveDialog(false)"
+            ></textarea>
+            <input
+              v-else
+              v-model.trim="dialog.formValues[field.key]"
+              class="dialog-input"
+              type="text"
+              :placeholder="field.placeholder"
+              @keydown.enter.prevent="resolveDialog(true)"
+              @keydown.esc.prevent="resolveDialog(false)"
+            >
+          </label>
+        </div>
+        <div v-if="dialog.type === 'choice'" class="dialog-choice-list">
+          <button
+            v-for="choice in dialog.choices"
+            :key="choice.value"
+            class="dialog-choice"
+            :class="{ active: dialog.choiceValue === choice.value }"
+            type="button"
+            @click="dialog.choiceValue = choice.value"
+          >
+            <span>{{ choice.label }}</span>
+            <small>{{ choice.desc }}</small>
+          </button>
+        </div>
+        <div class="dialog-actions">
+          <button class="dialog-btn secondary" type="button" @click="resolveDialog(false)">{{ dialog.cancelText }}</button>
+          <button class="dialog-btn primary" :class="{ danger: dialog.variant === 'danger' }" type="button" @click="resolveDialog(true)">
+            {{ dialog.confirmText }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -293,8 +404,8 @@ import { formatFileSize, formatMarkdown, getFileIcon } from './js/utils.js';
 
 const LogoMark = defineComponent({
   setup() {
-    return () => h('svg', { viewBox: '0 0 24 24', fill: '#fff', xmlns: 'http://www.w3.org/2000/svg' }, [
-      h('path', { d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z' })
+    return () => h('svg', { viewBox: '0 0 32 32', fill: 'currentColor', xmlns: 'http://www.w3.org/2000/svg' }, [
+      h('path', { d: 'M27.6 11.8c-1.8.2-3.4-.2-4.8-1.1-1.9-1.3-3-3.3-3.5-5.9-.1-.6-.8-.9-1.3-.5-2.5 1.7-4 4-4.4 6.9-2.2-1.2-4.9-1.5-8-.9-.6.1-.9.8-.6 1.3 1.4 2.6 3.3 4.6 5.7 5.9-1.2.8-2.5 1.1-3.9 1.1-.7 0-1.1.8-.7 1.4 2 3.3 5.4 5.2 9.7 5.2 6.1 0 10.7-3.8 11.6-9.2.6-.6 1.1-1.4 1.5-2.3.4-.9-.2-2-1.3-1.9Zm-8 6.6c-1.9 1.6-4.5 1.8-6.5.4 1.7-.4 3-1.2 4-2.5 1.4.7 3 .9 4.7.6-.5.6-1.2 1.1-2.2 1.5Z' })
     ]);
   }
 });
@@ -313,6 +424,7 @@ const quickPrompts = [
 
 const user = ref(api.getUser());
 const model = ref('deepseek');
+const modelMenuOpen = ref(false);
 const activeTab = ref('chat');
 const sessionId = ref(generateId());
 const sessions = ref([]);
@@ -339,8 +451,31 @@ const organizations = ref([]);
 const currentOrgId = ref(null);
 const orgModal = reactive({ visible: false, title: '', orgId: '', members: [] });
 const toasts = ref([]);
+const dialog = reactive({
+  visible: false,
+  type: 'confirm',
+  title: '',
+  message: '',
+  variant: 'default',
+  confirmText: '确定',
+  cancelText: '取消',
+  inputId: 'app-dialog-input',
+  inputLabel: '',
+  inputValue: '',
+  placeholder: '',
+  fields: [],
+  formValues: {},
+  choices: [],
+  choiceValue: '',
+  resolver: null
+});
 
 const currentSessionTitle = computed(() => sessions.value.find(s => s.id === sessionId.value)?.title || '新对话');
+const modelOptions = [
+  { value: 'deepseek', label: 'DeepSeek（默认）', desc: '快速、稳定，适合日常对话' },
+  { value: 'claude', label: 'Claude', desc: '适合长文本与复杂分析' }
+];
+const currentModelLabel = computed(() => modelOptions.find(option => option.value === model.value)?.label || '选择模型');
 
 onMounted(async () => {
   if (!api.getToken()) {
@@ -355,8 +490,19 @@ function generateId() {
   return 'session-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
 }
 
-function handleLogout() {
-  if (confirm('确认退出登录？')) api.logout();
+async function handleLogout() {
+  const confirmed = await showConfirm({
+    title: '退出登录',
+    message: '确认退出当前账号吗？',
+    confirmText: '退出登录',
+    variant: 'danger'
+  });
+  if (confirmed) api.logout();
+}
+
+function selectModel(value) {
+  model.value = value;
+  modelMenuOpen.value = false;
 }
 
 function newSession() {
@@ -509,7 +655,13 @@ function pushMessage(role, html) {
 }
 
 async function handleClearMemory() {
-  if (!confirm(`确认清除当前会话的所有记忆？\n会话ID: ${sessionId.value}`)) return;
+  const confirmed = await showConfirm({
+    title: '清除记忆',
+    message: `确认清除当前会话的所有记忆？\n会话ID: ${sessionId.value}`,
+    confirmText: '清除',
+    variant: 'danger'
+  });
+  if (!confirmed) return;
   try {
     await api.clearMemory(sessionId.value);
     messages.value = [];
@@ -559,7 +711,12 @@ async function selectKb(kbId) {
 }
 
 async function handleCreateKb() {
-  const name = prompt('请输入知识库名称：');
+  const name = await showPrompt({
+    title: '新建知识库',
+    inputLabel: '知识库名称',
+    placeholder: '例如：产品文档、客户案例、内部 SOP',
+    confirmText: '创建'
+  });
   if (!name?.trim()) return;
   try {
     await api.createKnowledgeBase(name.trim(), '');
@@ -572,7 +729,14 @@ async function handleCreateKb() {
 
 async function handleDeleteKb(kbId) {
   const kb = knowledgeBases.value.find(item => item.id === kbId);
-  if (!kb || !confirm(`确认删除知识库「${kb.name}」？\n\n此操作不可恢复，所有文档和切片将被永久删除。`)) return;
+  if (!kb) return;
+  const confirmed = await showConfirm({
+    title: '删除知识库',
+    message: `确认删除知识库「${kb.name}」？\n\n此操作不可恢复，所有文档和切片将被永久删除。`,
+    confirmText: '删除',
+    variant: 'danger'
+  });
+  if (!confirmed) return;
   try {
     await api.deleteKnowledgeBase(kbId);
     showToast('success', `已删除：${kb.name}`);
@@ -653,7 +817,13 @@ async function handleUpload(file) {
 }
 
 async function handleDeleteDoc(doc) {
-  if (!confirm(`确认从知识库删除：${doc.filename}？\n\n此操作不可恢复。`)) return;
+  const confirmed = await showConfirm({
+    title: '删除文档',
+    message: `确认从知识库删除：${doc.filename}？\n\n此操作不可恢复。`,
+    confirmText: '删除',
+    variant: 'danger'
+  });
+  if (!confirmed) return;
   try {
     await api.deleteDocument(currentKbId.value, doc.id);
     docs.value = docs.value.filter(item => item.id !== doc.id);
@@ -728,9 +898,17 @@ function selectOrg(orgId) {
 }
 
 async function handleCreateOrg() {
-  const name = prompt('请输入企业/组织名称：');
+  const form = await showForm({
+    title: '创建企业组织',
+    confirmText: '创建',
+    fields: [
+      { key: 'name', label: '组织名称', placeholder: '例如：星河科技' },
+      { key: 'description', label: '组织描述（可选）', placeholder: '一句话说明这个组织的用途', multiline: true }
+    ]
+  });
+  const name = form?.name;
   if (!name?.trim()) return;
-  const description = prompt('组织描述（可选）：', '') || '';
+  const description = form.description || '';
   try {
     await api.createOrganization(name.trim(), description.trim());
     showToast('success', `企业组织「${name.trim()}」创建成功`);
@@ -742,10 +920,24 @@ async function handleCreateOrg() {
 
 async function handleInviteMember() {
   if (!currentOrgId.value) return showToast('warning', '请先选择一个组织');
-  const userId = prompt('请输入要邀请的用户 ID：');
+  const userId = await showPrompt({
+    title: '邀请成员',
+    inputLabel: '用户 ID',
+    placeholder: '输入要邀请的用户 ID',
+    confirmText: '下一步'
+  });
   if (!userId?.trim()) return;
-  const role = prompt('请选择角色（输入数字）：\n1. 成员\n2. 管理员', '1');
-  const roleValue = role === '2' ? 'ADMIN' : 'MEMBER';
+  const roleValue = await showChoice({
+    title: '选择成员角色',
+    message: `将邀请 ${userId.trim()} 加入当前组织。`,
+    confirmText: '邀请',
+    choices: [
+      { value: 'MEMBER', label: '成员', desc: '可使用组织资源' },
+      { value: 'ADMIN', label: '管理员', desc: '可邀请和管理成员' }
+    ],
+    defaultValue: 'MEMBER'
+  });
+  if (!roleValue) return;
   try {
     await api.inviteOrgMember(currentOrgId.value, userId.trim(), roleValue);
     showToast('success', `已邀请 ${userId.trim()} 加入组织`);
@@ -767,7 +959,13 @@ async function showOrgMembers(orgId) {
 }
 
 async function removeOrgMemberFromModal(userId) {
-  if (!confirm(`确认移除成员 ${userId}？`)) return;
+  const confirmed = await showConfirm({
+    title: '移除成员',
+    message: `确认移除成员 ${userId}？`,
+    confirmText: '移除',
+    variant: 'danger'
+  });
+  if (!confirmed) return;
   try {
     await api.removeOrgMember(orgModal.orgId, userId);
     showToast('success', `已移除：${userId}`);
@@ -813,6 +1011,79 @@ function toastIcon(type) {
     warning: '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>'
   };
   return icons[type] || icons.info;
+}
+
+function showConfirm(options) {
+  return openDialog({ ...options, type: 'confirm' });
+}
+
+function showPrompt(options) {
+  return openDialog({
+    ...options,
+    type: 'prompt',
+    inputValue: options.defaultValue || ''
+  });
+}
+
+function showForm(options) {
+  const formValues = {};
+  options.fields.forEach(field => {
+    formValues[field.key] = field.defaultValue || '';
+  });
+  return openDialog({ ...options, type: 'form', formValues });
+}
+
+function showChoice(options) {
+  return openDialog({
+    ...options,
+    type: 'choice',
+    choiceValue: options.defaultValue || options.choices?.[0]?.value || ''
+  });
+}
+
+function openDialog(options) {
+  return new Promise((resolve) => {
+    Object.assign(dialog, {
+      visible: true,
+      type: options.type || 'confirm',
+      title: options.title || '确认操作',
+      message: options.message || '',
+      variant: options.variant || 'default',
+      confirmText: options.confirmText || '确定',
+      cancelText: options.cancelText || '取消',
+      inputLabel: options.inputLabel || '',
+      inputValue: options.inputValue || '',
+      placeholder: options.placeholder || '',
+      fields: options.fields || [],
+      formValues: options.formValues || {},
+      choices: options.choices || [],
+      choiceValue: options.choiceValue || '',
+      resolver: resolve
+    });
+    nextTick(() => document.querySelector('.dialog-input')?.focus());
+  });
+}
+
+function resolveDialog(confirmed) {
+  if (!dialog.visible) return;
+  let result = false;
+  if (confirmed) {
+    if (dialog.type === 'prompt') result = dialog.inputValue;
+    else if (dialog.type === 'form') result = { ...dialog.formValues };
+    else if (dialog.type === 'choice') result = dialog.choiceValue;
+    else result = true;
+  }
+  const resolve = dialog.resolver;
+  Object.assign(dialog, {
+    visible: false,
+    resolver: null,
+    inputValue: '',
+    formValues: {},
+    fields: [],
+    choices: [],
+    choiceValue: ''
+  });
+  resolve?.(result);
 }
 
 function trimText(text, len) {
