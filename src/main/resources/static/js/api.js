@@ -9,111 +9,151 @@ import {authFetch, getToken} from './auth.js';
 
 const BASE = '';
 
-/**
- * 发送普通（同步）聊天请求
- */
-export async function chatSync(sessionId, message) {
-    const res = await authFetch(`${BASE}/api/v1/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, message })
-    });
-    if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `请求失败: ${res.status}`);
-    }
-    return res.json();
+// ── 通用请求工具 ──────────────────────────────────────────────
+
+async function api(method, url, body = null) {
+    const opts = {
+        method,
+        headers: { 'Content-Type': 'application/json' }
+    };
+    if (body !== null) opts.body = JSON.stringify(body);
+    const res = await authFetch(`${BASE}${url}`, opts);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `请求失败: ${res.status}`);
+    return data;
 }
 
-/**
- * 返回 EventSource（SSE 流式对话）
- *
- * 注意：EventSource 原生不支持自定义 Header，因此将 JWT Token 作为 URL 参数传递。
- * 后端 JwtAuthFilter 已支持从 ?token= 参数中提取 Token。
- */
+async function apiFormData(url, formData) {
+    const token = getToken();
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch(`${BASE}${url}`, { method: 'POST', headers, body: formData });
+    if (res.status === 401) { import('./auth.js').then(m => m.logout()); throw new Error('登录已过期'); }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `请求失败: ${res.status}`);
+    return data;
+}
+
+// ── 聊天 ──────────────────────────────────────────────────────
+
+export async function chatSync(sessionId, message) {
+    return api('POST', '/api/v1/chat', { sessionId, message });
+}
+
 export function chatStream(sessionId, message) {
     const token = getToken();
-    const params = new URLSearchParams({
-        sessionId,
-        message,
-        ...(token ? { token } : {})
-    });
+    const params = new URLSearchParams({ sessionId, message, ...(token ? { token } : {}) });
     return new EventSource(`${BASE}/api/v1/chat/stream?${params.toString()}`);
 }
 
-/**
- * 清除指定会话的记忆
- */
+export async function chatReact(sessionId, message) {
+    return api('POST', '/api/v1/chat/react', { sessionId, message });
+}
+
 export async function clearMemory(sessionId) {
-    const res = await authFetch(`${BASE}/api/v1/chat/memory/${sessionId}`, {
-        method: 'DELETE'
-    });
+    const res = await authFetch(`${BASE}/api/v1/chat/memory/${sessionId}`, { method: 'DELETE' });
     if (!res.ok) throw new Error(`清除失败: ${res.status}`);
 }
 
-/**
- * 上传文档到知识库
- * @param {File} file
- * @returns {Promise<{chunks: number}>}
- */
-export async function uploadDocument(file) {
-    const token = getToken();
+// ── 知识库 ──────────────────────────────────────────────────────
+
+/** 列出我可访问的知识库 */
+export async function listKnowledgeBases() {
+    try {
+        return await api('GET', '/api/v1/kb');
+    } catch { return []; }
+}
+
+/** 创建知识库 */
+export async function createKnowledgeBase(name, description) {
+    return api('POST', '/api/v1/kb', { name, description });
+}
+
+/** 删除知识库 */
+export async function deleteKnowledgeBase(kbId) {
+    return api('DELETE', `/api/v1/kb/${kbId}`);
+}
+
+/** 上传文档到指定知识库 */
+export async function uploadDocument(kbId, file) {
     const formData = new FormData();
     formData.append('file', file);
-
-    const headers = token ? { Authorization: `Bearer ${token}` } : {};
-    const res = await fetch(`${BASE}/api/v1/kb/ingest`, {
-        method: 'POST',
-        headers,
-        body: formData
-    });
-    if (!res.ok) {
-        if (res.status === 401) {
-            import('./auth.js').then(m => m.logout());
-            throw new Error('登录已过期，请重新登录');
-        }
-        throw new Error(`上传失败 (${res.status})`);
-    }
-    return res.json();
+    return apiFormData(`/api/v1/kb/${kbId}/documents`, formData);
 }
 
-/**
- * 查询知识库文档列表
- */
-export async function listDocuments() {
-    const res = await authFetch(`${BASE}/api/v1/kb/documents`);
-    if (!res.ok) return [];
-    return res.json();
+/** 列出知识库下的文档 */
+export async function listDocuments(kbId) {
+    try {
+        return await api('GET', `/api/v1/kb/${kbId}/documents`);
+    } catch { return []; }
 }
 
-/**
- * 删除知识库中的指定文档
- */
-export async function deleteDocument(docId) {
-    const res = await authFetch(`${BASE}/api/v1/kb/documents/${docId}`, {
-        method: 'DELETE'
-    });
-    if (!res.ok) throw new Error(`删除失败: ${res.status}`);
+/** 删除文档 */
+export async function deleteDocument(kbId, docId) {
+    return api('DELETE', `/api/v1/kb/${kbId}/documents/${docId}`);
 }
 
-/**
- * ReAct 多步推理对话
- *
- * 适用于需要多工具协作的复杂任务，响应包含每轮推理步骤。
- * @param {string} sessionId
- * @param {string} message
- * @returns {Promise<{answer: string, iterations: number, durationMs: number, steps: Array}>}
- */
-export async function chatReact(sessionId, message) {
-    const res = await authFetch(`${BASE}/api/v1/chat/react`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, message })
-    });
-    if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `请求失败: ${res.status}`);
-    }
-    return res.json();
+/** 知识库问答 */
+export async function queryKnowledgeBase(kbId, question) {
+    return api('POST', `/api/v1/kb/${kbId}/query`, { question });
+}
+
+/** 获取知识库统计 */
+export async function getKnowledgeBaseStats(kbId) {
+    return api('GET', `/api/v1/kb/${kbId}/stats`);
+}
+
+// ── 知识库成员 ──────────────────────────────────────────────────
+
+/** 列出知识库成员 */
+export async function listKbMembers(kbId) {
+    try {
+        return await api('GET', `/api/v1/kb/${kbId}/members`);
+    } catch { return []; }
+}
+
+/** 添加知识库成员 */
+export async function addKbMember(kbId, userId, role) {
+    return api('POST', `/api/v1/kb/${kbId}/members`, { userId, role });
+}
+
+/** 移除知识库成员 */
+export async function removeKbMember(kbId, userId) {
+    return api('DELETE', `/api/v1/kb/${kbId}/members/${userId}`);
+}
+
+// ── 组织 ──────────────────────────────────────────────────────
+
+/** 列出我的组织 */
+export async function listOrganizations() {
+    try {
+        return await api('GET', '/api/v1/org');
+    } catch { return []; }
+}
+
+/** 创建企业组织 */
+export async function createOrganization(name, description) {
+    return api('POST', '/api/v1/org', { name, description });
+}
+
+/** 获取组织详情 */
+export async function getOrganization(orgId) {
+    return api('GET', `/api/v1/org/${orgId}`);
+}
+
+/** 邀请组织成员 */
+export async function inviteOrgMember(orgId, userId, role) {
+    return api('POST', `/api/v1/org/${orgId}/members`, { userId, role });
+}
+
+/** 列出组织成员 */
+export async function listOrgMembers(orgId) {
+    try {
+        return await api('GET', `/api/v1/org/${orgId}/members`);
+    } catch { return []; }
+}
+
+/** 移除组织成员 */
+export async function removeOrgMember(orgId, userId) {
+    return api('DELETE', `/api/v1/org/${orgId}/members/${userId}`);
 }
 
