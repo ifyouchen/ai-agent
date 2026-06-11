@@ -6,64 +6,85 @@
     <title>AI Agent — 登录</title>
     <link rel="stylesheet" href="/css/main.css">
     <style>
-        /* 登录页专用样式 */
+        /* ===== 登录页专用样式 ===== */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
         body {
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+                         'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background: #0E0E10;
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
             overflow: auto;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* 背景装饰光晕 */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -200px; left: 50%;
+            transform: translateX(-50%);
+            width: 600px; height: 600px;
+            background: radial-gradient(circle, rgba(77,107,254,.18) 0%, transparent 70%);
+            pointer-events: none;
         }
 
         .auth-container {
             width: 100%;
-            max-width: 420px;
-            padding: 16px;
+            max-width: 400px;
+            padding: 20px;
+            position: relative;
+            z-index: 1;
         }
 
+        /* Logo */
         .auth-logo {
             text-align: center;
-            margin-bottom: 32px;
+            margin-bottom: 28px;
         }
 
         .auth-logo .logo-icon {
-            width: 56px;
-            height: 56px;
-            background: linear-gradient(135deg, #6366f1, #8b5cf6);
-            border-radius: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 28px;
-            margin: 0 auto 16px;
+            width: 52px; height: 52px;
+            background: #4D6BFE;
+            border-radius: 14px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 26px;
+            margin: 0 auto 14px;
+            box-shadow: 0 4px 24px rgba(77,107,254,.4);
         }
 
         .auth-logo h1 {
             color: #fff;
-            font-size: 24px;
+            font-size: 22px;
             font-weight: 700;
-            margin-bottom: 6px;
+            margin-bottom: 5px;
+            letter-spacing: -.3px;
         }
 
         .auth-logo p {
-            color: rgba(255,255,255,.5);
-            font-size: 14px;
+            color: rgba(255,255,255,.35);
+            font-size: 13px;
         }
 
+        /* 卡片 */
         .auth-card {
-            background: #ffffff;
+            background: #18181C;
+            border: 1px solid rgba(255,255,255,.07);
             border-radius: 16px;
-            padding: 32px;
-            box-shadow: 0 20px 60px rgba(0,0,0,.3);
+            padding: 28px;
+            box-shadow: 0 24px 64px rgba(0,0,0,.5);
         }
 
+        /* 标签页 */
         .auth-tabs {
             display: flex;
-            background: #f3f4f6;
+            background: rgba(255,255,255,.05);
             border-radius: 10px;
-            padding: 4px;
-            margin-bottom: 28px;
+            padding: 3px;
+            margin-bottom: 24px;
         }
 
         .auth-tab {
@@ -71,124 +92,121 @@
             padding: 8px;
             text-align: center;
             border-radius: 8px;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
             cursor: pointer;
-            color: #6b7280;
-            transition: all 0.2s;
+            color: rgba(255,255,255,.35);
+            transition: all 0.18s;
             border: none;
             background: none;
+            font-family: inherit;
         }
 
         .auth-tab.active {
-            background: #fff;
-            color: #111827;
-            box-shadow: 0 1px 4px rgba(0,0,0,.1);
+            background: rgba(255,255,255,.1);
+            color: #fff;
         }
 
         .auth-form { display: none; }
         .auth-form.active { display: block; }
 
-        .form-group {
-            margin-bottom: 18px;
-        }
+        .form-group { margin-bottom: 16px; }
 
         .form-label {
             display: block;
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 600;
-            color: #374151;
+            color: rgba(255,255,255,.45);
             margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: .4px;
         }
 
         .form-input {
             width: 100%;
             padding: 11px 14px;
-            border: 1.5px solid #e5e7eb;
+            border: 1.5px solid rgba(255,255,255,.08);
             border-radius: 10px;
             font-size: 14px;
-            color: #111827;
-            background: #fafafa;
+            color: #fff;
+            background: rgba(255,255,255,.05);
             transition: all 0.15s;
             outline: none;
-            box-sizing: border-box;
+            font-family: inherit;
         }
 
+        .form-input::placeholder { color: rgba(255,255,255,.2); }
+
         .form-input:focus {
-            border-color: #6366f1;
-            background: #fff;
-            box-shadow: 0 0 0 3px rgba(99,102,241,.1);
+            border-color: #4D6BFE;
+            background: rgba(77,107,254,.07);
+            box-shadow: 0 0 0 3px rgba(77,107,254,.15);
         }
 
         .form-input.error {
-            border-color: #dc2626;
-            background: #fef2f2;
+            border-color: #E53E3E;
+            background: rgba(229,62,62,.06);
         }
 
         .form-error {
             font-size: 12px;
-            color: #dc2626;
+            color: #FC8181;
             margin-top: 5px;
             display: none;
         }
-
         .form-error.visible { display: block; }
 
+        /* 提交按钮 */
         .submit-btn {
             width: 100%;
             padding: 12px;
-            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            background: #4D6BFE;
             color: #fff;
             border: none;
             border-radius: 10px;
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
-            margin-top: 8px;
+            transition: all 0.18s;
+            margin-top: 6px;
+            font-family: inherit;
         }
 
-        .submit-btn:hover { opacity: 0.92; transform: translateY(-1px); }
-        .submit-btn:active { transform: translateY(0); }
-        .submit-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
+        .submit-btn:hover { background: #3A5AF0; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(77,107,254,.35); }
+        .submit-btn:active { transform: translateY(0); box-shadow: none; }
+        .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
+        /* 全局错误 */
         .global-error {
-            background: #fef2f2;
-            border: 1px solid #fca5a5;
-            border-radius: 10px;
+            background: rgba(229,62,62,.1);
+            border: 1px solid rgba(229,62,62,.3);
+            border-radius: 8px;
             padding: 10px 14px;
-            color: #dc2626;
+            color: #FC8181;
             font-size: 13px;
-            margin-bottom: 18px;
+            margin-bottom: 16px;
             display: none;
         }
-
         .global-error.visible { display: block; }
 
         .auth-footer {
             text-align: center;
-            margin-top: 20px;
-            color: rgba(255,255,255,.35);
-            font-size: 12px;
+            margin-top: 18px;
+            color: rgba(255,255,255,.2);
+            font-size: 11px;
         }
 
         /* 加载动画 */
         .spinner {
             display: inline-block;
-            width: 14px;
-            height: 14px;
-            border: 2px solid rgba(255,255,255,.3);
+            width: 13px; height: 13px;
+            border: 2px solid rgba(255,255,255,.25);
             border-top-color: #fff;
             border-radius: 50%;
-            animation: spin 0.7s linear infinite;
+            animation: spin .7s linear infinite;
             vertical-align: middle;
             margin-right: 6px;
         }
-
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
