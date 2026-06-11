@@ -11,14 +11,16 @@ import {updateSessionTitle} from './session.js';
 
 const WELCOME_HTML = `
 <div class="welcome" id="welcomeScreen">
-    <div class="welcome-icon">🤖</div>
+    <div class="welcome-icon">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="#fff"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+    </div>
     <h2>你好，我是 AI Agent</h2>
     <p>我可以回答问题、查询信息、帮你完成各种任务</p>
     <div class="quick-prompts" id="quickPrompts">
-        <div class="quick-prompt" data-msg="帮我查一下订单 #12345 的状态">📦 查询订单状态</div>
-        <div class="quick-prompt" data-msg="北京今天天气怎么样？">🌤️ 查询天气</div>
-        <div class="quick-prompt" data-msg="帮我介绍一下你能做什么">🤔 了解功能</div>
-        <div class="quick-prompt" data-msg="查询用户 U001 的账户余额">💰 查询账户</div>
+        <div class="quick-prompt" data-msg="帮我查一下订单 #12345 的状态">查询订单状态</div>
+        <div class="quick-prompt" data-msg="北京今天天气怎么样？">查询天气</div>
+        <div class="quick-prompt" data-msg="帮我介绍一下你能做什么">了解功能</div>
+        <div class="quick-prompt" data-msg="查询用户 U001 的账户余额">查询账户</div>
     </div>
 </div>`;
 
@@ -78,7 +80,7 @@ function initInputArea() {
             state.reactEnabled = !state.reactEnabled;
             reactToggle.classList.toggle('on', state.reactEnabled);
             if (state.reactEnabled) {
-                showToast('info', '🧠 深度推理已开启，适合复杂多步任务');
+                showToast('info', '深度推理已开启，适合复杂多步任务');
             }
         });
     }
@@ -138,7 +140,7 @@ async function doSyncChat(message) {
         bubble.innerHTML = formatMarkdown(data.reply);
     } catch (e) {
         clearTypingDots(bubble);
-        bubble.innerHTML = `<span class="error-msg">❌ 请求失败：${e.message}</span>`;
+        bubble.innerHTML = `<span class="error-msg">请求失败：${e.message}</span>`;
         showToast('error', '发送失败，请检查网络或服务');
     } finally {
         setSending(false);
@@ -179,7 +181,7 @@ async function doStreamChat(message) {
     eventSource.onerror = () => {
         eventSource.close();
         if (!fullText) {
-            bubble.innerHTML = '<span class="error-msg">❌ 连接失败，请重试</span>';
+            bubble.innerHTML = '<span class="error-msg">连接失败，请重试</span>';
             showToast('error', '流式连接失败');
         }
         finishStream();
@@ -211,16 +213,16 @@ async function doReActChat(message) {
             const stepsHtml = data.steps.map(s => `
                 <div class="react-step">
                     <div class="react-step-label">第 ${s.iteration} 步 · ${s.toolName}</div>
-                    ${s.thought ? `<div class="react-thought">💭 ${s.thought.substring(0, 120)}${s.thought.length > 120 ? '...' : ''}</div>` : ''}
-                    <div class="react-tool">🔧 ${s.toolName}(${s.toolArgs})</div>
-                    ${s.observation ? `<div class="react-obs">📋 ${s.observation.substring(0, 150)}${s.observation.length > 150 ? '...' : ''}</div>` : ''}
+                    ${s.thought ? `<div class="react-thought">${s.thought.substring(0, 120)}${s.thought.length > 120 ? '...' : ''}</div>` : ''}
+                    <div class="react-tool">${s.toolName}(${s.toolArgs})</div>
+                    ${s.observation ? `<div class="react-obs">${s.observation.substring(0, 150)}${s.observation.length > 150 ? '...' : ''}</div>` : ''}
                 </div>
             `).join('');
 
             html = `
                 <details class="react-steps-container">
                     <summary class="react-steps-summary">
-                        🧠 推理过程（${data.iterations} 步 · ${data.durationMs}ms）
+                        推理过程（${data.iterations} 步 · ${data.durationMs}ms）
                     </summary>
                     <div class="react-steps">${stepsHtml}</div>
                 </details>
@@ -231,7 +233,7 @@ async function doReActChat(message) {
         bubble.innerHTML = html;
     } catch (e) {
         clearTypingDots(bubble);
-        bubble.innerHTML = `<span class="error-msg">❌ 推理失败：${e.message}</span>`;
+        bubble.innerHTML = `<span class="error-msg">推理失败：${e.message}</span>`;
         showToast('error', '深度推理失败，请重试');
     } finally {
         setSending(false);
@@ -247,7 +249,7 @@ async function handleClearMemory() {
     try {
         await apiClearMemory(state.sessionId);
         clearChatUI();
-        showToast('success', '✅ 记忆已清除，对话重新开始');
+        showToast('success', '记忆已清除，对话重新开始');
     } catch {
         showToast('error', '清除失败，请重试');
     }
