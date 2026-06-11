@@ -10,7 +10,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px 24px;
+  padding: 36px 32px;
+}
+
+#login-app {
+  width: 100%;
+  display: flex;
+  justify-content: center;
 }
 
 .page-wrapper {
@@ -19,9 +25,9 @@ body {
   width: 100%;
   max-width: 1040px;
   min-height: 620px;
-  border-radius: 16px;
+  border-radius: 18px;
   overflow: hidden;
-  box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 8px 40px rgba(0,0,0,.08);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 14px 50px rgba(0,0,0,.09);
 }
 
 .brand-panel {
@@ -30,7 +36,7 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 52px 0;
+  padding: 64px 0;
   background: #FFFFFF;
   position: relative;
   overflow: hidden;
@@ -48,14 +54,14 @@ body {
 }
 
 .brand-inner {
-  max-width: 420px;
+  max-width: 500px;
   width: 100%;
   margin: 0 auto;
-  padding: 0 48px;
+  padding: 0 58px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 48px;
+  gap: 56px;
   flex: 1;
   position: relative;
   z-index: 1;
@@ -65,7 +71,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 32px;
+  margin-bottom: 38px;
 }
 
 .brand-logo-icon,
@@ -78,10 +84,10 @@ body {
 }
 
 .brand-logo-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(77,107,254,.3);
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(77,107,254,.28);
 }
 
 .brand-logo-icon svg,
@@ -92,18 +98,18 @@ body {
 }
 
 .brand-logo-text {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
   color: #1A1A1A;
 }
 
 .brand-headline {
-  font-size: 34px;
-  font-weight: 700;
-  line-height: 1.28;
-  letter-spacing: -.8px;
+  font-size: 42px;
+  font-weight: 800;
+  line-height: 1.18;
+  letter-spacing: 0;
   color: #111111;
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
 
 .brand-headline span,
@@ -112,7 +118,8 @@ body {
 }
 
 .brand-desc {
-  font-size: 15px;
+  max-width: 360px;
+  font-size: 17px;
   color: #666666;
   line-height: 1.7;
 }
@@ -120,7 +127,7 @@ body {
 .brand-features {
   display: flex;
   flex-direction: column;
-  gap: 13px;
+  gap: 17px;
 }
 
 .brand-feature {
@@ -128,7 +135,7 @@ body {
   align-items: center;
   gap: 12px;
   color: #555555;
-  font-size: 13.5px;
+  font-size: 15px;
 }
 
 .brand-feature-dot {
@@ -145,7 +152,7 @@ body {
   z-index: 1;
   font-size: 12px;
   color: #BBBBBB;
-  padding: 0 48px;
+  padding: 0 58px;
 }
 
 .form-panel {
@@ -154,19 +161,19 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 56px;
+  padding: 72px;
   background: #F7F8FA;
 }
 
 .mobile-brand { display: none; }
 .form-box { width: 100%; max-width: 360px; }
-.form-title { font-size: 22px; font-weight: 700; color: #111111; margin-bottom: 6px; letter-spacing: -.4px; }
-.form-subtitle { font-size: 14px; color: #888888; margin-bottom: 32px; }
-.auth-tabs { display: flex; margin-bottom: 28px; border-bottom: 1px solid #E8E8E8; }
+.form-title { font-size: 25px; font-weight: 800; color: #111111; margin-bottom: 8px; letter-spacing: 0; }
+.form-subtitle { font-size: 15px; color: #888888; margin-bottom: 38px; }
+.auth-tabs { display: flex; margin-bottom: 34px; border-bottom: 1px solid #E8E8E8; }
 .auth-tab {
   padding: 9px 0;
   margin-right: 24px;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   color: #AAAAAA;
   cursor: pointer;
@@ -179,14 +186,15 @@ body {
 }
 .auth-tab.active { color: #111111; border-bottom-color: #4D6BFE; }
 .auth-form { display: block; }
-.form-group { margin-bottom: 18px; }
-.form-label { display: block; font-size: 13px; font-weight: 500; color: #444444; margin-bottom: 7px; }
+.form-group { margin-bottom: 20px; }
+.form-label { display: block; font-size: 14px; font-weight: 500; color: #333333; margin-bottom: 9px; }
 .form-input {
   width: 100%;
-  padding: 11px 14px;
+  min-height: 44px;
+  padding: 10px 14px;
   border: 1px solid #E0E0E0;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: 10px;
+  font-size: 15px;
   color: #1A1A1A;
   background: #FFFFFF;
   transition: border-color .15s, box-shadow .15s;
@@ -209,16 +217,17 @@ body {
 }
 .submit-btn {
   width: 100%;
-  padding: 11px;
+  min-height: 46px;
+  padding: 10px 12px;
   background: #4D6BFE;
   color: #fff;
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: 10px;
+  font-size: 16px;
   font-weight: 600;
   cursor: pointer;
   transition: background .15s, box-shadow .15s, transform .1s;
-  margin-top: 6px;
+  margin-top: 8px;
   font-family: inherit;
 }
 .submit-btn:hover { background: #3A5AF0; box-shadow: 0 4px 14px rgba(77,107,254,.35); }
@@ -324,4 +333,3 @@ body {
   .form-input:focus { border-color: #6B83FF; box-shadow: 0 0 0 4px rgba(77,107,254,.12); }
   .submit-btn { min-height: 52px; margin-top: 10px; border-radius: 10px; font-size: 15px; box-shadow: 0 10px 22px rgba(77,107,254,.22); }
 }
-
