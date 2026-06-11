@@ -125,7 +125,7 @@
               id="messageInput"
               ref="messageInputEl"
               v-model="messageInput"
-              :disabled="isSending"
+              :disabled="currentSessionSending"
               placeholder="输入消息，Ctrl+Enter 发送..."
               rows="1"
               @input="autoResize"
@@ -146,11 +146,11 @@
                 <button class="attach-btn" type="button" title="上传附件">
                   <svg viewBox="0 0 24 24" fill="none"><path d="m20 11.5-7.7 7.7a5.2 5.2 0 0 1-7.4-7.4l8.4-8.4a3.6 3.6 0 0 1 5.1 5.1l-8.4 8.4a2 2 0 0 1-2.8-2.8l7.6-7.6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
-                <button v-if="isSending" class="stop-btn" type="button" title="停止生成" @click="stopGeneration">
+                <button v-if="currentSessionSending" class="stop-btn" type="button" title="停止生成" @click="stopGeneration">
                   <svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
                 </button>
                 <button v-else class="send-btn" type="button" :disabled="!messageInput.trim()" @click="sendMessage">
-                  <svg v-if="!isSending" viewBox="0 0 24 24" fill="none"><path d="M12 19V5M6 11l6-6 6 6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M12 19V5M6 11l6-6 6 6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
               </div>
             </div>
@@ -485,10 +485,7 @@ const messages = ref([]);
 const messageInput = ref('');
 const streamEnabled = ref(true);
 const reactEnabled = ref(false);
-const isSending = ref(false);
-const activeEventSource = ref(null);
-const activeStreamBubble = ref(null);
-const activeStreamText = ref('');
+const sessionRuntime = reactive({});
 const chatMessagesEl = ref(null);
 const messageInputEl = ref(null);
 const searchInputEl = ref(null);
@@ -533,6 +530,7 @@ const modelOptions = [
   { value: 'claude', label: 'Claude', desc: '适合长文本与复杂分析' }
 ];
 const currentModelLabel = computed(() => modelOptions.find(option => option.value === model.value)?.label || '选择模型');
+const currentSessionSending = computed(() => ensureSessionRuntime(sessionId.value).sending);
 const filteredSessions = computed(() => {
   const keyword = searchQuery.value.trim().toLowerCase();
   if (!keyword) return sessions.value;
@@ -647,7 +645,9 @@ async function removeSession(id) {
   });
   if (!confirmed) return;
   const [removed] = sessions.value.splice(index, 1);
+  stopSessionGeneration(id, false);
   delete sessionMessages[id];
+  delete sessionRuntime[id];
   showToast('info', `已删除会话：${removed.title}`);
   if (sessionId.value === id) {
     if (sessions.value.length) switchSession(sessions.value[0].id);
@@ -655,8 +655,8 @@ async function removeSession(id) {
   }
 }
 
-function updateSessionTitle(text) {
-  const session = sessions.value.find(s => s.id === sessionId.value);
+function updateSessionTitle(text, id = sessionId.value) {
+  const session = sessions.value.find(s => s.id === id);
   if (session && session.title === '新对话') {
     session.title = text.slice(0, 12) + (text.length > 12 ? '...' : '');
   }
@@ -679,64 +679,78 @@ async function sendQuick(text) {
 
 async function sendMessage() {
   const text = messageInput.value.trim();
-  if (!text || isSending.value) return;
+  const requestSessionId = sessionId.value;
+  const runtime = ensureSessionRuntime(requestSessionId);
+  if (!text || runtime.sending) return;
   messageInput.value = '';
   resetInputHeight();
-  pushMessage('user', formatMarkdown(text));
-  updateSessionTitle(text);
+  pushMessage(requestSessionId, 'user', formatMarkdown(text));
+  updateSessionTitle(text, requestSessionId);
 
-  if (reactEnabled.value) await doReactChat(text);
-  else if (streamEnabled.value) await doStreamChat(text);
-  else await doSyncChat(text);
+  if (reactEnabled.value) await doReactChat(requestSessionId, text);
+  else if (streamEnabled.value) await doStreamChat(requestSessionId, text);
+  else await doSyncChat(requestSessionId, text);
 }
 
-async function doSyncChat(text) {
-  isSending.value = true;
-  const bubble = pushMessage('ai', '<span class="typing-dots">●●●</span>');
+async function doSyncChat(requestSessionId, text) {
+  const runtime = ensureSessionRuntime(requestSessionId);
+  runtime.sending = true;
+  runtime.cancelled = false;
+  const requestId = ++runtime.requestId;
+  const bubble = pushMessage(requestSessionId, 'ai', '<span class="typing-dots">●●●</span>');
+  runtime.bubble = bubble;
   try {
-    const data = await api.chatSync(sessionId.value, text);
+    const data = await api.chatSync(requestSessionId, text);
+    if (runtime.requestId !== requestId || runtime.cancelled) return;
     bubble.html = formatMarkdown(data.reply);
   } catch (error) {
+    if (runtime.requestId !== requestId || runtime.cancelled) return;
     bubble.html = `<span class="error-msg">请求失败：${escapeHtml(error.message)}</span>`;
     showToast('error', '发送失败，请检查网络或服务');
   } finally {
-    isSending.value = false;
-    scrollToBottom();
+    if (runtime.requestId === requestId) {
+      runtime.sending = false;
+      runtime.bubble = null;
+      scrollSessionToBottom(requestSessionId);
+    }
   }
 }
 
-async function doStreamChat(text) {
-  isSending.value = true;
-  const bubble = pushMessage('ai', '');
+async function doStreamChat(requestSessionId, text) {
+  const runtime = ensureSessionRuntime(requestSessionId);
+  runtime.sending = true;
+  runtime.cancelled = false;
+  const requestId = ++runtime.requestId;
+  const bubble = pushMessage(requestSessionId, 'ai', '');
   let fullText = '';
-  const eventSource = api.chatStream(sessionId.value, text);
-  activeEventSource.value = eventSource;
-  activeStreamBubble.value = bubble;
-  activeStreamText.value = '';
+  const eventSource = api.chatStream(requestSessionId, text);
+  runtime.eventSource = eventSource;
+  runtime.bubble = bubble;
+  runtime.text = '';
 
   eventSource.onmessage = (event) => {
-    if (activeEventSource.value !== eventSource) return;
+    if (runtime.eventSource !== eventSource || runtime.requestId !== requestId || runtime.cancelled) return;
     if (event.data === '[DONE]') return;
     fullText += event.data;
-    activeStreamText.value = fullText;
+    runtime.text = fullText;
     bubble.html = formatMarkdown(fullText) + '<span class="typing-cursor"></span>';
-    scrollToBottom();
+    scrollSessionToBottom(requestSessionId);
   };
   eventSource.addEventListener('replace', (event) => {
-    if (activeEventSource.value !== eventSource) return;
+    if (runtime.eventSource !== eventSource || runtime.requestId !== requestId || runtime.cancelled) return;
     fullText = event.data;
-    activeStreamText.value = fullText;
+    runtime.text = fullText;
     bubble.html = formatMarkdown(fullText) + '<span class="typing-cursor"></span>';
-    scrollToBottom();
+    scrollSessionToBottom(requestSessionId);
   });
   eventSource.addEventListener('done', () => {
-    if (activeEventSource.value !== eventSource) return;
+    if (runtime.eventSource !== eventSource || runtime.requestId !== requestId || runtime.cancelled) return;
     eventSource.close();
     bubble.html = formatMarkdown(fullText);
     finish();
   });
   eventSource.onerror = () => {
-    if (activeEventSource.value !== eventSource) return;
+    if (runtime.eventSource !== eventSource || runtime.requestId !== requestId || runtime.cancelled) return;
     eventSource.close();
     if (!fullText) {
       bubble.html = '<span class="error-msg">连接失败，请重试</span>';
@@ -746,44 +760,41 @@ async function doStreamChat(text) {
   };
 
   function finish() {
-    isSending.value = false;
-    activeEventSource.value = null;
-    activeStreamBubble.value = null;
-    activeStreamText.value = '';
-    scrollToBottom();
+    if (runtime.requestId === requestId) {
+      runtime.sending = false;
+      runtime.eventSource = null;
+      runtime.bubble = null;
+      runtime.text = '';
+      scrollSessionToBottom(requestSessionId);
+    }
   }
 }
 
 function stopGeneration() {
-  if (activeEventSource.value) {
-    activeEventSource.value.close();
-    if (activeStreamBubble.value) {
-      const html = formatMarkdown(activeStreamText.value || '');
-      activeStreamBubble.value.html = `${html}<div class="stopped-msg">已停止生成</div>`;
-    }
-    activeEventSource.value = null;
-    activeStreamBubble.value = null;
-    activeStreamText.value = '';
-    isSending.value = false;
-    scrollToBottom();
-    return;
-  }
-  isSending.value = false;
-  showToast('info', '已停止等待响应');
+  stopSessionGeneration(sessionId.value, true);
 }
 
-async function doReactChat(text) {
-  isSending.value = true;
-  const bubble = pushMessage('ai', '<span class="typing-dots">●●●</span>');
+async function doReactChat(requestSessionId, text) {
+  const runtime = ensureSessionRuntime(requestSessionId);
+  runtime.sending = true;
+  runtime.cancelled = false;
+  const requestId = ++runtime.requestId;
+  const bubble = pushMessage(requestSessionId, 'ai', '<span class="typing-dots">●●●</span>');
+  runtime.bubble = bubble;
   try {
-    const data = await api.chatReact(sessionId.value, text);
+    const data = await api.chatReact(requestSessionId, text);
+    if (runtime.requestId !== requestId || runtime.cancelled) return;
     bubble.html = renderReactAnswer(data);
   } catch (error) {
+    if (runtime.requestId !== requestId || runtime.cancelled) return;
     bubble.html = `<span class="error-msg">推理失败：${escapeHtml(error.message)}</span>`;
     showToast('error', '深度推理失败，请重试');
   } finally {
-    isSending.value = false;
-    scrollToBottom();
+    if (runtime.requestId === requestId) {
+      runtime.sending = false;
+      runtime.bubble = null;
+      scrollSessionToBottom(requestSessionId);
+    }
   }
 }
 
@@ -791,29 +802,33 @@ function renderReactAnswer(data) {
   if (!data.steps?.length) return formatMarkdown(data.answer);
   const steps = data.steps.map(step => `
     <div class="react-step">
-      <div class="react-step-label">第 ${step.iteration} 步 · ${escapeHtml(step.toolName || '')}</div>
-      ${step.thought ? `<div class="react-thought">${escapeHtml(trimText(step.thought, 120))}</div>` : ''}
-      <div class="react-tool">${escapeHtml(step.toolName || '')}(${escapeHtml(step.toolArgs || '')})</div>
-      ${step.observation ? `<div class="react-obs">${escapeHtml(trimText(step.observation, 150))}</div>` : ''}
+      <div class="react-step-label">第 ${step.iteration} 步${step.toolName ? ` · ${escapeHtml(step.toolName)}` : ''}</div>
+      ${step.thought ? `<div class="react-thought"><span>思考摘要</span>${escapeHtml(trimText(step.thought, 220))}</div>` : ''}
+      ${step.toolName ? `<div class="react-tool"><span>工具调用</span>${escapeHtml(step.toolName || '')}(${escapeHtml(step.toolArgs || '')})</div>` : ''}
+      ${step.observation ? `<div class="react-obs"><span>观察结果</span>${escapeHtml(trimText(step.observation, 260))}</div>` : ''}
     </div>
   `).join('');
+  const seconds = data.durationMs ? Math.max(1, Math.round(data.durationMs / 1000)) : '';
   return `
-    <details class="react-steps-container">
-      <summary class="react-steps-summary">推理过程（${data.iterations} 步 · ${data.durationMs}ms）</summary>
+    <details class="react-steps-container" open>
+      <summary class="react-steps-summary">
+        <span class="react-steps-title">已思考${seconds ? `（用时 ${seconds} 秒）` : ''}</span>
+        <span class="react-steps-count">${data.iterations || data.steps.length} 步</span>
+      </summary>
       <div class="react-steps">${steps}</div>
     </details>
     <div class="react-answer">${formatMarkdown(data.answer)}</div>
   `;
 }
 
-function pushMessage(role, html) {
+function pushMessage(targetSessionId, role, html) {
   const item = { id: generateId(), role, html };
-  if (!sessionMessages[sessionId.value]) sessionMessages[sessionId.value] = [];
-  if (messages.value !== sessionMessages[sessionId.value]) {
-    messages.value = sessionMessages[sessionId.value];
+  if (!sessionMessages[targetSessionId]) sessionMessages[targetSessionId] = [];
+  sessionMessages[targetSessionId].push(item);
+  if (targetSessionId === sessionId.value && messages.value !== sessionMessages[targetSessionId]) {
+    messages.value = sessionMessages[targetSessionId];
   }
-  messages.value.push(item);
-  scrollToBottom();
+  scrollSessionToBottom(targetSessionId);
   return item;
 }
 
@@ -826,6 +841,7 @@ async function handleClearMemory() {
   });
   if (!confirmed) return;
   try {
+    stopSessionGeneration(sessionId.value, false);
     await api.clearMemory(sessionId.value);
     setCurrentMessages([]);
     showToast('success', '记忆已清除，对话重新开始');
@@ -850,6 +866,42 @@ function resetInputHeight() {
   nextTick(() => {
     if (messageInputEl.value) messageInputEl.value.style.height = 'auto';
   });
+}
+
+function ensureSessionRuntime(id) {
+  if (!sessionRuntime[id]) {
+    sessionRuntime[id] = {
+      sending: false,
+      eventSource: null,
+      bubble: null,
+      text: '',
+      requestId: 0,
+      cancelled: false
+    };
+  }
+  return sessionRuntime[id];
+}
+
+function stopSessionGeneration(id, showNotice = true) {
+  const runtime = ensureSessionRuntime(id);
+  if (!runtime.sending && !runtime.eventSource) return;
+  runtime.cancelled = true;
+  runtime.requestId += 1;
+  runtime.eventSource?.close();
+  if (runtime.bubble) {
+    const html = runtime.text ? formatMarkdown(runtime.text) : '';
+    runtime.bubble.html = `${html}<div class="stopped-msg">已停止生成</div>`;
+  }
+  runtime.sending = false;
+  runtime.eventSource = null;
+  runtime.bubble = null;
+  runtime.text = '';
+  scrollSessionToBottom(id);
+  if (showNotice) showToast('info', '已停止当前会话的生成');
+}
+
+function scrollSessionToBottom(targetSessionId) {
+  if (targetSessionId === sessionId.value) scrollToBottom();
 }
 
 function scrollToBottom() {

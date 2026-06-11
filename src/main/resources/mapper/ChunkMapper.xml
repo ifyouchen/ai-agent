@@ -61,7 +61,7 @@
              metadata, token_count, is_active, created_at)
         VALUES
             (#{docId}, #{kbId}, #{tenantId}, #{chunkIndex}, #{content}, #{contentHash},
-             #{metadata}, #{tokenCount}, #{isActive}, NOW())
+             #{metadata}::jsonb, #{tokenCount}, #{isActive}, NOW())
     </insert>
 
     <!-- 查询所有激活切片（用于 BM25 索引恢复，分页加载） -->

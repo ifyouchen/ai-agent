@@ -62,8 +62,8 @@
             (tenant_id, name, description, embed_model, chunk_config,
              status, doc_count, created_by, created_at, updated_at)
         VALUES
-            (#{tenantId}, #{name}, #{description}, #{embedModel}, #{chunkConfig},
-             #{status}, #{docCount}, #{createdBy}, NOW(), NOW())
+(#{tenantId}, #{name}, #{description}, #{embedModel}, #{chunkConfig}::jsonb,
+              #{status}, #{docCount}, #{createdBy}, NOW(), NOW())
     </insert>
 
     <!-- 更新文档计数 -->
