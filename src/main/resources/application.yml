@@ -91,6 +91,29 @@ weather:
   api:
     key: ${WEATHER_API_KEY:}    # 留空则降级返回提示，从 openweathermap.org 免费申请
 
+# ==================== 邮件 SMTP 配置 ====================
+# 启用邮件告警时需配置此节。以 Gmail 为例：
+#   host: smtp.gmail.com
+#   port: 587
+#   username: your-account@gmail.com
+#   password: your-app-password（开启两步验证后生成"应用密码"）
+spring:
+  mail:
+    host: ${MAIL_SMTP_HOST:}
+    port: ${MAIL_SMTP_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
 # ==================== 告警通知配置 ====================
 llm:
   observability:
@@ -101,6 +124,10 @@ llm:
       wecom:
         enabled: ${ALERT_WECOM_ENABLED:false}
         webhook: ${ALERT_WECOM_WEBHOOK:}
+      email:
+        enabled: ${ALERT_EMAIL_ENABLED:false}
+        to: ${ALERT_EMAIL_TO:}           # 多收件人用逗号分隔，如: ops@corp.com,cto@corp.com
+        from: ${ALERT_EMAIL_FROM:ai-agent@example.com}
       custom:
         enabled: ${ALERT_CUSTOM_ENABLED:false}
         webhook: ${ALERT_CUSTOM_WEBHOOK:}

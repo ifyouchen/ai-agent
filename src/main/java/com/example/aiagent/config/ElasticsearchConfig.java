@@ -143,42 +143,37 @@ public class ElasticsearchConfig {
 
         log.info("[ES] 创建索引 {}，分词器：{}", indexName, analyzer);
 
-        // 构建 Settings + Mappings JSON
-        String settingsAndMappings = """
-                {
-                  "settings": {
-                    "number_of_shards": 1,
-                    "number_of_replicas": 1,
-                    "analysis": {
-                      "analyzer": {
-                        "text_analyzer": {
-                          "type": "custom",
-                          "tokenizer": "%s",
-                          "filter": ["lowercase", "stop"]
-                        }
-                      }
-                    }
-                  },
-                  "mappings": {
-                    "properties": {
-                      "chunkId":       { "type": "keyword" },
-                      "content":       { "type": "text", "analyzer": "%s", "search_analyzer": "%s" },
-                      "documentName":  {
-                        "type": "text",
-                        "analyzer": "%s",
-                        "search_analyzer": "%s",
-                        "fields": { "keyword": { "type": "keyword", "ignore_above": 512 } }
-                      },
-                      "documentPath":  { "type": "keyword" },
-                      "pageNumber":    { "type": "integer" },
-                      "chunkIndex":    { "type": "integer" },
-                      "kbId":          { "type": "keyword" },
-                      "tenantId":      { "type": "keyword" }
-                    }
-                  }
-                }
-                """.formatted(analyzer, analyzer, searchAnalyzer,
-                              analyzer, searchAnalyzer);
+        // 构建 Settings + Mappings JSON（用 String.format 拼接，避免 Text Block + %s 的编译问题）
+        String settingsAndMappings = String.format(
+                "{"
+                + "\"settings\":{"
+                +   "\"number_of_shards\":1,"
+                +   "\"number_of_replicas\":1,"
+                +   "\"analysis\":{"
+                +     "\"analyzer\":{"
+                +       "\"text_analyzer\":{"
+                +         "\"type\":\"custom\","
+                +         "\"tokenizer\":\"%s\","
+                +         "\"filter\":[\"lowercase\",\"stop\"]"
+                +       "}"
+                +     "}"
+                +   "}"
+                + "},"
+                + "\"mappings\":{"
+                +   "\"properties\":{"
+                +     "\"chunkId\":{\"type\":\"keyword\"},"
+                +     "\"content\":{\"type\":\"text\",\"analyzer\":\"%s\",\"search_analyzer\":\"%s\"},"
+                +     "\"documentName\":{\"type\":\"text\",\"analyzer\":\"%s\",\"search_analyzer\":\"%s\","
+                +       "\"fields\":{\"keyword\":{\"type\":\"keyword\",\"ignore_above\":512}}},"
+                +     "\"documentPath\":{\"type\":\"keyword\"},"
+                +     "\"pageNumber\":{\"type\":\"integer\"},"
+                +     "\"chunkIndex\":{\"type\":\"integer\"},"
+                +     "\"kbId\":{\"type\":\"keyword\"},"
+                +     "\"tenantId\":{\"type\":\"keyword\"}"
+                +   "}"
+                + "}"
+                + "}",
+                analyzer, analyzer, searchAnalyzer, analyzer, searchAnalyzer);
 
         try {
             client.indices().create(CreateIndexRequest.of(c -> c
