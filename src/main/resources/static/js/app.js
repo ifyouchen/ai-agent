@@ -138,7 +138,7 @@ function renderKbMembersList(members) {
     }
 
     list.innerHTML = members.map(m => {
-        const roleLabel = m.role === 'OWNER' ? '👑 拥有者' : m.role === 'EDITOR' ? '✏️ 编辑者' : '👁️ 只读';
+        const roleLabel = m.role === 'OWNER' ? '拥有者' : m.role === 'EDITOR' ? '编辑者' : '只读';
         return `
             <div class="kb-member-item">
                 <span class="kb-member-id">${m.userId}</span>

@@ -49,12 +49,12 @@ function renderKbList() {
 
     list.innerHTML = state.knowledgeBases.map(kb => `
         <div class="kb-item ${kb.id === state.currentKbId ? 'active' : ''}" data-id="${kb.id}">
-            <div class="kb-item-icon">📚</div>
+            <div class="kb-item-icon"></div>
             <div class="kb-item-info">
                 <div class="kb-item-name">${escHtml(kb.name)}</div>
                 <div class="kb-item-meta">${kb.docCount || 0} 篇文档</div>
             </div>
-            <button class="kb-item-delete" data-id="${kb.id}" title="删除知识库">🗑️</button>
+            <button class="kb-item-delete" data-id="${kb.id}" title="删除知识库"></button>
         </div>
     `).join('');
 
@@ -101,10 +101,10 @@ async function handleCreateKb() {
 
     try {
         await api.createKnowledgeBase(name.trim(), '');
-        showToast('success', `✅ 知识库「${name.trim()}」创建成功`);
+        showToast('success', `知识库「${name.trim()}」创建成功`);
         await loadKnowledgeBases();
     } catch (e) {
-        showToast('error', `❌ 创建失败：${e.message}`);
+        showToast('error', `创建失败：${e.message}`);
     }
 }
 
@@ -116,7 +116,7 @@ async function handleDeleteKb(kbId) {
 
     try {
         await api.deleteKnowledgeBase(kbId);
-        showToast('success', `✅ 已删除：${kb.name}`);
+        showToast('success', `已删除：${kb.name}`);
         state.knowledgeBases = state.knowledgeBases.filter(k => k.id !== kbId);
         if (state.currentKbId === kbId) {
             state.currentKbId = null;
@@ -129,7 +129,7 @@ async function handleDeleteKb(kbId) {
             renderDocList();
         }
     } catch (e) {
-        showToast('error', `❌ 删除失败：${e.message}`);
+        showToast('error', `删除失败：${e.message}`);
     }
 }
 
@@ -208,14 +208,14 @@ async function handleUpload(file) {
         };
         state.docs.push(doc);
         addDocToList(doc);
-        showToast('success', `✅ ${file.name} 导入成功，共 ${doc.chunks} 个片段`);
+        showToast('success', `${file.name} 导入成功，共 ${doc.chunks} 个片段`);
 
         // 刷新知识库列表中的文档计数
         await loadKnowledgeBases();
 
     } catch (e) {
         hideUploadProgress();
-        showToast('error', `❌ 上传失败：${e.message}`);
+        showToast('error', `上传失败：${e.message}`);
     }
 }
 
@@ -250,12 +250,12 @@ function renderDocList() {
     if (!list) return;
 
     if (!state.currentKbId) {
-        list.innerHTML = '<div class="empty-docs">📭 请先选择一个知识库</div>';
+        list.innerHTML = '<div class="empty-docs">请先选择一个知识库</div>';
         return;
     }
 
     if (state.docs.length === 0) {
-        list.innerHTML = '<div class="empty-docs">📭 暂无文档，上传后 AI 可基于文档内容回答</div>';
+        list.innerHTML = '<div class="empty-docs">暂无文档，上传后 AI 可基于文档内容回答</div>';
         return;
     }
 
@@ -271,7 +271,7 @@ function addDocToList(doc) {
 
     const { icon, cls } = getFileIcon(doc.filename);
     const sizeStr = doc.size ? ` · ${formatFileSize(doc.size)}` : '';
-    const statusIcon = doc.status === 'DONE' ? '✅' : doc.status === 'FAILED' ? '❌' : '⏳';
+    const statusIcon = doc.status === 'DONE' ? '完成' : doc.status === 'FAILED' ? '失败' : '⏳';
 
     const item = document.createElement('div');
     item.className = 'doc-item';
@@ -283,7 +283,7 @@ function addDocToList(doc) {
             <div class="doc-meta">${statusIcon} ${doc.chunks} 个切片${sizeStr} · ${doc.uploadedAt}</div>
         </div>
         <div class="doc-actions">
-            <button class="doc-delete" title="从知识库删除此文档">🗑️</button>
+            <button class="doc-delete" title="从知识库删除此文档"></button>
         </div>
     `;
 
@@ -301,12 +301,12 @@ async function handleDeleteDoc(doc, itemEl) {
 
         if (state.docs.length === 0) {
             document.getElementById('docList').innerHTML =
-                '<div class="empty-docs">📭 暂无文档，上传后 AI 可基于文档内容回答</div>';
+                '<div class="empty-docs">暂无文档，上传后 AI 可基于文档内容回答</div>';
         }
-        showToast('success', `✅ 已删除：${doc.filename}`);
+        showToast('success', `已删除：${doc.filename}`);
         await loadKnowledgeBases();
     } catch (e) {
-        showToast('error', `❌ 删除失败：${e.message}`);
+        showToast('error', `删除失败：${e.message}`);
     }
 }
 
@@ -320,7 +320,7 @@ export async function queryKb(question) {
     try {
         return await api.queryKnowledgeBase(state.currentKbId, question);
     } catch (e) {
-        showToast('error', `❌ 知识库问答失败：${e.message}`);
+        showToast('error', `知识库问答失败：${e.message}`);
         return null;
     }
 }
@@ -338,9 +338,9 @@ export async function addMemberToKb(userId, role) {
     if (!state.currentKbId) return;
     try {
         await api.addKbMember(state.currentKbId, userId, role);
-        showToast('success', `✅ 已添加成员：${userId}`);
+        showToast('success', `已添加成员：${userId}`);
     } catch (e) {
-        showToast('error', `❌ 添加成员失败：${e.message}`);
+        showToast('error', `添加成员失败：${e.message}`);
     }
 }
 

@@ -288,7 +288,12 @@ function clearTypingDots(bubble) {
 function setSending(sending) {
     const btn = document.getElementById('sendBtn');
     const input = document.getElementById('messageInput');
-    if (btn) { btn.disabled = sending; btn.textContent = sending ? '⏳' : '➤'; }
+    if (btn) {
+        btn.disabled = sending;
+        btn.innerHTML = sending
+            ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>'
+            : '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>';
+    }
     if (input) input.disabled = sending;
 }
 
