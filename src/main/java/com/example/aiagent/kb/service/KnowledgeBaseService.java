@@ -7,8 +7,10 @@ import com.example.aiagent.kb.mapper.ChunkMapper;
 import com.example.aiagent.kb.mapper.DocumentMapper;
 import com.example.aiagent.kb.mapper.KnowledgeBaseMapper;
 import com.example.aiagent.kb.mapper.RetrievalLogMapper;
+import com.example.aiagent.rag.retrieval.Bm25Retriever;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +37,10 @@ public class KnowledgeBaseService {
     private final DocumentMapper      documentMapper;
     private final ChunkMapper         chunkMapper;
     private final RetrievalLogMapper  retrievalLogMapper;
+
+    /** BM25 检索器，required=false：未启用时 Bean 不存在，注入 null，不影响启动 */
+    @Autowired(required = false)
+    private Bm25Retriever bm25Retriever;
 
     // ====================================================================
     // 知识库管理
@@ -121,6 +127,12 @@ public class KnowledgeBaseService {
 
         // 4. 删除知识库
         kbMapper.deleteById(kbId);
+
+        // 5. 清理 Lucene BM25 索引（按 kbId 删除该知识库下的所有切片索引）
+        if (bm25Retriever != null && bm25Retriever.isAvailable()) {
+            bm25Retriever.deleteByKbId(String.valueOf(kbId));
+        }
+
         log.info("知识库删除完成 id={} 共删除文档 {} 个", kbId, docs.size());
     }
 
@@ -165,7 +177,12 @@ public class KnowledgeBaseService {
         // 2. 删除文档
         documentMapper.deleteById(docId);
 
-        // 3. 更新知识库 docCount（减 1，最小为 0）
+        // 3. 清理 Lucene BM25 索引（按文档名删除该文档的切片索引）
+        if (bm25Retriever != null && bm25Retriever.isAvailable()) {
+            bm25Retriever.deleteByDocumentName(doc.getName());
+        }
+
+        // 4. 更新知识库 docCount（减 1，最小为 0）
         kbMapper.findById(doc.getKbId()).ifPresent(kb -> {
             int newCount = Math.max(0, kb.getDocCount() - 1);
             kbMapper.updateDocCount(kb.getId(), newCount);

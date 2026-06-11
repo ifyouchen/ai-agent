@@ -23,5 +23,8 @@ public interface ChunkMapper {
 
     List<Chunk> findActiveByKbId(@Param("kbId") Long kbId);
 
+    /** 分页查询所有激活切片（用于 BM25 索引恢复） */
+    List<Chunk> findActiveChunksPage(@Param("limit") int limit, @Param("offset") int offset);
+
     void insert(Chunk chunk);
 }

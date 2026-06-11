@@ -7,7 +7,6 @@ import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.rag.content.Content;
 import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.rag.query.Query;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -23,35 +22,73 @@ import java.util.List;
  * 而项目的 {@link HybridRagPipeline} 是独立的 Service Bean，
  * 本类作为适配器，将 Pipeline 包装为 LangChain4j 可直接使用的 ContentRetriever。
  *
+ * <p>多租户支持：
+ * 支持通过 {@link RetrievalContext} 设置当前请求的 tenantId 和 kbId，
+ * 使每次检索都按租户和知识库隔离。使用 ThreadLocal 确保并发安全。
+ *
  * <p>检索流程（4 步混合 RAG，不含 LLM 生成）：
  * <pre>
  *   用户查询
  *     → [1] 查询改写（HyDE + 多角度改写）
- *     → [2] 混合检索（向量检索 + BM25）
+ *     → [2] 混合检索（向量检索 + BM25，按 tenantId/kbId 过滤）
  *     → [3] RRF 融合排序
  *     → [4] Reranker 精排
  *     → 返回 Content 列表（携带文档来源 Metadata，由 Agent 自行调用 LLM 生成答案）
  * </pre>
- *
- * <p>注意：此处仅执行步骤 1-4，不触发 Step 5（LLM 生成答案）。
- * 原先调用 {@code execute()} 会在检索阶段额外消耗一次 LLM 调用来生成答案然后丢弃，
- * 现已改用 {@code retrieveOnly()} 修复该性能浪费问题。
- *
- * <p>与原始 EmbeddingStoreContentRetriever 的对比：
- * <table>
- *   <tr><th>特性</th><th>EmbeddingStoreContentRetriever</th><th>HybridRagContentRetriever</th></tr>
- *   <tr><td>检索方式</td><td>仅向量检索</td><td>向量 + BM25 双路 + RRF 融合</td></tr>
- *   <tr><td>查询改写</td><td>无</td><td>HyDE + 多角度改写</td></tr>
- *   <tr><td>精排</td><td>无</td><td>4 种 Reranker（含降级）</td></tr>
- *   <tr><td>引用溯源</td><td>无</td><td>Metadata 携带文档名/路径/页码</td></tr>
- * </table>
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class HybridRagContentRetriever implements ContentRetriever {
 
     private final HybridRagPipeline hybridRagPipeline;
+
+    /** 当前请求的检索上下文（ThreadLocal，确保并发安全） */
+    private static final ThreadLocal<RetrievalContext> CURRENT_CONTEXT = new ThreadLocal<>();
+
+    public HybridRagContentRetriever(HybridRagPipeline hybridRagPipeline) {
+        this.hybridRagPipeline = hybridRagPipeline;
+    }
+
+    // ── 检索上下文管理 ──────────────────────────────────────
+
+    /**
+     * 检索上下文：携带当前请求的租户 ID 和知识库 ID
+     */
+    public record RetrievalContext(String tenantId, Long kbId) {}
+
+    /**
+     * 设置当前线程的检索上下文
+     *
+     * <p>在 Controller 层调用检索前设置，检索完成后自动清除。
+     * 示例：
+     * <pre>
+     *   HybridRagContentRetriever.setContext(new RetrievalContext(userId, kbId));
+     *   try {
+     *       // ... 调用 Agent 对话 ...
+     *   } finally {
+     *       HybridRagContentRetriever.clearContext();
+     *   }
+     * </pre>
+     */
+    public static void setContext(RetrievalContext context) {
+        CURRENT_CONTEXT.set(context);
+    }
+
+    /**
+     * 清除当前线程的检索上下文
+     */
+    public static void clearContext() {
+        CURRENT_CONTEXT.remove();
+    }
+
+    /**
+     * 获取当前线程的检索上下文
+     */
+    public static RetrievalContext getContext() {
+        return CURRENT_CONTEXT.get();
+    }
+
+    // ── ContentRetriever 接口实现 ─────────────────────────────
 
     /**
      * 实现 ContentRetriever 接口：将用户查询委托给 HybridRagPipeline 执行（仅检索阶段）
@@ -59,18 +96,26 @@ public class HybridRagContentRetriever implements ContentRetriever {
      * <p>调用 {@code retrieveOnly()} 执行 Step 1-4，不触发 LLM 答案生成（Step 5）。
      * Agent 框架会将检索到的 Content 注入 Prompt，然后由 Agent 自己调用 LLM 生成答案。
      *
+     * <p>多租户隔离：从 {@link RetrievalContext} ThreadLocal 中获取 tenantId 和 kbId，
+     * 传递给 Pipeline 的向量检索和 BM25 检索，确保只检索当前租户的知识库。
+     *
      * @param query LangChain4j 查询对象（包含用户文本）
      * @return 排序后的文档片段列表（LangChain4j Content 格式）
      */
     @Override
     public List<Content> retrieve(Query query) {
         String userText = query.text();
-        log.debug("[HybridRAG] 开始检索，query='{}'", userText);
+
+        // 从 ThreadLocal 获取检索上下文
+        RetrievalContext context = getContext();
+        String tenantId = context != null ? context.tenantId() : null;
+        Long kbId = context != null ? context.kbId() : null;
+
+        log.debug("[HybridRAG] 开始检索，query='{}'，tenantId={}，kbId={}", userText, tenantId, kbId);
 
         try {
-            // 执行完整的混合 RAG Pipeline（步骤 1-4）
-            // 从 Pipeline 响应中提取经过精排的文档片段
-            List<RetrievedChunk> rerankedChunks = retrieveChunks(userText);
+            // 执行完整的混合 RAG Pipeline（步骤 1-4），带租户隔离
+            List<RetrievedChunk> rerankedChunks = retrieveChunks(userText, tenantId, kbId);
 
             if (rerankedChunks.isEmpty()) {
                 log.debug("[HybridRAG] 未检索到相关内容");
@@ -95,12 +140,12 @@ public class HybridRagContentRetriever implements ContentRetriever {
     /**
      * 执行 Pipeline 的检索阶段（步骤 1-4），提取精排后的 chunk 列表
      *
-     * <p>直接调用 {@link HybridRagPipeline#retrieveOnly(String)}，
+     * <p>直接调用 {@link HybridRagPipeline#retrieveOnly(String, String, Long)}，
      * 仅执行查询改写 + 混合检索 + RRF 融合 + Reranker 精排，
      * 不触发 LLM 生成答案（Step 5），避免每次检索浪费一次 LLM 调用。
      */
-    private List<RetrievedChunk> retrieveChunks(String userText) {
-        return hybridRagPipeline.retrieveOnly(userText);
+    private List<RetrievedChunk> retrieveChunks(String userText, String tenantId, Long kbId) {
+        return hybridRagPipeline.retrieveOnly(userText, tenantId, kbId);
     }
 
     /**
@@ -128,6 +173,12 @@ public class HybridRagContentRetriever implements ContentRetriever {
         }
         if (chunk.getChunkId() != null) {
             metadata.put("chunkId", chunk.getChunkId());
+        }
+        if (chunk.getTenantId() != null) {
+            metadata.put("tenantId", chunk.getTenantId());
+        }
+        if (chunk.getKbId() != null) {
+            metadata.put("kbId", String.valueOf(chunk.getKbId()));
         }
 
         // 构建带来源注释的文本（帮助 LLM 正确引用来源）

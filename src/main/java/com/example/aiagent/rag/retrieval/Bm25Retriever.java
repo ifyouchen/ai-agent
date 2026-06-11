@@ -36,6 +36,9 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  *   <li>支持 MultiFieldQueryParser：content 和 documentName 同时检索</li>
  * </ul>
  *
+ * <p>多租户隔离：检索和索引均支持按 tenantId + kbId 过滤，
+ * 确保不同租户、不同知识库的文档切片互不干扰。
+ *
  * <p>持久化说明：当前使用 {@link ByteBuffersDirectory}（内存索引），
  * 应用重启后需重建索引。生产环境可替换为 {@link org.apache.lucene.store.FSDirectory}
  * 并指向持久化目录，或在 {@link #indexChunk} 时将切片同步写回数据库，
@@ -123,20 +126,23 @@ public class Bm25Retriever {
     }
 
     /**
-     * BM25 检索
+     * BM25 检索（带多租户隔离过滤）
      *
      * <p>查询策略：
      * <ul>
      *   <li>MultiFieldQueryParser：同时在 content（权重1.0）和 documentName（权重2.0）上检索</li>
      *   <li>Lucene BM25Similarity：与 ES 默认算法等价</li>
      *   <li>查询词 escape：防止特殊字符导致 ParseException</li>
+     *   <li>tenantId/kbId 过滤：通过 BooleanQuery 组合，确保只检索指定租户和知识库的切片</li>
      * </ul>
      *
-     * @param query 查询文本
-     * @param topK  返回结果数
+     * @param query    查询文本
+     * @param topK     返回结果数
+     * @param tenantId 租户 ID（null 表示不过滤）
+     * @param kbId     知识库 ID（null 表示不过滤）
      * @return 检索结果列表，索引为空或解析失败时返回空列表
      */
-    public List<RetrievedChunk> retrieve(String query, int topK) {
+    public List<RetrievedChunk> retrieve(String query, int topK, String tenantId, Long kbId) {
         if (query == null || query.isBlank()) {
             return Collections.emptyList();
         }
@@ -149,8 +155,12 @@ public class Bm25Retriever {
             MultiFieldQueryParser parser = new MultiFieldQueryParser(fields, analyzer, FIELD_BOOSTS);
             parser.setDefaultOperator(QueryParser.Operator.OR);
 
-            Query luceneQuery = parser.parse(QueryParser.escape(query));
-            TopDocs topDocs = indexSearcher.search(luceneQuery, Math.max(topK, 1));
+            Query textQuery = parser.parse(QueryParser.escape(query));
+
+            // 构建带租户过滤的组合查询
+            Query finalQuery = buildFilteredQuery(textQuery, tenantId, kbId);
+
+            TopDocs topDocs = indexSearcher.search(finalQuery, Math.max(topK, 1));
 
             List<RetrievedChunk> results = new ArrayList<>();
             for (ScoreDoc sd : topDocs.scoreDocs) {
@@ -158,7 +168,8 @@ public class Bm25Retriever {
                 results.add(docToChunk(doc, sd.score));
             }
 
-            log.debug("[BM25-Lucene] 检索完成，query='{}', hits={}", query, results.size());
+            log.debug("[BM25-Lucene] 检索完成，query='{}', tenantId={}, kbId={}, hits={}",
+                    query, tenantId, kbId, results.size());
             return results;
 
         } catch (org.apache.lucene.queryparser.classic.ParseException e) {
@@ -170,6 +181,16 @@ public class Bm25Retriever {
         } finally {
             lock.readLock().unlock();
         }
+    }
+
+    /**
+     * BM25 检索（无租户过滤，兼容旧调用）
+     *
+     * @deprecated 请使用 {@link #retrieve(String, int, String, Long)} 传入 tenantId 和 kbId
+     */
+    @Deprecated
+    public List<RetrievedChunk> retrieve(String query, int topK) {
+        return retrieve(query, topK, null, null);
     }
 
     /**
@@ -191,7 +212,8 @@ public class Bm25Retriever {
             indexWriter.addDocument(doc);
             indexWriter.commit();
 
-            log.debug("[BM25-Lucene] 切片已索引，chunkId={}", docId);
+            log.debug("[BM25-Lucene] 切片已索引，chunkId={}, tenantId={}, kbId={}",
+                    docId, chunk.getTenantId(), chunk.getKbId());
         } catch (IOException e) {
             log.warn("[BM25-Lucene] 切片索引异常，chunkId={}，原因：{}", chunk.getChunkId(), e.getMessage());
         } finally {
@@ -240,6 +262,26 @@ public class Bm25Retriever {
     }
 
     /**
+     * 删除指定租户下的所有切片
+     *
+     * @param tenantId 租户 ID
+     */
+    public void deleteByTenantId(String tenantId) {
+        if (tenantId == null || tenantId.isBlank()) return;
+
+        lock.writeLock().lock();
+        try {
+            indexWriter.deleteDocuments(new Term(FIELD_TENANT_ID, tenantId));
+            indexWriter.commit();
+            log.info("[BM25-Lucene] 已删除租户索引，tenantId={}", tenantId);
+        } catch (IOException e) {
+            log.warn("[BM25-Lucene] 删除租户索引异常，tenantId={}，原因：{}", tenantId, e.getMessage());
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
      * 获取当前索引中的文档数量（用于监控/调试）
      */
     public int getIndexedDocCount() {
@@ -256,6 +298,39 @@ public class Bm25Retriever {
     }
 
     // ── 私有辅助方法 ──────────────────────────────────────────────
+
+    /**
+     * 构建带租户过滤的 Lucene 组合查询
+     *
+     * <p>使用 BooleanQuery 将文本检索与 tenantId/kbId 的精确过滤组合：
+     * <pre>
+     *   +textQuery        (MUST - 文本相关性检索)
+     *   +tenantId:xxx     (MUST - 精确匹配租户)
+     *   +kbId:yyy         (MUST - 精确匹配知识库)
+     * </pre>
+     *
+     * @param textQuery 文本检索查询
+     * @param tenantId  租户 ID（null 则不添加租户过滤）
+     * @param kbId      知识库 ID（null 则不添加知识库过滤）
+     * @return 组合后的 Lucene Query
+     */
+    private Query buildFilteredQuery(Query textQuery, String tenantId, Long kbId) {
+        if (tenantId == null && kbId == null) {
+            return textQuery;  // 无过滤，直接返回文本查询
+        }
+
+        BooleanQuery.Builder builder = new BooleanQuery.Builder();
+        builder.add(textQuery, BooleanClause.Occur.MUST);
+
+        if (tenantId != null) {
+            builder.add(new TermQuery(new Term(FIELD_TENANT_ID, tenantId)), BooleanClause.Occur.MUST);
+        }
+        if (kbId != null) {
+            builder.add(new TermQuery(new Term(FIELD_KB_ID, String.valueOf(kbId))), BooleanClause.Occur.MUST);
+        }
+
+        return builder.build();
+    }
 
     /**
      * 构建 Lucene Document
@@ -283,15 +358,24 @@ public class Bm25Retriever {
         }
 
         // 多租户/知识库隔离字段（精确匹配，用于过滤）
-        if (chunk.getMetadata() != null) {
-            String kbId = chunk.getMetadata().get("kbId");
-            if (kbId != null) {
-                doc.add(new StringField(FIELD_KB_ID,     kbId,     Field.Store.YES));
+        // 优先使用 RetrievedChunk 的直接字段，兼容旧的 metadata 方式
+        String tenantId = chunk.getTenantId();
+        if (tenantId == null && chunk.getMetadata() != null) {
+            tenantId = chunk.getMetadata().get("tenantId");
+        }
+        if (tenantId != null) {
+            doc.add(new StringField(FIELD_TENANT_ID, tenantId, Field.Store.YES));
+        }
+
+        Long kbId = chunk.getKbId();
+        if (kbId == null && chunk.getMetadata() != null) {
+            String kbIdStr = chunk.getMetadata().get("kbId");
+            if (kbIdStr != null) {
+                try { kbId = Long.parseLong(kbIdStr); } catch (NumberFormatException ignored) {}
             }
-            String tenantId = chunk.getMetadata().get("tenantId");
-            if (tenantId != null) {
-                doc.add(new StringField(FIELD_TENANT_ID, tenantId, Field.Store.YES));
-            }
+        }
+        if (kbId != null) {
+            doc.add(new StringField(FIELD_KB_ID, String.valueOf(kbId), Field.Store.YES));
         }
 
         // documentName.raw：用于 deleteByDocumentName 的精确删除
@@ -317,6 +401,14 @@ public class Bm25Retriever {
             chunkIdx = cf.numericValue().intValue();
         }
 
+        // 读取 tenantId 和 kbId
+        String tenantId = doc.get(FIELD_TENANT_ID);
+        Long kbId = null;
+        String kbIdStr = doc.get(FIELD_KB_ID);
+        if (kbIdStr != null) {
+            try { kbId = Long.parseLong(kbIdStr); } catch (NumberFormatException ignored) {}
+        }
+
         return RetrievedChunk.builder()
                 .chunkId(      doc.get(FIELD_CHUNK_ID))
                 .content(      doc.get(FIELD_CONTENT))
@@ -324,6 +416,8 @@ public class Bm25Retriever {
                 .documentPath( doc.get(FIELD_DOCUMENT_PATH))
                 .pageNumber(pageNum)
                 .chunkIndex(chunkIdx)
+                .tenantId(tenantId)
+                .kbId(kbId)
                 .bm25Score(score)
                 .retrievalSource(RetrievedChunk.RetrievalSource.BM25_ONLY)
                 .build();

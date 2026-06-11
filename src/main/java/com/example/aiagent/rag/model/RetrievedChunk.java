@@ -2,6 +2,7 @@ package com.example.aiagent.rag.model;
 
 import lombok.Builder;
 import lombok.Data;
+
 import java.util.Map;
 
 /**
@@ -17,6 +18,12 @@ public class RetrievedChunk {
     private String documentPath;
     private Integer pageNumber;
     private Integer chunkIndex;
+
+    /** 租户 ID（多租户过滤核心字段） */
+    private String tenantId;
+
+    /** 知识库 ID（按 KB 隔离过滤） */
+    private Long kbId;
 
     /** 向量检索得分（余弦相似度） */
     private double vectorScore;

@@ -11,7 +11,10 @@ import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
+import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
+import dev.langchain4j.store.embedding.filter.Filter;
+import dev.langchain4j.store.embedding.filter.MetadataFilterBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +37,10 @@ import java.util.stream.Collectors;
  *     → [3] RRF 融合排序（解决量纲不统一问题）
  *     → [4] Reranker 精排（交叉编码器精细打分）
  *     → [5] 生成答案 + 引用溯源
+ *
+ * 多租户隔离：
+ *   向量检索和 BM25 检索均按 tenantId + kbId 过滤，
+ *   确保只检索当前租户指定知识库内的文档切片。
  *
  * 全链路效果提升（基于内部测试数据集）：
  * ┌─────────────┬────────────┬────────────┬──────┐
@@ -76,28 +83,33 @@ public class HybridRagPipeline {
     @Value("${rag.query.rewrite.variants:2}")
     private int queryVariants;
 
+    // ── 带租户隔离的检索入口 ─────────────────────────────────
+
     /**
-     * 仅执行检索阶段（Step 1-4），不调用 LLM 生成答案
+     * 仅执行检索阶段（Step 1-4），不调用 LLM 生成答案（带多租户隔离）
      *
      * <p>专供 {@link com.example.aiagent.rag.retrieval.HybridRagContentRetriever} 使用。
      * Agent 框架在获取检索结果后会自行调用 LLM 生成回答，
      * 此方法避免了在检索阶段重复触发一次无用的 LLM 调用。
      *
      * @param userQuery 用户原始问题
+     * @param tenantId  租户 ID（用于向量检索和 BM25 的元数据过滤）
+     * @param kbId      知识库 ID（用于向量检索和 BM25 的元数据过滤）
      * @return 经过精排的 chunk 列表（已完成 HyDE + 混合检索 + RRF + Reranker）
      */
-    public List<RetrievedChunk> retrieveOnly(String userQuery) {
-        log.info("=== 开始混合 RAG 检索（不生成答案），查询：'{}' ===", userQuery);
+    public List<RetrievedChunk> retrieveOnly(String userQuery, String tenantId, Long kbId) {
+        log.info("=== 开始混合 RAG 检索（不生成答案），查询：'{}'，tenantId={}，kbId={} ===",
+                userQuery, tenantId, kbId);
         long start = System.currentTimeMillis();
 
         // Step 1：查询改写
         String hydeDoc = queryRewriter.generateHypotheticalDocument(userQuery);
         List<String> rewrittenQueries = queryRewriter.rewriteMultiPerspective(userQuery, queryVariants);
 
-        // Step 2：混合检索
-        List<RetrievedChunk> hydeResults = vectorSearch(hydeDoc, vectorTopK);
+        // Step 2：混合检索（带 tenantId/kbId 过滤）
+        List<RetrievedChunk> hydeResults = vectorSearch(hydeDoc, vectorTopK, tenantId, kbId);
         List<RetrievedChunk> multiQueryResults = rewrittenQueries.parallelStream()
-                .flatMap(q -> vectorSearch(q, vectorTopK / Math.max(rewrittenQueries.size(), 1)).stream())
+                .flatMap(q -> vectorSearch(q, vectorTopK / Math.max(rewrittenQueries.size(), 1), tenantId, kbId).stream())
                 .collect(Collectors.toList());
 
         Map<String, RetrievedChunk> vectorMap = new LinkedHashMap<>();
@@ -108,7 +120,7 @@ public class HybridRagPipeline {
 
         List<RetrievedChunk> bm25Results = null;
         if (bm25Retriever != null && bm25Retriever.isAvailable()) {
-            bm25Results = bm25Retriever.retrieve(userQuery, vectorTopK);
+            bm25Results = bm25Retriever.retrieve(userQuery, vectorTopK, tenantId, kbId);
         }
 
         // Step 3：RRF 融合
@@ -128,10 +140,25 @@ public class HybridRagPipeline {
     }
 
     /**
-     * 执行完整的混合 RAG Pipeline
+     * 仅执行检索阶段（无租户隔离，兼容旧调用）
+     *
+     * @deprecated 请使用 {@link #retrieveOnly(String, String, Long)} 传入 tenantId 和 kbId
      */
-    public RagResponse execute(String userQuery) {
-        log.info("=== 开始混合 RAG Pipeline，查询：'{}' ===", userQuery);
+    @Deprecated
+    public List<RetrievedChunk> retrieveOnly(String userQuery) {
+        return retrieveOnly(userQuery, null, null);
+    }
+
+    /**
+     * 执行完整的混合 RAG Pipeline（带多租户隔离）
+     *
+     * @param userQuery 用户原始问题
+     * @param tenantId  租户 ID（用于向量检索和 BM25 的元数据过滤）
+     * @param kbId      知识库 ID（用于向量检索和 BM25 的元数据过滤）
+     */
+    public RagResponse execute(String userQuery, String tenantId, Long kbId) {
+        log.info("=== 开始混合 RAG Pipeline，查询：'{}'，tenantId={}，kbId={} ===",
+                userQuery, tenantId, kbId);
         long pipelineStart = System.currentTimeMillis();
 
         // ── Step 1：查询改写 ──────────────────────────────
@@ -139,16 +166,16 @@ public class HybridRagPipeline {
         String hydeDoc = queryRewriter.generateHypotheticalDocument(userQuery);
         List<String> rewrittenQueries = queryRewriter.rewriteMultiPerspective(userQuery, queryVariants);
 
-        // ── Step 2：混合检索 ──────────────────────────────
-        log.info("[Step 2] 混合检索...");
+        // ── Step 2：混合检索（带 tenantId/kbId 过滤） ────
+        log.info("[Step 2] 混合检索（tenantId={}, kbId={}）...", tenantId, kbId);
         long retrievalStart = System.currentTimeMillis();
 
         // 2a. 向量检索：用 HyDE 文档（主语义检索）
-        List<RetrievedChunk> hydeResults = vectorSearch(hydeDoc, vectorTopK);
+        List<RetrievedChunk> hydeResults = vectorSearch(hydeDoc, vectorTopK, tenantId, kbId);
 
         // 2b. 向量检索：用多角度改写的查询并行检索
         List<RetrievedChunk> multiQueryResults = rewrittenQueries.parallelStream()
-                .flatMap(q -> vectorSearch(q, vectorTopK / rewrittenQueries.size()).stream())
+                .flatMap(q -> vectorSearch(q, vectorTopK / rewrittenQueries.size(), tenantId, kbId).stream())
                 .collect(Collectors.toList());
 
         // 合并向量检索结果，去重保留最高分
@@ -161,14 +188,14 @@ public class HybridRagPipeline {
         log.info("[Step 2] 向量检索完成，共{}个候选，耗时{}ms",
                 allVectorResults.size(), System.currentTimeMillis() - retrievalStart);
 
-        // 2c. BM25 检索（ES 已启用时执行）
+        // 2c. BM25 检索（带 tenantId/kbId 过滤）
         List<RetrievedChunk> bm25Results = null;
         if (bm25Retriever != null && bm25Retriever.isAvailable()) {
-            log.info("[Step 2] BM25 检索（Elasticsearch）...");
-            bm25Results = bm25Retriever.retrieve(userQuery, vectorTopK);
+            log.info("[Step 2] BM25 检索（tenantId={}, kbId={}）...", tenantId, kbId);
+            bm25Results = bm25Retriever.retrieve(userQuery, vectorTopK, tenantId, kbId);
             log.info("[Step 2] BM25 检索完成，命中 {} 条", bm25Results.size());
         } else {
-            log.debug("[Step 2] Elasticsearch 未启用，跳过 BM25 检索");
+            log.debug("[Step 2] BM25 未启用，跳过 BM25 检索");
         }
 
         // ── Step 3：RRF 融合 ──────────────────────────────
@@ -213,14 +240,31 @@ public class HybridRagPipeline {
         return response;
     }
 
-    /** 向量检索（封装 LangChain4j EmbeddingStore） */
-    private List<RetrievedChunk> vectorSearch(String query, int topK) {
-        EmbeddingSearchRequest request = EmbeddingSearchRequest.builder()
+    /**
+     * 执行完整的混合 RAG Pipeline（无租户隔离，兼容旧调用）
+     *
+     * @deprecated 请使用 {@link #execute(String, String, Long)} 传入 tenantId 和 kbId
+     */
+    @Deprecated
+    public RagResponse execute(String userQuery) {
+        return execute(userQuery, null, null);
+    }
+
+    /** 向量检索（封装 LangChain4j EmbeddingStore，带 tenantId/kbId 元数据过滤） */
+    private List<RetrievedChunk> vectorSearch(String query, int topK, String tenantId, Long kbId) {
+        EmbeddingSearchRequest.EmbeddingSearchRequestBuilder requestBuilder = EmbeddingSearchRequest.builder()
                 .queryEmbedding(embeddingModel.embed(query).content())
                 .maxResults(topK)
-                .minScore(vectorThreshold)
-                .build();
-        List<EmbeddingMatch<TextSegment>> matches = embeddingStore.search(request).matches();
+                .minScore(vectorThreshold);
+
+        // 构建元数据过滤条件：tenantId AND kbId
+        Filter metadataFilter = buildMetadataFilter(tenantId, kbId);
+        if (metadataFilter != null) {
+            requestBuilder.filter(metadataFilter);
+        }
+
+        EmbeddingSearchResult<TextSegment> searchResult = embeddingStore.search(requestBuilder.build());
+        List<EmbeddingMatch<TextSegment>> matches = searchResult.matches();
 
         return matches.stream().map(match -> {
             TextSegment segment = match.embedded();
@@ -231,10 +275,34 @@ public class HybridRagPipeline {
                     .documentName(metadata.getString("documentName"))
                     .documentPath(metadata.getString("documentPath"))
                     .pageNumber(parseIntSafely(metadata.getString("pageNumber")))
+                    .tenantId(metadata.getString("tenantId"))
+                    .kbId(parseLongSafely(metadata.getString("kbId")))
                     .vectorScore(match.score())
                     .retrievalSource(RetrievedChunk.RetrievalSource.VECTOR_ONLY)
                     .build();
         }).collect(Collectors.toList());
+    }
+
+    /**
+     * 构建 LangChain4j 元数据过滤条件
+     *
+     * <p>当 tenantId 和 kbId 同时提供时，使用 AND 组合过滤；
+     * 只提供其中一个时，仅按该字段过滤；都不提供时不做过滤（兼容全局检索）。
+     */
+    private Filter buildMetadataFilter(String tenantId, Long kbId) {
+        if (tenantId == null && kbId == null) {
+            return null;
+        }
+
+        Filter filter = null;
+        if (tenantId != null) {
+            filter = MetadataFilterBuilder.metadataKey("tenantId").isEqualTo(tenantId);
+        }
+        if (kbId != null) {
+            Filter kbIdFilter = MetadataFilterBuilder.metadataKey("kbId").isEqualTo(String.valueOf(kbId));
+            filter = (filter != null) ? Filter.and(filter, kbIdFilter) : kbIdFilter;
+        }
+        return filter;
     }
 
     /** 合并检索结果到 Map（去重，保留最高向量得分） */
@@ -249,5 +317,10 @@ public class HybridRagPipeline {
     private Integer parseIntSafely(String value) {
         if (value == null) return null;
         try { return Integer.parseInt(value); } catch (NumberFormatException e) { return null; }
+    }
+
+    private Long parseLongSafely(String value) {
+        if (value == null) return null;
+        try { return Long.parseLong(value); } catch (NumberFormatException e) { return null; }
     }
 }

@@ -126,13 +126,14 @@ public class KnowledgeBaseController {
         }
 
         try {
-            int chunkCount = ingestService.ingestFile(file);
+            int chunkCount = ingestService.ingestFile(file, userId, kbId);
             log.info("文档上传完成 userId={} kbId={} file={} chunks={}",
                     userId, kbId, file.getOriginalFilename(), chunkCount);
             return ResponseEntity.ok(Map.of(
                     "message",    "文档上传成功",
                     "filename",   file.getOriginalFilename(),
-                    "chunkCount", chunkCount));
+                    "chunkCount", chunkCount,
+                    "kbId",       kbId));
         } catch (IOException e) {
             log.error("文档上传失败 kbId={} file={}: {}", kbId, file.getOriginalFilename(), e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)

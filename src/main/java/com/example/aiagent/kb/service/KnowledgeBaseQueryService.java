@@ -2,6 +2,7 @@ package com.example.aiagent.kb.service;
 
 import com.example.aiagent.rag.model.RagResponse;
 import com.example.aiagent.rag.pipeline.HybridRagPipeline;
+import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -13,7 +14,7 @@ import org.springframework.stereotype.Service;
  *
  * 在 HybridRagPipeline 基础上增加企业级特性：
  * 1. 置信度评估：低置信度时明确告知用户"未找到相关信息"
- * 2. 多租户隔离：确保只检索当前租户的文档
+ * 2. 多租户隔离：确保只检索当前租户的文档（tenantId + kbId 传递到向量检索和 BM25 过滤）
  * 3. 检索日志：记录每次查询用于效果分析
  */
 @Slf4j
@@ -34,10 +35,10 @@ public class KnowledgeBaseQueryService {
     ) {}
 
     /**
-     * 知识库问答（带置信度评估）
+     * 知识库问答（带置信度评估 + 多租户隔离）
      *
-     * @param tenantId  租户 ID（多租户隔离）
-     * @param kbId      知识库 ID
+     * @param tenantId  租户 ID（多租户隔离，传递到向量检索和 BM25 过滤）
+     * @param kbId      知识库 ID（按 KB 隔离过滤）
      * @param userId    用户 ID
      * @param question  用户问题
      */
@@ -50,8 +51,13 @@ public class KnowledgeBaseQueryService {
         MDC.put("userId",   userId);
         MDC.put("scenario", "kb_query");
 
+        // 设置检索上下文（供 Agent 对话场景的 HybridRagContentRetriever 使用）
+        HybridRagContentRetriever.setContext(
+                new HybridRagContentRetriever.RetrievalContext(tenantId, kbId));
+
         try {
-            RagResponse ragResponse = ragPipeline.execute(question);
+            // 传递 tenantId/kbId 到 Pipeline，确保向量检索和 BM25 按租户过滤
+            RagResponse ragResponse = ragPipeline.execute(question, tenantId, kbId);
 
             // 置信度评估：根据 Reranker 最高得分判断
             double confidence = ragResponse.getCitations().isEmpty() ? 0.0
@@ -73,6 +79,8 @@ public class KnowledgeBaseQueryService {
 
         } finally {
             MDC.remove("scenario");
+            // 清除检索上下文
+            HybridRagContentRetriever.clearContext();
         }
     }
 

@@ -64,6 +64,16 @@
              #{metadata}, #{tokenCount}, #{isActive}, NOW())
     </insert>
 
+    <!-- 查询所有激活切片（用于 BM25 索引恢复，分页加载） -->
+    <select id="findActiveChunksPage" resultMap="ChunkResultMap">
+        SELECT id, doc_id, kb_id, tenant_id, chunk_index, content, content_hash,
+               metadata, token_count, is_active, created_at
+        FROM kb_chunk
+        WHERE is_active = TRUE
+        ORDER BY id ASC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
     <!-- 物理删除文档的所有切片 -->
     <delete id="deleteByDocId">
         DELETE FROM kb_chunk WHERE doc_id = #{docId}
