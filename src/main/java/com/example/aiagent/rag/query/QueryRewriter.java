@@ -1,12 +1,13 @@
 package com.example.aiagent.rag.query;
 
 import dev.langchain4j.model.chat.ChatLanguageModel;
-import dev.langchain4j.model.input.PromptTemplate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.stream.Collectors;
 
 /**
@@ -31,14 +32,10 @@ public class QueryRewriter {
      * 让 LLM 生成一个假设性答案，用答案向量检索比用问题向量效果更好
      */
     public String generateHypotheticalDocument(String originalQuery) {
-        String prompt = """
-                请针对以下问题，生成一个详细的假设性答案文档（即使不确定答案也要生成）。
-                这个文档将用于检索真实答案，因此要覆盖关键术语和概念。
-
-                问题：%s
-
-                要求：长度约200字，使用专业术语，直接生成内容：
-                """.formatted(originalQuery);
+        String prompt = "请针对以下问题，生成一个详细的假设性答案文档（即使不确定答案也要生成）。\n"
+                + "这个文档将用于检索真实答案，因此要覆盖关键术语和概念。\n\n"
+                + "问题：" + originalQuery + "\n\n"
+                + "要求：长度约200字，使用专业术语，直接生成内容：";
 
         String result = chatModel.generate(prompt);
         log.debug("HyDE 生成假设文档，长度：{} chars", result.length());
@@ -50,13 +47,9 @@ public class QueryRewriter {
      * 将一个问题改写为多个不同表达，从多个语义角度检索
      */
     public List<String> rewriteMultiPerspective(String originalQuery, int numVariants) {
-        String prompt = """
-                将以下问题改写为 %d 个不同表达方式，以便从多个角度检索相关信息。
-
-                原始问题：%s
-
-                要求：保持语义不变，使用不同词汇和句式，每行一个，不要加编号：
-                """.formatted(numVariants, originalQuery);
+        String prompt = "将以下问题改写为 " + numVariants + " 个不同表达方式，以便从多个角度检索相关信息。\n\n"
+                + "原始问题：" + originalQuery + "\n\n"
+                + "要求：保持语义不变，使用不同词汇和句式，每行一个，不要加编号：";
 
         String response = chatModel.generate(prompt);
 
@@ -79,13 +72,9 @@ public class QueryRewriter {
      * 提取 BM25 检索用的关键词
      */
     public List<String> extractKeywords(String query) {
-        String prompt = """
-                从以下问题中提取最重要的检索关键词（实体名、专有名词、核心概念）。
-
-                问题：%s
-
-                要求：只提取名词、动词短语，每行一个关键词，最多8个，不要解释：
-                """.formatted(query);
+        String prompt = "从以下问题中提取最重要的检索关键词（实体名、专有名词、核心概念）。\n\n"
+                + "问题：" + query + "\n\n"
+                + "要求：只提取名词、动词短语，每行一个关键词，最多8个，不要解释：";
 
         String response = chatModel.generate(prompt);
 

@@ -1,9 +1,13 @@
 package com.example.aiagent.controller;
 
 import com.example.aiagent.agent.AgentFactory.StreamingChatAssistant;
+import com.example.aiagent.security.filter.PromptInjectionFilter;
+import com.example.aiagent.security.service.RateLimitService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -15,6 +19,8 @@ import java.io.IOException;
 /**
  * 流式对话接口（SSE，适合实时展示场景）
  * 前端用 EventSource 或 fetch + ReadableStream 接收
+ *
+ * 安全链路与 ChatController 相同：注入检测 → 限流 → LLM 调用
  */
 @Slf4j
 @RestController
@@ -23,11 +29,14 @@ import java.io.IOException;
 public class StreamingChatController {
 
     private final StreamingChatAssistant streamingChatAssistant;
+    private final PromptInjectionFilter promptInjectionFilter;
+    private final RateLimitService rateLimitService;
 
     /**
      * 流式对话（SSE 推送，字符逐步出现）
      *
      * GET /api/v1/chat/stream?sessionId=user-123&message=你好
+     * Header: Authorization: Bearer <token>
      *
      * 前端接收示例（JavaScript）：
      * const es = new EventSource(`/api/v1/chat/stream?sessionId=xxx&message=你好`);
@@ -37,16 +46,48 @@ public class StreamingChatController {
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter streamChat(
             @RequestParam String sessionId,
-            @RequestParam String message) {
+            @RequestParam String message,
+            @AuthenticationPrincipal String userId) {
 
-        // 120 秒超时（长文本生成可能需要较长时间）
         SseEmitter emitter = new SseEmitter(120_000L);
+        MDC.put("scenario", "stream_chat");
 
-        log.info("开始流式对话 sessionId={}", sessionId);
+        try {
+            // ── Step 1：Prompt 注入检测 ────────────────────
+            PromptInjectionFilter.FilterResult injectionCheck = promptInjectionFilter.check(message);
+            if (injectionCheck.blocked()) {
+                log.warn("流式对话 Prompt 注入被拦截 userId={}", userId);
+                emitter.send(SseEmitter.event()
+                        .name("error")
+                        .data(injectionCheck.reason()));
+                emitter.complete();
+                return emitter;
+            }
 
-        streamingChatAssistant.streamChat(sessionId, message)
+            // ── Step 2：限流校验 ──────────────────────────
+            RateLimitService.RateLimitResult rateLimit = rateLimitService.tryAcquire(userId);
+            if (!rateLimit.allowed()) {
+                log.warn("流式对话限流触发 userId={}", userId);
+                emitter.send(SseEmitter.event()
+                        .name("error")
+                        .data(rateLimit.reason()));
+                emitter.complete();
+                return emitter;
+            }
+
+        } catch (IOException e) {
+            emitter.completeWithError(e);
+            return emitter;
+        } finally {
+            MDC.remove("scenario");
+        }
+
+        // ── Step 3：LLM 流式调用 ──────────────────────────
+        log.info("开始流式对话 userId={} sessionId={}", userId, sessionId);
+        String sanitizedMessage = promptInjectionFilter.check(message).sanitizedInput();
+
+        streamingChatAssistant.streamChat(sessionId, sanitizedMessage)
                 .onNext(token -> {
-                    // 每生成一个 token 就立即推送给前端
                     try {
                         emitter.send(SseEmitter.event().data(token));
                     } catch (IOException e) {
@@ -55,19 +96,16 @@ public class StreamingChatController {
                     }
                 })
                 .onComplete(response -> {
-                    // 生成完毕，发送结束信号
                     try {
-                        emitter.send(SseEmitter.event()
-                                .name("done")
-                                .data("[DONE]"));
+                        emitter.send(SseEmitter.event().name("done").data("[DONE]"));
                         emitter.complete();
-                        log.info("流式对话完成 sessionId={}", sessionId);
+                        log.info("流式对话完成 userId={} sessionId={}", userId, sessionId);
                     } catch (IOException e) {
                         emitter.completeWithError(e);
                     }
                 })
                 .onError(error -> {
-                    log.error("流式对话出错 sessionId={}: {}", sessionId, error.getMessage());
+                    log.error("流式对话出错 userId={} sessionId={}: {}", userId, sessionId, error.getMessage());
                     emitter.completeWithError(error);
                 })
                 .start();

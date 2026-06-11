@@ -14,6 +14,12 @@ spring:
     password: ${PG_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
 
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true        # 已有数据库时自动打基线，不报错
+    validate-on-migrate: true        # 迁移前校验 checksum，防止文件被篡改
+
 mybatis:
   mapper-locations: classpath:mapper/*.xml      # XML 映射文件位置
   type-aliases-package: com.example.aiagent     # 实体类别名扫描包
@@ -76,6 +82,9 @@ rag:
     index-name: ${ES_INDEX:rag-documents}
     username: ${ES_USERNAME:}           # 留空表示无认证（开发环境）
     password: ${ES_PASSWORD:}
+    # IK 中文分词器（需安装插件：bin/elasticsearch-plugin install analysis-ik）
+    # 未安装时设为 false，自动使用 standard 分词器（英文效果好，中文效果较差）
+    ik-analyzer: ${ES_IK_ANALYZER:true}
 
 # 天气 API（OpenWeatherMap 免费版，申请地址：https://openweathermap.org/api）
 weather:
@@ -95,3 +104,17 @@ llm:
       custom:
         enabled: ${ALERT_CUSTOM_ENABLED:false}
         webhook: ${ALERT_CUSTOM_WEBHOOK:}
+
+# ==================== JWT 认证配置 ====================
+security:
+  jwt:
+    # 生产环境必须通过环境变量注入，至少 32 个字符
+    secret: ${JWT_SECRET:change-this-secret-key-in-production-min-32-chars}
+    expiration-seconds: ${JWT_EXPIRATION:86400}   # 默认 24 小时
+  rate-limit:
+    per-minute: ${RATE_LIMIT_PER_MINUTE:10}
+    per-day: ${RATE_LIMIT_PER_DAY:500}
+
+# 知识库置信度阈值
+kb:
+  confidence-threshold: ${KB_CONFIDENCE_THRESHOLD:0.6}

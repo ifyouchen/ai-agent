@@ -7,6 +7,9 @@ import com.example.aiagent.tool.entity.WeatherCache;
 import com.example.aiagent.tool.mapper.OrderMapper;
 import com.example.aiagent.tool.mapper.UserAccountMapper;
 import com.example.aiagent.tool.mapper.WeatherCacheMapper;
+import com.googlecode.aviator.AviatorEvaluator;
+import com.googlecode.aviator.AviatorEvaluatorInstance;
+import com.googlecode.aviator.Options;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.math.MathContext;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -41,6 +45,24 @@ public class BusinessTools {
 
     private static final DateTimeFormatter DATE_FMT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault());
+
+    /**
+     * Aviator 沙箱实例（全局复用，线程安全）
+     *
+     * 安全配置：
+     * - FORBIDDEN_INVOKE_REFLECT：禁止反射调用（防止代码注入）
+     * - 最大循环次数 10000，防止无限循环耗尽 CPU
+     * - 表达式长度限制 500 字符
+     */
+    private static final AviatorEvaluatorInstance AVIATOR = AviatorEvaluator.newInstance();
+    static {
+        AVIATOR.setOption(Options.FORBIDDEN_INVOKE_REFLECT, true);
+        AVIATOR.setOption(Options.MAX_LOOP_COUNT, 10000L);
+        AVIATOR.setOption(Options.OPTIMIZE_LEVEL, AviatorEvaluator.EVAL);
+    }
+
+    /** calculate 工具支持的最大表达式长度 */
+    private static final int MAX_EXPR_LENGTH = 500;
 
     private final OrderMapper orderMapper;
     private final WeatherCacheMapper weatherCacheMapper;
@@ -217,16 +239,83 @@ public class BusinessTools {
     // ----------------------------------------------------------------
 
     /**
-     * 执行数学计算
+     * 执行数学计算（基于 Aviator 表达式引擎，安全沙箱）
+     *
+     * 支持：
+     * - 四则运算：1 + 2 * 3 / 4 - 5
+     * - 幂运算：2 ** 10
+     * - 取模：17 % 3
+     * - 内置函数：math.sqrt(2)、math.abs(-5)、math.pow(2,10)、math.log(100)
+     * - 比较与逻辑：3 > 2 ? "大" : "小"
+     * - 大数精度：结果使用 BigDecimal，精确到 10 位小数
+     *
+     * 安全限制：
+     * - 禁止反射调用（无法执行任意 Java 代码）
+     * - 表达式最长 500 字符
+     * - 禁止访问 System / Runtime / Process 等危险类
      */
-    @Tool("执行数学计算，支持加减乘除和基本数学运算")
-    public String calculate(@P("数学表达式，如：1+2*3") String expression) {
+    @Tool("执行数学计算，支持加减乘除、幂运算、取模、math.sqrt/abs/pow/log 等函数")
+    public String calculate(@P("数学表达式，如：1+2*3、math.sqrt(144)、2**10") String expression) {
         log.info("执行计算: {}", expression);
+
+        if (expression == null || expression.isBlank()) {
+            return "表达式不能为空";
+        }
+        if (expression.length() > MAX_EXPR_LENGTH) {
+            return "表达式过长（最多 " + MAX_EXPR_LENGTH + " 字符）";
+        }
+
+        // 安全校验：拦截危险关键词
+        String lower = expression.toLowerCase();
+        for (String forbidden : new String[]{"system", "runtime", "process", "reflect",
+                "classloader", "exec(", "forname", "import", "class."}) {
+            if (lower.contains(forbidden)) {
+                log.warn("计算表达式包含危险关键词：{}", forbidden);
+                return "表达式包含不允许的内容";
+            }
+        }
+
         try {
-            // 生产环境建议引入 Aviator / Mvel 等安全的表达式引擎
-            return "计算结果：" + expression + " = (请接入真实计算引擎)";
+            Object raw = AVIATOR.execute(expression);
+            // 统一格式化输出
+            String result = formatCalcResult(raw);
+            log.info("计算完成: {} = {}", expression, result);
+            return String.format("计算结果：%s = %s", expression, result);
+
+        } catch (com.googlecode.aviator.exception.ExpressionSyntaxErrorException e) {
+            log.warn("表达式语法错误: {} -> {}", expression, e.getMessage());
+            return "表达式语法错误：" + e.getMessage()
+                    + "\n提示：支持 +、-、*、/、**（幂）、%（取模）及 math.sqrt/abs/pow/log 函数";
+        } catch (com.googlecode.aviator.exception.ExpressionRuntimeException e) {
+            log.warn("表达式运行时错误: {} -> {}", expression, e.getMessage());
+            return "计算错误（如除以零）：" + e.getMessage();
         } catch (Exception e) {
+            log.error("计算异常: {}", expression, e);
             return "计算失败：" + e.getMessage();
         }
+    }
+
+    /**
+     * 格式化计算结果
+     * - 整数：去掉小数点（1.0 → 1）
+     * - 浮点数：最多保留 10 位小数，去掉末尾零
+     * - 其他：直接 toString
+     */
+    private String formatCalcResult(Object raw) {
+        if (raw == null) return "null";
+        if (raw instanceof BigDecimal bd) {
+            return bd.stripTrailingZeros().toPlainString();
+        }
+        if (raw instanceof Double d) {
+            if (d == Math.floor(d) && !Double.isInfinite(d)) {
+                return String.valueOf(d.longValue());
+            }
+            BigDecimal bd = new BigDecimal(d, new MathContext(10));
+            return bd.stripTrailingZeros().toPlainString();
+        }
+        if (raw instanceof Long || raw instanceof Integer) {
+            return String.valueOf(raw);
+        }
+        return raw.toString();
     }
 }

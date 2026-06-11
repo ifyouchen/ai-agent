@@ -1,0 +1,70 @@
+# ============================================================
+# 生产环境配置（覆盖 application.yml 中的开发配置）
+# 激活方式：SPRING_PROFILES_ACTIVE=deepseek,prod
+#           或 --spring.profiles.active=deepseek,prod
+# ============================================================
+
+spring:
+  # 生产环境关闭 SQL 日志打印（开发期用的 StdOutImpl 会刷爆磁盘）
+  datasource:
+    hikari:
+      # 连接池调优
+      maximum-pool-size: 20          # 最大连接数（根据 PG max_connections 调整）
+      minimum-idle: 5                # 最小空闲连接
+      connection-timeout: 30000      # 获取连接超时（30s）
+      idle-timeout: 600000           # 空闲连接回收（10min）
+      max-lifetime: 1800000          # 连接最大存活（30min，小于 PG wait_timeout）
+      keepalive-time: 60000          # 心跳间隔（防止防火墙断开空闲连接）
+      pool-name: HikariPool-AiAgent
+
+  # 优雅关机：等待进行中的请求处理完再关闭
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+server:
+  shutdown: graceful     # 接收到 SIGTERM 后，先停止接收新请求，等待已有请求完成
+
+mybatis:
+  configuration:
+    # 生产环境关闭 SQL 打印（开发期的 StdOutImpl 会暴露完整 SQL 和参数）
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+# 生产日志：INFO 级别，关闭 LangChain4j DEBUG
+logging:
+  level:
+    root: WARN
+    com.example.aiagent: INFO
+    dev.langchain4j: WARN
+    org.springframework: WARN
+    org.mybatis: WARN
+  pattern:
+    # JSON 格式日志（ELK/Loki 直接解析）
+    console: '{"time":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%p","traceId":"%X{traceId:-}","userId":"%X{userId:-}","logger":"%logger{36}","msg":"%msg"}%n'
+
+# Actuator：生产环境只暴露 health 和 prometheus，详情需鉴权
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,info
+  endpoint:
+    health:
+      show-details: when-authorized   # 只有认证用户才能看详情
+      show-components: when-authorized
+  health:
+    redis:
+      enabled: true
+    db:
+      enabled: true
+
+# 告警阈值（生产环境适当收紧）
+llm:
+  observability:
+    alert:
+      error-rate-threshold: 0.03         # 生产环境 3% 就告警（开发期 5%）
+      p99-latency-threshold-ms: 20000    # 生产 P99 超 20s 告警
+      daily-budget-usd: ${LLM_DAILY_BUDGET:50.0}
+      error-rate-check-interval-ms: 60000
+      latency-check-interval-ms: 120000
+      budget-check-interval-ms: 1800000
+
