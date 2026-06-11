@@ -62,13 +62,6 @@
             <version>${langchain4j.version}</version>
         </dependency>
 
-        <!-- RAG：本地 Embedding 模型（无需额外 API）-->
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-embeddings-all-minilm-l6-v2</artifactId>
-            <version>${langchain4j.version}</version>
-        </dependency>
-
         <!-- 文档解析（PDF、Word、TXT 等） -->
         <dependency>
             <groupId>dev.langchain4j</groupId>

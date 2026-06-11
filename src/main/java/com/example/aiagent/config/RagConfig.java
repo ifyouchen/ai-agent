@@ -2,7 +2,7 @@ package com.example.aiagent.config;
 
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.model.embedding.onnx.allminilml6v2.AllMiniLmL6V2EmbeddingModel;
+import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.pgvector.PgVectorEmbeddingStore;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,14 +13,24 @@ import org.springframework.context.annotation.Configuration;
 public class RagConfig {
 
     /**
-     * 本地 Embedding 模型（ONNX 运行，无需额外 API）
-     * 向量维度：384
-     * 优点：免费、无网络依赖
-     * 如需更高精度可替换为 OpenAI text-embedding-3-small（维度 1536）
+     * Embedding 模型统一使用 DeepSeek
+     *
+     * 无论当前 profile 是 deepseek 还是 claude，Embedding 都走 DeepSeek API。
+     * 原因：Embedding 只负责把文字转成向量，和对话模型无关，
+     *       统一用一个服务更简单，也避免跨服务向量维度不一致的问题。
+     *
+     * DeepSeek 兼容 OpenAI Embedding 接口，直接用 OpenAiEmbeddingModel 即可。
+     * 向量维度：1536
      */
     @Bean
-    public EmbeddingModel embeddingModel() {
-        return new AllMiniLmL6V2EmbeddingModel();
+    public EmbeddingModel embeddingModel(
+            @Value("${deepseek.api-key:${DEEPSEEK_API_KEY:}}") String apiKey,
+            @Value("${deepseek.base-url:https://api.deepseek.com/v1}") String baseUrl) {
+        return OpenAiEmbeddingModel.builder()
+                .baseUrl(baseUrl)
+                .apiKey(apiKey)
+                .modelName("deepseek-embedding")
+                .build();
     }
 
     /**
@@ -42,7 +52,7 @@ public class RagConfig {
                 .user(user)
                 .password(password)
                 .table("knowledge_base")
-                .dimension(384)          // 与 AllMiniLmL6V2 的维度一致
+                .dimension(1536)         // DeepSeek / OpenAI embedding 维度
                 .createTable(true)
                 .build();
     }
