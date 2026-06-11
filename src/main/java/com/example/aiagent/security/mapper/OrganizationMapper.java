@@ -1,6 +1,5 @@
 package com.example.aiagent.security.mapper;
 
-import com.example.aiagent.security.entity.OrgMember;
 import com.example.aiagent.security.entity.Organization;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;

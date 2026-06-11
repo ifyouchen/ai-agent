@@ -11,18 +11,19 @@
         <result property="passwordHash" column="password_hash"/>
         <result property="roles"        column="roles"/>
         <result property="enabled"      column="enabled"/>
+        <result property="defaultOrgId" column="default_org_id"/>
         <result property="createdAt"    column="created_at"/>
         <result property="updatedAt"    column="updated_at"/>
     </resultMap>
 
     <select id="findByUsername" resultMap="SysUserResultMap">
-        SELECT id, user_id, username, password_hash, roles, enabled, created_at, updated_at
+        SELECT id, user_id, username, password_hash, roles, enabled, default_org_id, created_at, updated_at
         FROM biz_user_account
         WHERE username = #{username}
     </select>
 
     <select id="findByUserId" resultMap="SysUserResultMap">
-        SELECT id, user_id, username, password_hash, roles, enabled, created_at, updated_at
+        SELECT id, user_id, username, password_hash, roles, enabled, default_org_id, created_at, updated_at
         FROM biz_user_account
         WHERE user_id = #{userId}
     </select>
@@ -35,11 +36,11 @@
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO biz_user_account (
-            user_id, username, password_hash, roles, enabled,
+            user_id, username, password_hash, roles, enabled, default_org_id,
             balance, membership_level, points,
             created_at, updated_at
         ) VALUES (
-            #{userId}, #{username}, #{passwordHash}, #{roles}, #{enabled},
+            #{userId}, #{username}, #{passwordHash}, #{roles}, #{enabled}, #{defaultOrgId},
             0, 'NORMAL', 0,
             NOW(), NOW()
         )

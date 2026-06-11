@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.aiagent.security.mapper.OrgMemberMapper">
+
+    <resultMap id="orgMemberResultMap" type="com.example.aiagent.security.entity.OrgMember">
+        <id property="id" column="id"/>
+        <result property="orgId" column="org_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="role" column="role"/>
+        <result property="joinedAt" column="joined_at"/>
+    </resultMap>
+
+    <select id="findByOrgIdAndUserId" resultMap="orgMemberResultMap">
+        SELECT id, org_id, user_id, role, joined_at
+        FROM sys_org_member
+        WHERE org_id = #{orgId} AND user_id = #{userId}
+    </select>
+
+    <select id="findByOrgId" resultMap="orgMemberResultMap">
+        SELECT id, org_id, user_id, role, joined_at
+        FROM sys_org_member
+        WHERE org_id = #{orgId}
+        ORDER BY joined_at
+    </select>
+
+    <select id="findByUserId" resultMap="orgMemberResultMap">
+        SELECT id, org_id, user_id, role, joined_at
+        FROM sys_org_member
+        WHERE user_id = #{userId}
+        ORDER BY joined_at
+    </select>
+
+    <select id="findOrgIdsByUserId" resultType="java.lang.String">
+        SELECT org_id FROM sys_org_member WHERE user_id = #{userId}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sys_org_member (org_id, user_id, role)
+        VALUES (#{orgId}, #{userId}, #{role})
+        ON CONFLICT (org_id, user_id) DO UPDATE SET role = #{role}
+    </insert>
+
+    <update id="updateRole">
+        UPDATE sys_org_member SET role = #{role} WHERE org_id = #{orgId} AND user_id = #{userId}
+    </update>
+
+    <delete id="deleteByOrgIdAndUserId">
+        DELETE FROM sys_org_member WHERE org_id = #{orgId} AND user_id = #{userId}
+    </delete>
+
+    <select id="countByOrgId" resultType="int">
+        SELECT COUNT(*) FROM sys_org_member WHERE org_id = #{orgId}
+    </select>
+
+</mapper>
+

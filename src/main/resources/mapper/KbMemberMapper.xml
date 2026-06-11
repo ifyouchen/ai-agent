@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.aiagent.kb.mapper.KbMemberMapper">
+
+    <resultMap id="kbMemberResultMap" type="com.example.aiagent.kb.entity.KbMember">
+        <id property="id" column="id"/>
+        <result property="kbId" column="kb_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="role" column="role"/>
+        <result property="grantedBy" column="granted_by"/>
+        <result property="grantedAt" column="granted_at"/>
+    </resultMap>
+
+    <select id="findByKbIdAndUserId" resultMap="kbMemberResultMap">
+        SELECT id, kb_id, user_id, role, granted_by, granted_at
+        FROM kb_member
+        WHERE kb_id = #{kbId} AND user_id = #{userId}
+    </select>
+
+    <select id="findByKbId" resultMap="kbMemberResultMap">
+        SELECT id, kb_id, user_id, role, granted_by, granted_at
+        FROM kb_member
+        WHERE kb_id = #{kbId}
+        ORDER BY granted_at
+    </select>
+
+    <select id="findKbIdsByUserId" resultType="java.lang.Long">
+        SELECT kb_id FROM kb_member WHERE user_id = #{userId}
+    </select>
+
+    <select id="findRoleByKbIdAndUserId" resultType="java.lang.String">
+        SELECT role FROM kb_member WHERE kb_id = #{kbId} AND user_id = #{userId}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO kb_member (kb_id, user_id, role, granted_by)
+        VALUES (#{kbId}, #{userId}, #{role}, #{grantedBy})
+        ON CONFLICT (kb_id, user_id) DO UPDATE SET role = #{role}, granted_by = #{grantedBy}
+    </insert>
+
+    <update id="updateRole">
+        UPDATE kb_member SET role = #{role} WHERE kb_id = #{kbId} AND user_id = #{userId}
+    </update>
+
+    <delete id="deleteByKbIdAndUserId">
+        DELETE FROM kb_member WHERE kb_id = #{kbId} AND user_id = #{userId}
+    </delete>
+
+    <delete id="deleteByKbId">
+        DELETE FROM kb_member WHERE kb_id = #{kbId}
+    </delete>
+
+</mapper>
+

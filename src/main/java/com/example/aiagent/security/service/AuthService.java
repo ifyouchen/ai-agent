@@ -3,6 +3,7 @@ package com.example.aiagent.security.service;
 import com.example.aiagent.security.dto.AuthResponse;
 import com.example.aiagent.security.dto.LoginRequest;
 import com.example.aiagent.security.dto.RegisterRequest;
+import com.example.aiagent.security.entity.Organization;
 import com.example.aiagent.security.entity.SysUser;
 import com.example.aiagent.security.mapper.SysUserMapper;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +33,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
+    private final OrganizationService organizationService;
 
     /**
      * 用户登录
@@ -70,16 +72,21 @@ public class AuthService {
 
         String userId = UUID.randomUUID().toString().replace("-", "");
 
+        // ★ 关键变更：注册时自动创建个人组织
+        Organization personalOrg = organizationService.createPersonalOrganization(userId);
+
         SysUser user = SysUser.builder()
                 .userId(userId)
                 .username(request.username())
                 .passwordHash(passwordEncoder.encode(request.password()))
                 .roles("ROLE_USER")
                 .enabled(1)
+                .defaultOrgId(personalOrg.getOrgId())
                 .build();
 
         sysUserMapper.insert(user);
-        log.info("用户注册成功 userId={} username={}", userId, request.username());
+        log.info("用户注册成功 userId={} username={} defaultOrgId={}",
+                userId, request.username(), personalOrg.getOrgId());
 
         List<String> roles = user.getRoleList();
         String token = jwtService.generateToken(userId, request.username(), roles);

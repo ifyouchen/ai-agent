@@ -40,6 +40,9 @@ public class SysUser {
     /** 账号是否启用（0=禁用，1=启用） */
     private Integer enabled;
 
+    /** 默认组织 ID（注册时自动创建的个人组织） */
+    private String defaultOrgId;
+
     private Instant createdAt;
     private Instant updatedAt;
 
