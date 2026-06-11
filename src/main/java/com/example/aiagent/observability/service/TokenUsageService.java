@@ -1,8 +1,8 @@
 package com.example.aiagent.observability.service;
 
 import com.example.aiagent.observability.entity.TokenUsageRecord;
+import com.example.aiagent.observability.mapper.TokenUsageMapper;
 import com.example.aiagent.observability.model.LlmCallContext;
-import com.example.aiagent.observability.repository.TokenUsageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -25,7 +25,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class TokenUsageService {
 
-    private final TokenUsageRepository repository;
+    private final TokenUsageMapper tokenUsageMapper;
 
     /**
      * 异步写入 PostgreSQL（不阻塞 LLM 调用主链路）
@@ -51,7 +51,7 @@ public class TokenUsageService {
                     .calledAt(ctx.getStartTime() != null ? ctx.getStartTime() : Instant.now())
                     .build();
 
-            repository.save(record);
+            tokenUsageMapper.insert(record);
         } catch (Exception e) {
             // 写入失败不能影响主流程，只记录日志
             log.error("Token 用量写入 PostgreSQL 失败: {}", e.getMessage());
@@ -64,8 +64,8 @@ public class TokenUsageService {
     public BigDecimal getTodayTotalCost() {
         Instant todayStart = Instant.now().truncatedTo(ChronoUnit.DAYS);
         // 汇总所有模型今日费用
-        return repository.aggregateByModelSince(todayStart).stream()
-                .map(row -> (BigDecimal) row[3])
+        return tokenUsageMapper.aggregateByModelSince(todayStart).stream()
+                .map(row -> (BigDecimal) row.get("costUsd"))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
@@ -74,7 +74,7 @@ public class TokenUsageService {
      */
     public BigDecimal getUserTodayCost(String userId) {
         Instant todayStart = Instant.now().truncatedTo(ChronoUnit.DAYS);
-        return repository.sumCostByUserSince(userId, todayStart);
+        return tokenUsageMapper.sumCostByUserSince(userId, todayStart);
     }
 
     /**
@@ -82,15 +82,15 @@ public class TokenUsageService {
      */
     public List<Map<String, Object>> getModelCostReport(int days) {
         Instant since = Instant.now().minus(days, ChronoUnit.DAYS);
-        List<Object[]> rows = repository.aggregateByModelSince(since);
+        List<Map<String, Object>> rows = tokenUsageMapper.aggregateByModelSince(since);
 
         List<Map<String, Object>> report = new ArrayList<>();
-        for (Object[] row : rows) {
+        for (Map<String, Object> row : rows) {
             Map<String, Object> item = new LinkedHashMap<>();
-            item.put("modelName",    row[0]);
-            item.put("inputTokens",  row[1]);
-            item.put("outputTokens", row[2]);
-            item.put("costUsd",      row[3]);
+            item.put("modelName",    row.get("modelName"));
+            item.put("inputTokens",  row.get("inputTokens"));
+            item.put("outputTokens", row.get("outputTokens"));
+            item.put("costUsd",      row.get("costUsd"));
             report.add(item);
         }
         return report;
@@ -101,14 +101,14 @@ public class TokenUsageService {
      */
     public List<Map<String, Object>> getUserCostReport(int days) {
         Instant since = Instant.now().minus(days, ChronoUnit.DAYS);
-        List<Object[]> rows = repository.aggregateByUserSince(since);
+        List<Map<String, Object>> rows = tokenUsageMapper.aggregateByUserSince(since);
 
         List<Map<String, Object>> report = new ArrayList<>();
-        for (Object[] row : rows) {
+        for (Map<String, Object> row : rows) {
             Map<String, Object> item = new LinkedHashMap<>();
-            item.put("userId",      row[0]);
-            item.put("totalTokens", row[1]);
-            item.put("costUsd",     row[2]);
+            item.put("userId",      row.get("userId"));
+            item.put("totalTokens", row.get("totalTokens"));
+            item.put("costUsd",     row.get("costUsd"));
             report.add(item);
         }
         return report;
@@ -119,8 +119,8 @@ public class TokenUsageService {
      */
     public double getRecentErrorRate(int minutes) {
         Instant since = Instant.now().minus(minutes, ChronoUnit.MINUTES);
-        long errors = repository.countErrorsSince(since);
-        long total  = repository.countTotalSince(since);
+        long errors = tokenUsageMapper.countErrorsSince(since);
+        long total  = tokenUsageMapper.countTotalSince(since);
         return total == 0 ? 0.0 : (double) errors / total;
     }
 }

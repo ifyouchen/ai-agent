@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.aiagent.kb.mapper.RetrievalLogMapper">
+
+    <resultMap id="RetrievalLogResultMap" type="com.example.aiagent.kb.entity.RetrievalLog">
+        <id     property="id"             column="id"/>
+        <result property="tenantId"       column="tenant_id"/>
+        <result property="kbId"           column="kb_id"/>
+        <result property="sessionId"      column="session_id"/>
+        <result property="userId"         column="user_id"/>
+        <result property="query"          column="query"/>
+        <result property="rewrittenQuery" column="rewritten_query"/>
+        <result property="topChunks"      column="top_chunks"/>
+        <result property="topScore"       column="top_score"/>
+        <result property="answerType"     column="answer_type"/>
+        <result property="retrievalMs"    column="retrieval_ms"/>
+        <result property="rerankMs"       column="rerank_ms"/>
+        <result property="generateMs"     column="generate_ms"/>
+        <result property="totalMs"        column="total_ms"/>
+        <result property="createdAt"      column="created_at"/>
+    </resultMap>
+
+    <!-- 分页查询租户下的检索日志（按时间倒序） -->
+    <select id="findByTenantId" resultMap="RetrievalLogResultMap">
+        SELECT id, tenant_id, kb_id, session_id, user_id, query, rewritten_query,
+               top_chunks, top_score, answer_type, retrieval_ms, rerank_ms,
+               generate_ms, total_ms, created_at
+        FROM kb_retrieval_log
+        WHERE tenant_id = #{tenantId}
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- 查询知识库在指定时间之后的所有日志 -->
+    <select id="findByKbIdAndCreatedAtAfter" resultMap="RetrievalLogResultMap">
+        SELECT id, tenant_id, kb_id, session_id, user_id, query, rewritten_query,
+               top_chunks, top_score, answer_type, retrieval_ms, rerank_ms,
+               generate_ms, total_ms, created_at
+        FROM kb_retrieval_log
+        WHERE kb_id      = #{kbId}
+          AND created_at > #{since}
+        ORDER BY created_at DESC
+    </select>
+
+    <!-- 按 answerType 分组统计各类型数量，返回 answer_type 和 cnt -->
+    <select id="countGroupByAnswerType" resultType="map">
+        SELECT answer_type AS answer_type,
+               COUNT(*)    AS cnt
+        FROM kb_retrieval_log
+        WHERE tenant_id  = #{tenantId}
+          AND kb_id      = #{kbId}
+          AND created_at >= #{since}
+        GROUP BY answer_type
+    </select>
+
+    <!-- 统计指定时间之后的查询次数 -->
+    <select id="countByTenantIdAndKbIdAndCreatedAtAfter" resultType="long">
+        SELECT COUNT(*)
+        FROM kb_retrieval_log
+        WHERE tenant_id  = #{tenantId}
+          AND kb_id      = #{kbId}
+          AND created_at > #{since}
+    </select>
+
+    <!-- 查询知识库最近 N 条日志 -->
+    <select id="findRecentByKbId" resultMap="RetrievalLogResultMap">
+        SELECT id, tenant_id, kb_id, session_id, user_id, query, rewritten_query,
+               top_chunks, top_score, answer_type, retrieval_ms, rerank_ms,
+               generate_ms, total_ms, created_at
+        FROM kb_retrieval_log
+        WHERE tenant_id = #{tenantId}
+          AND kb_id     = #{kbId}
+        ORDER BY created_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 插入检索日志，时间戳由数据库 NOW() 填充 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO kb_retrieval_log
+            (tenant_id, kb_id, session_id, user_id, query, rewritten_query,
+             top_chunks, top_score, answer_type, retrieval_ms, rerank_ms,
+             generate_ms, total_ms, created_at)
+        VALUES
+            (#{tenantId}, #{kbId}, #{sessionId}, #{userId}, #{query}, #{rewrittenQuery},
+             #{topChunks}, #{topScore}, #{answerType}, #{retrievalMs}, #{rerankMs},
+             #{generateMs}, #{totalMs}, NOW())
+    </insert>
+
+</mapper>

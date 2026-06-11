@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.aiagent.kb.mapper.DocumentMapper">
+
+    <resultMap id="DocumentResultMap" type="com.example.aiagent.kb.entity.Document">
+        <id     property="id"             column="id"/>
+        <result property="kbId"           column="kb_id"/>
+        <result property="tenantId"       column="tenant_id"/>
+        <result property="name"           column="name"/>
+        <result property="docType"        column="doc_type"/>
+        <result property="filePath"       column="file_path"/>
+        <result property="fileSize"       column="file_size"/>
+        <result property="fileHash"       column="file_hash"/>
+        <result property="parseStatus"    column="parse_status"/>
+        <result property="parseError"     column="parse_error"/>
+        <result property="chunkCount"     column="chunk_count"/>
+        <result property="permissionLevel" column="permission_level"/>
+        <result property="allowedRoles"   column="allowed_roles"/>
+        <result property="createdBy"      column="created_by"/>
+        <result property="createdAt"      column="created_at"/>
+        <result property="updatedAt"      column="updated_at"/>
+        <result property="indexedAt"      column="indexed_at"/>
+    </resultMap>
+
+    <!-- 查询知识库下的所有文档 -->
+    <select id="findByKbId" resultMap="DocumentResultMap">
+        SELECT id, kb_id, tenant_id, name, doc_type, file_path, file_size, file_hash,
+               parse_status, parse_error, chunk_count, permission_level, allowed_roles,
+               created_by, created_at, updated_at, indexed_at
+        FROM kb_document
+        WHERE kb_id = #{kbId}
+        ORDER BY created_at DESC
+    </select>
+
+    <!-- 按知识库和处理状态查询文档 -->
+    <select id="findByKbIdAndParseStatus" resultMap="DocumentResultMap">
+        SELECT id, kb_id, tenant_id, name, doc_type, file_path, file_size, file_hash,
+               parse_status, parse_error, chunk_count, permission_level, allowed_roles,
+               created_by, created_at, updated_at, indexed_at
+        FROM kb_document
+        WHERE kb_id = #{kbId}
+          AND parse_status = #{parseStatus}
+        ORDER BY created_at ASC
+    </select>
+
+    <!-- 按文件 MD5 查询 -->
+    <select id="findByFileHash" resultMap="DocumentResultMap">
+        SELECT id, kb_id, tenant_id, name, doc_type, file_path, file_size, file_hash,
+               parse_status, parse_error, chunk_count, permission_level, allowed_roles,
+               created_by, created_at, updated_at, indexed_at
+        FROM kb_document
+        WHERE file_hash = #{fileHash}
+        LIMIT 1
+    </select>
+
+    <!-- 统计知识库内的文档数量 -->
+    <select id="countByKbId" resultType="long">
+        SELECT COUNT(*) FROM kb_document WHERE kb_id = #{kbId}
+    </select>
+
+    <!-- 按 ID 查询单个文档 -->
+    <select id="findById" resultMap="DocumentResultMap">
+        SELECT id, kb_id, tenant_id, name, doc_type, file_path, file_size, file_hash,
+               parse_status, parse_error, chunk_count, permission_level, allowed_roles,
+               created_by, created_at, updated_at, indexed_at
+        FROM kb_document
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <!-- 插入文档，时间戳由数据库 NOW() 填充 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO kb_document
+            (kb_id, tenant_id, name, doc_type, file_path, file_size, file_hash,
+             parse_status, parse_error, chunk_count, permission_level, allowed_roles,
+             created_by, created_at, updated_at)
+        VALUES
+            (#{kbId}, #{tenantId}, #{name}, #{docType}, #{filePath}, #{fileSize}, #{fileHash},
+             #{parseStatus}, #{parseError}, #{chunkCount}, #{permissionLevel}, #{allowedRoles},
+             #{createdBy}, NOW(), NOW())
+    </insert>
+
+    <!-- 更新文档处理状态 -->
+    <update id="updateParseStatus">
+        UPDATE kb_document
+        SET parse_status = #{parseStatus},
+            updated_at   = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- 更新文档处理状态并记录错误信息 -->
+    <update id="updateParseStatusWithError">
+        UPDATE kb_document
+        SET parse_status = #{parseStatus},
+            parse_error  = #{parseError},
+            updated_at   = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- 删除文档 -->
+    <delete id="deleteById">
+        DELETE FROM kb_document WHERE id = #{id}
+    </delete>
+
+</mapper>

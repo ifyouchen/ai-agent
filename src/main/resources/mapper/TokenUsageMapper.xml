@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.aiagent.observability.mapper.TokenUsageMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO llm_token_usage (
+            trace_id, session_id, user_id, model_name, scenario,
+            input_tokens, output_tokens, total_tokens, cost_usd,
+            duration_ms, success, error_message, input_snippet, output_snippet,
+            called_at
+        ) VALUES (
+            #{traceId}, #{sessionId}, #{userId}, #{modelName}, #{scenario},
+            #{inputTokens}, #{outputTokens}, #{totalTokens}, #{costUsd},
+            #{durationMs}, #{success}, #{errorMessage}, #{inputSnippet}, #{outputSnippet},
+            NOW()
+        )
+    </insert>
+
+    <select id="sumCostByUserSince" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(cost_usd), 0)
+        FROM llm_token_usage
+        WHERE user_id = #{userId}
+          AND called_at &gt;= #{since}
+    </select>
+
+    <select id="sumTokensByUserSince" resultType="java.lang.Long">
+        SELECT COALESCE(SUM(total_tokens), 0)
+        FROM llm_token_usage
+        WHERE user_id = #{userId}
+          AND called_at &gt;= #{since}
+    </select>
+
+    <select id="aggregateByModelSince" resultType="java.util.Map">
+        SELECT
+            model_name    AS modelName,
+            SUM(input_tokens)  AS inputTokens,
+            SUM(output_tokens) AS outputTokens,
+            SUM(cost_usd)      AS costUsd
+        FROM llm_token_usage
+        WHERE called_at &gt;= #{since}
+        GROUP BY model_name
+    </select>
+
+    <select id="aggregateByUserSince" resultType="java.util.Map">
+        SELECT
+            user_id           AS userId,
+            SUM(total_tokens) AS totalTokens,
+            SUM(cost_usd)     AS costUsd
+        FROM llm_token_usage
+        WHERE called_at &gt;= #{since}
+        GROUP BY user_id
+        ORDER BY SUM(cost_usd) DESC
+    </select>
+
+    <select id="countErrorsSince" resultType="long">
+        SELECT COUNT(*)
+        FROM llm_token_usage
+        WHERE success = false
+          AND called_at &gt;= #{since}
+    </select>
+
+    <select id="countTotalSince" resultType="long">
+        SELECT COUNT(*)
+        FROM llm_token_usage
+        WHERE called_at &gt;= #{since}
+    </select>
+
+</mapper>

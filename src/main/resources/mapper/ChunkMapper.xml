@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.aiagent.kb.mapper.ChunkMapper">
+
+    <resultMap id="ChunkResultMap" type="com.example.aiagent.kb.entity.Chunk">
+        <id     property="id"           column="id"/>
+        <result property="docId"        column="doc_id"/>
+        <result property="kbId"         column="kb_id"/>
+        <result property="tenantId"     column="tenant_id"/>
+        <result property="chunkIndex"   column="chunk_index"/>
+        <result property="content"      column="content"/>
+        <result property="contentHash"  column="content_hash"/>
+        <result property="metadata"     column="metadata"/>
+        <result property="tokenCount"   column="token_count"/>
+        <result property="isActive"     column="is_active"/>
+        <result property="createdAt"    column="created_at"/>
+    </resultMap>
+
+    <!-- 查询文档的所有切片 -->
+    <select id="findByDocId" resultMap="ChunkResultMap">
+        SELECT id, doc_id, kb_id, tenant_id, chunk_index, content, content_hash,
+               metadata, token_count, is_active, created_at
+        FROM kb_chunk
+        WHERE doc_id = #{docId}
+        ORDER BY chunk_index ASC
+    </select>
+
+    <!-- 查询文档中指定激活状态的切片 -->
+    <select id="findByDocIdAndIsActive" resultMap="ChunkResultMap">
+        SELECT id, doc_id, kb_id, tenant_id, chunk_index, content, content_hash,
+               metadata, token_count, is_active, created_at
+        FROM kb_chunk
+        WHERE doc_id   = #{docId}
+          AND is_active = #{isActive}
+        ORDER BY chunk_index ASC
+    </select>
+
+    <!-- 统计知识库中激活切片数量 -->
+    <select id="countByKbIdAndIsActive" resultType="long">
+        SELECT COUNT(*) FROM kb_chunk
+        WHERE kb_id    = #{kbId}
+          AND is_active = #{isActive}
+    </select>
+
+    <!-- 按知识库查询所有激活切片 -->
+    <select id="findActiveByKbId" resultMap="ChunkResultMap">
+        SELECT id, doc_id, kb_id, tenant_id, chunk_index, content, content_hash,
+               metadata, token_count, is_active, created_at
+        FROM kb_chunk
+        WHERE kb_id    = #{kbId}
+          AND is_active = TRUE
+        ORDER BY doc_id ASC, chunk_index ASC
+    </select>
+
+    <!-- 插入切片，时间戳由数据库 NOW() 填充 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO kb_chunk
+            (doc_id, kb_id, tenant_id, chunk_index, content, content_hash,
+             metadata, token_count, is_active, created_at)
+        VALUES
+            (#{docId}, #{kbId}, #{tenantId}, #{chunkIndex}, #{content}, #{contentHash},
+             #{metadata}, #{tokenCount}, #{isActive}, NOW())
+    </insert>
+
+    <!-- 物理删除文档的所有切片 -->
+    <delete id="deleteByDocId">
+        DELETE FROM kb_chunk WHERE doc_id = #{docId}
+    </delete>
+
+</mapper>

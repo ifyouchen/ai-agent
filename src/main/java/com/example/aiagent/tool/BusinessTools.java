@@ -4,9 +4,9 @@ import com.example.aiagent.tool.client.WeatherApiClient;
 import com.example.aiagent.tool.entity.Order;
 import com.example.aiagent.tool.entity.UserAccount;
 import com.example.aiagent.tool.entity.WeatherCache;
-import com.example.aiagent.tool.repository.OrderRepository;
-import com.example.aiagent.tool.repository.UserAccountRepository;
-import com.example.aiagent.tool.repository.WeatherCacheRepository;
+import com.example.aiagent.tool.mapper.OrderMapper;
+import com.example.aiagent.tool.mapper.UserAccountMapper;
+import com.example.aiagent.tool.mapper.WeatherCacheMapper;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.RequiredArgsConstructor;
@@ -42,9 +42,9 @@ public class BusinessTools {
     private static final DateTimeFormatter DATE_FMT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault());
 
-    private final OrderRepository orderRepository;
-    private final WeatherCacheRepository weatherCacheRepository;
-    private final UserAccountRepository userAccountRepository;
+    private final OrderMapper orderMapper;
+    private final WeatherCacheMapper weatherCacheMapper;
+    private final UserAccountMapper userAccountMapper;
     private final WeatherApiClient weatherApiClient;
 
     // ----------------------------------------------------------------
@@ -59,9 +59,9 @@ public class BusinessTools {
         log.info("查询订单: {}", orderId);
         try {
             // 同时支持 "#12345" 和 "12345" 两种格式
-            Optional<Order> orderOpt = orderRepository.findByOrderNo(orderId);
+            Optional<Order> orderOpt = orderMapper.findByOrderNo(orderId);
             if (orderOpt.isEmpty() && !orderId.startsWith("#")) {
-                orderOpt = orderRepository.findByOrderNo("#" + orderId);
+                orderOpt = orderMapper.findByOrderNo("#" + orderId);
             }
 
             if (orderOpt.isEmpty()) {
@@ -119,7 +119,7 @@ public class BusinessTools {
             // 1. 先查 30 分钟内的有效缓存
             Instant cacheThreshold = Instant.now().minus(WEATHER_CACHE_MINUTES, ChronoUnit.MINUTES);
             Optional<WeatherCache> cached =
-                    weatherCacheRepository.findByCityAndUpdatedAtAfter(city, cacheThreshold);
+                    weatherCacheMapper.findByCityAndUpdatedAtAfter(city, cacheThreshold);
 
             if (cached.isPresent()) {
                 log.debug("命中天气缓存，city={}", city);
@@ -130,14 +130,14 @@ public class BusinessTools {
             WeatherApiClient.WeatherResult result = weatherApiClient.fetchWeather(city);
             if (result != null) {
                 // 更新或新建缓存
-                WeatherCache cache = weatherCacheRepository.findByCity(city)
+                WeatherCache cache = weatherCacheMapper.findByCity(city)
                         .orElseGet(() -> WeatherCache.builder().city(city).build());
                 cache.setWeatherDesc(result.getDescription());
                 cache.setTemperature(BigDecimal.valueOf(result.getTemperature()));
                 cache.setHumidity(result.getHumidity());
                 cache.setWind(BigDecimal.valueOf(result.getWindSpeed()));
                 cache.setUpdatedAt(Instant.now());
-                weatherCacheRepository.save(cache);
+                weatherCacheMapper.insertOrUpdate(cache);
 
                 log.info("天气 API 成功，city={}，desc={}", city, result.getDescription());
                 return String.format("%s：%s，气温 %.1f°C，湿度 %d%%，风速 %.1f m/s",
@@ -146,7 +146,7 @@ public class BusinessTools {
             }
 
             // 3. API 失败：尝试返回过期缓存（比完全没有数据好）
-            Optional<WeatherCache> staleCache = weatherCacheRepository.findByCity(city);
+            Optional<WeatherCache> staleCache = weatherCacheMapper.findByCity(city);
             if (staleCache.isPresent()) {
                 log.warn("API 不可用，返回过期缓存，city={}", city);
                 WeatherCache w = staleCache.get();
@@ -184,7 +184,7 @@ public class BusinessTools {
     public String queryUserAccount(@P("用户ID") String userId) {
         log.info("查询用户账户: {}", userId);
         try {
-            Optional<UserAccount> accountOpt = userAccountRepository.findByUserId(userId);
+            Optional<UserAccount> accountOpt = userAccountMapper.findByUserId(userId);
             if (accountOpt.isEmpty()) {
                 return String.format("未找到用户 %s 的账户信息，请确认用户 ID 是否正确。", userId);
             }

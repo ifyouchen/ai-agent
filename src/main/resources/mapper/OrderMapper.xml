@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.aiagent.tool.mapper.OrderMapper">
+
+    <resultMap id="OrderResultMap" type="com.example.aiagent.tool.entity.Order">
+        <id     property="id"              column="id"/>
+        <result property="orderNo"         column="order_no"/>
+        <result property="status"          column="status"/>
+        <result property="amount"          column="amount"/>
+        <result property="productName"     column="product_name"/>
+        <result property="shippingNo"      column="shipping_no"/>
+        <result property="shippingCompany" column="shipping_company"/>
+        <result property="expectedArrival" column="expected_arrival"/>
+        <result property="userId"          column="user_id"/>
+        <result property="createdAt"       column="created_at"/>
+        <result property="updatedAt"       column="updated_at"/>
+    </resultMap>
+
+    <select id="findByOrderNo" resultMap="OrderResultMap">
+        SELECT *
+        FROM biz_order
+        WHERE order_no = #{orderNo}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO biz_order (
+            order_no, status, amount, product_name,
+            shipping_no, shipping_company, expected_arrival,
+            user_id, created_at, updated_at
+        ) VALUES (
+            #{orderNo}, #{status}, #{amount}, #{productName},
+            #{shippingNo}, #{shippingCompany}, #{expectedArrival},
+            #{userId}, NOW(), NOW()
+        )
+    </insert>
+
+</mapper>

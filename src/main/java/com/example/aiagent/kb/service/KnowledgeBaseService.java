@@ -3,13 +3,12 @@ package com.example.aiagent.kb.service;
 import com.example.aiagent.kb.entity.Document;
 import com.example.aiagent.kb.entity.KnowledgeBase;
 import com.example.aiagent.kb.entity.RetrievalLog;
-import com.example.aiagent.kb.repository.ChunkRepository;
-import com.example.aiagent.kb.repository.DocumentRepository;
-import com.example.aiagent.kb.repository.KnowledgeBaseRepository;
-import com.example.aiagent.kb.repository.RetrievalLogRepository;
+import com.example.aiagent.kb.mapper.ChunkMapper;
+import com.example.aiagent.kb.mapper.DocumentMapper;
+import com.example.aiagent.kb.mapper.KnowledgeBaseMapper;
+import com.example.aiagent.kb.mapper.RetrievalLogMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,10 +31,10 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class KnowledgeBaseService {
 
-    private final KnowledgeBaseRepository kbRepository;
-    private final DocumentRepository      documentRepository;
-    private final ChunkRepository         chunkRepository;
-    private final RetrievalLogRepository  retrievalLogRepository;
+    private final KnowledgeBaseMapper kbMapper;
+    private final DocumentMapper      documentMapper;
+    private final ChunkMapper         chunkMapper;
+    private final RetrievalLogMapper  retrievalLogMapper;
 
     // ====================================================================
     // 知识库管理
@@ -54,7 +53,7 @@ public class KnowledgeBaseService {
     public KnowledgeBase createKnowledgeBase(String tenantId, String name, String description) {
         log.info("创建知识库 tenantId={} name={}", tenantId, name);
 
-        kbRepository.findByTenantIdAndName(tenantId, name).ifPresent(existing -> {
+        kbMapper.findByTenantIdAndName(tenantId, name).ifPresent(existing -> {
             throw new IllegalArgumentException(
                     String.format("知识库「%s」在租户 %s 下已存在（id=%d）", name, tenantId, existing.getId()));
         });
@@ -65,9 +64,9 @@ public class KnowledgeBaseService {
                 .description(description)
                 .build();
 
-        KnowledgeBase saved = kbRepository.save(kb);
-        log.info("知识库创建成功 id={} tenantId={} name={}", saved.getId(), tenantId, name);
-        return saved;
+        kbMapper.insert(kb);
+        log.info("知识库创建成功 id={} tenantId={} name={}", kb.getId(), tenantId, name);
+        return kb;
     }
 
     /**
@@ -75,7 +74,7 @@ public class KnowledgeBaseService {
      */
     @Transactional(readOnly = true)
     public List<KnowledgeBase> listKnowledgeBases(String tenantId) {
-        return kbRepository.findByTenantId(tenantId);
+        return kbMapper.findByTenantId(tenantId);
     }
 
     /**
@@ -85,7 +84,7 @@ public class KnowledgeBaseService {
      */
     @Transactional(readOnly = true)
     public KnowledgeBase getKnowledgeBase(String tenantId, Long kbId) {
-        KnowledgeBase kb = kbRepository.findById(kbId)
+        KnowledgeBase kb = kbMapper.findById(kbId)
                 .orElseThrow(() -> new IllegalArgumentException("知识库不存在：kbId=" + kbId));
 
         if (!kb.getTenantId().equals(tenantId)) {
@@ -108,18 +107,20 @@ public class KnowledgeBaseService {
         log.info("删除知识库 id={} tenantId={} name={}", kbId, tenantId, kb.getName());
 
         // 1. 查出该知识库下所有文档
-        List<Document> docs = documentRepository.findByKbId(kbId);
+        List<Document> docs = documentMapper.findByKbId(kbId);
 
         // 2. 逐文档删除切片（避免单次大批量 DELETE 锁表）
         for (Document doc : docs) {
-            chunkRepository.deleteByDocId(doc.getId());
+            chunkMapper.deleteByDocId(doc.getId());
         }
 
         // 3. 批量删除文档
-        documentRepository.deleteAll(docs);
+        for (Document doc : docs) {
+            documentMapper.deleteById(doc.getId());
+        }
 
         // 4. 删除知识库
-        kbRepository.delete(kb);
+        kbMapper.deleteById(kbId);
         log.info("知识库删除完成 id={} 共删除文档 {} 个", kbId, docs.size());
     }
 
@@ -136,7 +137,7 @@ public class KnowledgeBaseService {
     public List<Document> getDocuments(String tenantId, Long kbId) {
         // 先校验知识库归属
         getKnowledgeBase(tenantId, kbId);
-        return documentRepository.findByKbId(kbId);
+        return documentMapper.findByKbId(kbId);
     }
 
     /**
@@ -148,7 +149,7 @@ public class KnowledgeBaseService {
      */
     @Transactional
     public void deleteDocument(String tenantId, Long docId) {
-        Document doc = documentRepository.findById(docId)
+        Document doc = documentMapper.findById(docId)
                 .orElseThrow(() -> new IllegalArgumentException("文档不存在：docId=" + docId));
 
         if (!doc.getTenantId().equals(tenantId)) {
@@ -159,16 +160,15 @@ public class KnowledgeBaseService {
         log.info("删除文档 docId={} kbId={} name={}", docId, doc.getKbId(), doc.getName());
 
         // 1. 删除切片
-        chunkRepository.deleteByDocId(docId);
+        chunkMapper.deleteByDocId(docId);
 
         // 2. 删除文档
-        documentRepository.delete(doc);
+        documentMapper.deleteById(docId);
 
         // 3. 更新知识库 docCount（减 1，最小为 0）
-        kbRepository.findById(doc.getKbId()).ifPresent(kb -> {
+        kbMapper.findById(doc.getKbId()).ifPresent(kb -> {
             int newCount = Math.max(0, kb.getDocCount() - 1);
-            kb.setDocCount(newCount);
-            kbRepository.save(kb);
+            kbMapper.updateDocCount(kb.getId(), newCount);
         });
 
         log.info("文档删除完成 docId={}", docId);
@@ -208,7 +208,7 @@ public class KnowledgeBaseService {
                     .totalMs(totalMs)
                     .build();
 
-            retrievalLogRepository.save(log);
+            retrievalLogMapper.insert(log);
         } catch (Exception e) {
             // 日志记录失败不应影响主流程，仅打印警告
             KnowledgeBaseService.log.warn("检索日志记录失败 tenantId={} kbId={}: {}",
@@ -238,25 +238,25 @@ public class KnowledgeBaseService {
 
         Instant sevenDaysAgo = Instant.now().minus(7, ChronoUnit.DAYS);
 
-        long docCount   = documentRepository.countByKbId(kbId);
-        long chunkCount = chunkRepository.countByKbIdAndIsActive(kbId, true);
-        long recentQueries = retrievalLogRepository
+        long docCount   = documentMapper.countByKbId(kbId);
+        long chunkCount = chunkMapper.countByKbIdAndIsActive(kbId, true);
+        long recentQueries = retrievalLogMapper
                 .countByTenantIdAndKbIdAndCreatedAtAfter(tenantId, kbId, sevenDaysAgo);
 
         // 按 answerType 分组统计
-        List<Object[]> answerTypeRows = retrievalLogRepository
+        List<Map<String, Object>> answerTypeRows = retrievalLogMapper
                 .countGroupByAnswerType(tenantId, kbId, sevenDaysAgo);
 
         Map<String, Long> answerStats = new HashMap<>();
-        for (Object[] row : answerTypeRows) {
-            String type  = row[0] != null ? row[0].toString() : "UNKNOWN";
-            Long   count = ((Number) row[1]).longValue();
+        for (Map<String, Object> row : answerTypeRows) {
+            String type  = row.get("answer_type") != null ? row.get("answer_type").toString() : "UNKNOWN";
+            Long   count = ((Number) row.get("cnt")).longValue();
             answerStats.put(type, count);
         }
 
         // 获取最近 5 条查询记录摘要
-        List<RetrievalLog> recentLogs = retrievalLogRepository
-                .findRecentByKbId(tenantId, kbId, PageRequest.of(0, 5));
+        List<RetrievalLog> recentLogs = retrievalLogMapper
+                .findRecentByKbId(tenantId, kbId, 5);
 
         List<Map<String, Object>> recentLogSummary = recentLogs.stream()
                 .map(l -> {

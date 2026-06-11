@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.aiagent.kb.mapper.KnowledgeBaseMapper">
+
+    <resultMap id="KnowledgeBaseResultMap" type="com.example.aiagent.kb.entity.KnowledgeBase">
+        <id     property="id"          column="id"/>
+        <result property="tenantId"    column="tenant_id"/>
+        <result property="name"        column="name"/>
+        <result property="description" column="description"/>
+        <result property="embedModel"  column="embed_model"/>
+        <result property="chunkConfig" column="chunk_config"/>
+        <result property="status"      column="status"/>
+        <result property="docCount"    column="doc_count"/>
+        <result property="createdBy"   column="created_by"/>
+        <result property="createdAt"   column="created_at"/>
+        <result property="updatedAt"   column="updated_at"/>
+    </resultMap>
+
+    <!-- 查询租户下的所有知识库 -->
+    <select id="findByTenantId" resultMap="KnowledgeBaseResultMap">
+        SELECT id, tenant_id, name, description, embed_model, chunk_config,
+               status, doc_count, created_by, created_at, updated_at
+        FROM kb_knowledge_base
+        WHERE tenant_id = #{tenantId}
+        ORDER BY created_at DESC
+    </select>
+
+    <!-- 按租户和名称精确查询 -->
+    <select id="findByTenantIdAndName" resultMap="KnowledgeBaseResultMap">
+        SELECT id, tenant_id, name, description, embed_model, chunk_config,
+               status, doc_count, created_by, created_at, updated_at
+        FROM kb_knowledge_base
+        WHERE tenant_id = #{tenantId}
+          AND name = #{name}
+        LIMIT 1
+    </select>
+
+    <!-- 查询租户下指定状态的知识库 -->
+    <select id="findByTenantIdAndStatus" resultMap="KnowledgeBaseResultMap">
+        SELECT id, tenant_id, name, description, embed_model, chunk_config,
+               status, doc_count, created_by, created_at, updated_at
+        FROM kb_knowledge_base
+        WHERE tenant_id = #{tenantId}
+          AND status = #{status}
+        ORDER BY created_at DESC
+    </select>
+
+    <!-- 按 ID 查询单个知识库 -->
+    <select id="findById" resultMap="KnowledgeBaseResultMap">
+        SELECT id, tenant_id, name, description, embed_model, chunk_config,
+               status, doc_count, created_by, created_at, updated_at
+        FROM kb_knowledge_base
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <!-- 插入知识库，时间戳由数据库 NOW() 填充 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO kb_knowledge_base
+            (tenant_id, name, description, embed_model, chunk_config,
+             status, doc_count, created_by, created_at, updated_at)
+        VALUES
+            (#{tenantId}, #{name}, #{description}, #{embedModel}, #{chunkConfig},
+             #{status}, #{docCount}, #{createdBy}, NOW(), NOW())
+    </insert>
+
+    <!-- 更新文档计数 -->
+    <update id="updateDocCount">
+        UPDATE kb_knowledge_base
+        SET doc_count  = #{docCount},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- 删除知识库 -->
+    <delete id="deleteById">
+        DELETE FROM kb_knowledge_base WHERE id = #{id}
+    </delete>
+
+</mapper>
