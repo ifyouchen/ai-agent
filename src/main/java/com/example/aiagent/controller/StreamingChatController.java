@@ -4,7 +4,10 @@ import com.example.aiagent.agent.AgentFactory.StreamingChatAssistant;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -42,7 +45,7 @@ public class StreamingChatController {
         log.info("开始流式对话 sessionId={}", sessionId);
 
         streamingChatAssistant.streamChat(sessionId, message)
-                .onPartialResponse(token -> {
+                .onNext(token -> {
                     // 每生成一个 token 就立即推送给前端
                     try {
                         emitter.send(SseEmitter.event().data(token));
@@ -51,7 +54,7 @@ public class StreamingChatController {
                         emitter.completeWithError(e);
                     }
                 })
-                .onCompleteResponse(response -> {
+                .onComplete(response -> {
                     // 生成完毕，发送结束信号
                     try {
                         emitter.send(SseEmitter.event()

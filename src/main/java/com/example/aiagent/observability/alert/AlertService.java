@@ -84,15 +84,25 @@ public class AlertService {
 
     /**
      * 每2分钟检查 P99 延迟
+     *
+     * 注意：meterRegistry.find().timer() 返回 @Nullable Timer，不是 Optional，
+     * 需要先判空再使用。P99 通过 takeSnapshot().percentile() 读取。
      */
     @Scheduled(fixedRateString = "${llm.observability.alert.latency-check-interval-ms:120000}")
     public void checkP99Latency() {
         try {
-            // 从 Micrometer 读取 P99 值
-            double p99Ms = meterRegistry.find("llm_call_duration_seconds")
-                    .timer()
-                    .map(t -> t.percentile(0.99, TimeUnit.MILLISECONDS))
-                    .orElse(0.0);
+            // find().timer() 返回可能为 null 的 Timer，需要手动判空
+            io.micrometer.core.instrument.Timer timer =
+                    meterRegistry.find("llm_call_duration_seconds").timer();
+
+            if (timer == null) {
+                log.debug("P99 延迟检查跳过：指标尚未产生数据");
+                return;
+            }
+
+            // takeSnapshot() 获取快照，percentile() 返回的是秒，乘以 1000 换算成毫秒
+            double p99Ms = timer.takeSnapshot()
+                    .percentile(0.99, TimeUnit.MILLISECONDS);
 
             if (p99Ms > p99LatencyThresholdMs) {
                 sendAlert("LLM_HIGH_P99_LATENCY",
@@ -100,21 +110,22 @@ public class AlertService {
                                 p99Ms, p99LatencyThresholdMs));
             }
         } catch (Exception e) {
-            log.debug("P99 延迟检查失败（可能还没有数据）: {}", e.getMessage());
+            log.debug("P99 延迟检查失败: {}", e.getMessage());
         }
     }
 
     /**
      * 每30分钟检查日费用预算
+     *
+     * 注意：Counter.count() 是累计值（应用启动到现在的总量），
+     * 不能直接当"今日费用"用。真正的今日费用应从 MySQL 查询。
+     * 这里保留 Prometheus 侧的快速检查作为辅助，精确数据用 TokenUsageService。
      */
     @Scheduled(fixedRateString = "${llm.observability.alert.budget-check-interval-ms:1800000}")
     public void checkDailyBudget() {
         try {
-            // 从 Prometheus 指标读取今日累计费用
-            double todayCost = meterRegistry.find("llm_cost_usd_total")
-                    .counters().stream()
-                    .mapToDouble(c -> c.count())
-                    .sum();
+            // 从 MySQL 查询今日精确费用（比从 Prometheus Counter 读取更准确）
+            double todayCost = tokenUsageService.getTodayTotalCost().doubleValue();
 
             if (todayCost > dailyBudgetUsd) {
                 sendAlert("LLM_BUDGET_EXCEEDED",

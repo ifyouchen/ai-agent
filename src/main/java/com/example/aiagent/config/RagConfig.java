@@ -43,7 +43,7 @@ public class RagConfig {
                 .password(password)
                 .table("knowledge_base")
                 .dimension(384)          // 与 AllMiniLmL6V2 的维度一致
-                .createTableIfNotExists(true)
+                .createTable(true)
                 .build();
     }
 

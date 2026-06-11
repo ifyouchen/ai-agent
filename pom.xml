@@ -90,6 +90,33 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- ==================== 安全依赖 ==================== -->
+
+        <!-- Spring Security（SecurityConfig / SecurityFilterChain 等类都在这里） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <!-- JWT（RateLimitService / 后续 JWT 认证用） -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.12.6</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+
         <!-- ==================== 可观测性依赖 ==================== -->
 
         <!-- Spring Boot Actuator（健康检查 + 指标端点） -->

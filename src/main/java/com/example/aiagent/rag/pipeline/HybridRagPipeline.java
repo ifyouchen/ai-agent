@@ -7,6 +7,7 @@ import com.example.aiagent.rag.query.QueryRewriter;
 import com.example.aiagent.rag.reranker.RerankerService;
 import com.example.aiagent.rag.retrieval.RrfFusionRanker;
 import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingStore;
@@ -15,7 +16,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -46,7 +50,7 @@ public class HybridRagPipeline {
 
     private final QueryRewriter queryRewriter;
     private final EmbeddingModel embeddingModel;
-    private final EmbeddingStore embeddingStore;
+    private final EmbeddingStore<TextSegment> embeddingStore;
     private final RrfFusionRanker rrfFusionRanker;
     private final RerankerService rerankerService;
     private final CitationAwareGenerator citationGenerator;
@@ -141,16 +145,16 @@ public class HybridRagPipeline {
     }
 
     /** 向量检索（封装 LangChain4j EmbeddingStore） */
-    @SuppressWarnings("unchecked")
     private List<RetrievedChunk> vectorSearch(String query, int topK) {
         Embedding queryEmbedding = embeddingModel.embed(query).content();
-        List<EmbeddingMatch> matches = embeddingStore.findRelevant(queryEmbedding, topK, vectorThreshold);
+        List<EmbeddingMatch<TextSegment>> matches = embeddingStore.findRelevant(queryEmbedding, topK, vectorThreshold);
 
         return matches.stream().map(match -> {
-            var metadata = match.embedded().metadata();
+            TextSegment segment = match.embedded();
+            var metadata = segment.metadata();
             return RetrievedChunk.builder()
                     .chunkId(metadata.getString("chunkId"))
-                    .content(((dev.langchain4j.data.segment.TextSegment) match.embedded()).text())
+                    .content(segment.text())
                     .documentName(metadata.getString("documentName"))
                     .documentPath(metadata.getString("documentPath"))
                     .pageNumber(parseIntSafely(metadata.getString("pageNumber")))

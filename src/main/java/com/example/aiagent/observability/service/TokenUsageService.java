@@ -56,6 +56,17 @@ public class TokenUsageService {
     }
 
     /**
+     * 查询今日全局总费用（用于预算告警）
+     */
+    public BigDecimal getTodayTotalCost() {
+        Instant todayStart = Instant.now().truncatedTo(ChronoUnit.DAYS);
+        // 汇总所有模型今日费用
+        return repository.aggregateByModelSince(todayStart).stream()
+                .map(row -> (BigDecimal) row[3])
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /**
      * 查询用户今日费用（用于配额告警）
      */
     public BigDecimal getUserTodayCost(String userId) {

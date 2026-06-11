@@ -1,6 +1,5 @@
 package com.example.aiagent.observability.config;
 
-import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.config.MeterFilter;
 import org.springframework.beans.factory.annotation.Value;
@@ -47,9 +46,8 @@ public class ObservabilityConfig {
     @Bean
     public MeterFilter highCardinalityFilter() {
         return MeterFilter.deny(id -> {
-            String name = id.getName();
             // 如果有人误把 trace/session/user 级别的标签加到 metrics 里，直接拒绝
-            return id.getTagKeys().stream().anyMatch(key ->
+            return id.getTags().stream().map(Tag::getKey).anyMatch(key ->
                     key.equals("traceId") || key.equals("sessionId")
                             || key.contains("requestId") || key.contains("messageId"));
         });
