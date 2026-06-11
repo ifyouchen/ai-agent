@@ -1548,9 +1548,14 @@ button {
 }
 
 .session-item.active {
-    background: transparent;
-    color: #20242c;
+    background: #eaf1ff;
+    color: var(--primary);
     font-weight: 540;
+}
+
+.session-item.active .session-delete {
+    display: block;
+    color: #8b97b0;
 }
 
 .session-icon {
@@ -1641,6 +1646,11 @@ button {
 
 .model-select {
     position: relative;
+}
+
+.model-title,
+.model-select {
+    display: none;
 }
 
 .model-select-trigger {
@@ -1925,8 +1935,10 @@ button {
     max-width: min(72%, 680px);
     border-radius: 18px 18px 6px 18px;
     padding: 12px 18px;
-    background: var(--primary);
-    box-shadow: 0 8px 24px rgba(77, 107, 254, .20);
+    background: #eef3fb;
+    color: #20242c;
+    box-shadow: 0 8px 24px rgba(31, 44, 71, .08);
+    border: 1px solid #e7edf7;
 }
 
 .message.ai {
