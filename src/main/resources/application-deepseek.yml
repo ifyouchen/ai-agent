@@ -1,0 +1,7 @@
+# DeepSeek 模型配置（默认 Profile）
+deepseek:
+  api-key: ${DEEPSEEK_API_KEY}
+  base-url: https://api.deepseek.com/v1
+  model-name: deepseek-chat
+  temperature: 0.7
+  max-tokens: 4096

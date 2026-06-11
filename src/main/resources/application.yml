@@ -1,0 +1,60 @@
+spring:
+  profiles:
+    active: deepseek   # 切换为 claude 即可换模型
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+  datasource:
+    url: jdbc:postgresql://${PG_HOST:localhost}:${PG_PORT:5432}/${PG_DB:aiagent}
+    username: ${PG_USER:postgres}
+    password: ${PG_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+
+server:
+  port: 8080
+
+# 日志
+logging:
+  level:
+    com.example.aiagent: DEBUG
+    dev.langchain4j: DEBUG
+
+# Agent 配置
+agent:
+  memory:
+    max-messages: 20          # 每个会话保留最近 N 条消息
+    ttl-hours: 24             # Redis 中的记忆过期时间（小时）
+  rag:
+    max-results: 3            # RAG 检索返回最相关 N 段
+    min-score: 0.7            # 相似度阈值（低于此值不返回）
+    chunk-size: 500           # 文档切片大小（字符数）
+    chunk-overlap: 50         # 切片重叠（避免信息截断）
+
+# ==================== 混合 RAG 配置 ====================
+rag:
+  # 查询改写
+  query:
+    rewrite:
+      variants: 2              # 改写变体数（越多效果越好，但越慢）
+
+  # 向量检索
+  retrieval:
+    vector:
+      top-k: 20                # 向量检索初始召回数
+      threshold: 0.5           # 最低相似度阈值
+    rrf:
+      top-k: 10                # RRF 融合后保留数
+
+  # Reranker 精排
+  reranker:
+    type: bge                  # bge（本地）或 cohere（API）
+    top-k: 5                   # 最终送给 LLM 的上下文数
+    bge:
+      url: http://localhost:8090/rerank   # BGE Python 服务地址
+    cohere:
+      api-key: ${COHERE_API_KEY:}
+      model: rerank-multilingual-v3.0
