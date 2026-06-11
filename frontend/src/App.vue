@@ -536,7 +536,12 @@ const currentModelLabel = computed(() => modelOptions.find(option => option.valu
 const filteredSessions = computed(() => {
   const keyword = searchQuery.value.trim().toLowerCase();
   if (!keyword) return sessions.value;
-  return sessions.value.filter(session => session.title.toLowerCase().includes(keyword));
+  return sessions.value.filter(session => {
+    if (session.title.toLowerCase().includes(keyword)) return true;
+    return (sessionMessages[session.id] || []).some(message =>
+      stripHtml(message.html).toLowerCase().includes(keyword)
+    );
+  });
 });
 
 onMounted(async () => {
@@ -588,7 +593,12 @@ function openSearchResult(id) {
 }
 
 function searchResultSnippet(session) {
+  const keyword = searchQuery.value.trim().toLowerCase();
   const storedMessages = sessionMessages[session.id] || [];
+  if (keyword) {
+    const matched = storedMessages.find(message => stripHtml(message.html).toLowerCase().includes(keyword));
+    if (matched) return makeSearchSnippet(stripHtml(matched.html), keyword);
+  }
   if (storedMessages.length) {
     const last = storedMessages[storedMessages.length - 1];
     return stripHtml(last.html).slice(0, 80) || '当前对话';
@@ -1253,5 +1263,14 @@ function escapeHtml(value) {
 
 function stripHtml(value) {
   return String(value ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function makeSearchSnippet(text, keyword) {
+  const lower = text.toLowerCase();
+  const index = lower.indexOf(keyword);
+  if (index < 0) return text.slice(0, 90);
+  const start = Math.max(0, index - 26);
+  const end = Math.min(text.length, index + keyword.length + 54);
+  return `${start > 0 ? '...' : ''}${text.slice(start, end)}${end < text.length ? '...' : ''}`;
 }
 </script>
