@@ -1,10 +1,10 @@
 /**
  * 应用入口 —— 组装所有模块
  */
-import { state } from './state.js';
-import { initChat, clearChatUI } from './chat.js';
-import { initKnowledgeBase } from './knowledge-base.js';
-import { newSession, addSession, switchTab, renderSessions } from './session.js';
+import {state} from './state.js';
+import {initChat} from './chat.js';
+import {initKnowledgeBase} from './knowledge-base.js';
+import {addSession, newSession, renderSessions, switchTab} from './session.js';
 
 window.addEventListener('DOMContentLoaded', () => {
     // 初始化各模块

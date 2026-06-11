@@ -64,6 +64,24 @@ public class BusinessRepository {
     }
 
     /**
+     * 查询用户最近订单列表
+     *
+     * @param userId 用户 ID
+     * @param limit  最多返回条数
+     * @return 订单列表（按创建时间倒序）
+     */
+    public java.util.List<Order> findOrdersByUserId(String userId, int limit) {
+        return orderMapper.findByUserId(userId, limit);
+    }
+
+    /**
+     * 统计用户各状态订单数量
+     */
+    public java.util.List<java.util.Map<String, Object>> countOrdersByStatus(String userId) {
+        return orderMapper.countGroupByStatus(userId);
+    }
+
+    /**
      * 创建订单
      */
     public void saveOrder(Order order) {
@@ -78,6 +96,21 @@ public class BusinessRepository {
      */
     public Optional<UserAccount> findAccount(String userId) {
         return userAccountMapper.findByUserId(userId);
+    }
+
+    /**
+     * 按用户名查询账户（支持用户名登录）
+     */
+    public Optional<UserAccount> findAccountByUsername(String username) {
+        return userAccountMapper.findByUsername(username);
+    }
+
+    /**
+     * 更新用户积分（增加或减少，不会低于 0）
+     */
+    public void updatePoints(String userId, int pointsDelta) {
+        userAccountMapper.updatePoints(userId, pointsDelta);
+        log.info("[BUSI-REPO] 积分已更新，userId={}，delta={}", userId, pointsDelta);
     }
 
     /**

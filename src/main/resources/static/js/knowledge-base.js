@@ -1,10 +1,10 @@
 /**
  * 知识库面板组件
  */
-import { state } from './state.js';
-import { uploadDocument, listDocuments, deleteDocument } from './api.js';
-import { showToast } from './toast.js';
-import { getFileIcon, formatFileSize } from './utils.js';
+import {state} from './state.js';
+import {deleteDocument, listDocuments, uploadDocument} from './api.js';
+import {showToast} from './toast.js';
+import {formatFileSize, getFileIcon} from './utils.js';
 
 // ── 初始化 ────────────────────────────────────────────────────
 
