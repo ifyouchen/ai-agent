@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 /**
@@ -47,7 +48,7 @@ public class RateLimitService {
      * 检查并消费一次请求配额
      */
     public RateLimitResult tryAcquire(String userId) {
-        String now = java.time.LocalDateTime.now()
+        String now = LocalDateTime.now()
                 .format(DateTimeFormatter.ofPattern("yyyyMMddHHmm"));
         String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
 

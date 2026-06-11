@@ -4,6 +4,7 @@ import com.example.aiagent.rag.model.RagResponse;
 import com.example.aiagent.rag.pipeline.HybridRagPipeline;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -46,8 +47,8 @@ public class KnowledgeBaseQueryService {
                 tenantId, kbId, userId, question);
 
         // 设置 MDC 上下文（供 AOP 切面读取）
-        org.slf4j.MDC.put("userId",   userId);
-        org.slf4j.MDC.put("scenario", "kb_query");
+        MDC.put("userId",   userId);
+        MDC.put("scenario", "kb_query");
 
         try {
             RagResponse ragResponse = ragPipeline.execute(question);
@@ -71,7 +72,7 @@ public class KnowledgeBaseQueryService {
             return new QueryResult(finalAnswer, ragResponse, answerFound, confidence);
 
         } finally {
-            org.slf4j.MDC.remove("scenario");
+            MDC.remove("scenario");
         }
     }
 
