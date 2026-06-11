@@ -28,7 +28,7 @@ public class TokenUsageService {
     private final TokenUsageRepository repository;
 
     /**
-     * 异步写入 MySQL（不阻塞 LLM 调用主链路）
+     * 异步写入 PostgreSQL（不阻塞 LLM 调用主链路）
      */
     @Async("observabilityExecutor")
     public void saveAsync(LlmCallContext ctx) {
@@ -54,7 +54,7 @@ public class TokenUsageService {
             repository.save(record);
         } catch (Exception e) {
             // 写入失败不能影响主流程，只记录日志
-            log.error("Token 用量写入 MySQL 失败: {}", e.getMessage());
+            log.error("Token 用量写入 PostgreSQL 失败: {}", e.getMessage());
         }
     }
 

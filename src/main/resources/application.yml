@@ -14,6 +14,17 @@ spring:
     password: ${PG_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
 
+  jpa:
+    hibernate:
+      ddl-auto: validate          # validate：只校验 Entity 与表结构是否匹配，不自动改表
+                                  # 生产环境用 validate，开发期可改为 update
+    show-sql: false
+    open-in-view: false           # 关闭 OSIV，避免连接泄露
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+
 server:
   port: 8080
 
@@ -59,7 +70,30 @@ rag:
       api-key: ${COHERE_API_KEY:}
       model: rerank-multilingual-v3.0
 
+  # Elasticsearch（BM25 检索，可选）
+  elasticsearch:
+    enabled: ${ES_ENABLED:false}        # 设为 true 启用 BM25 混合检索
+    host: ${ES_HOST:localhost}
+    port: ${ES_PORT:9200}
+    index-name: ${ES_INDEX:rag-documents}
+    username: ${ES_USERNAME:}           # 留空表示无认证（开发环境）
+    password: ${ES_PASSWORD:}
+
 # 天气 API（OpenWeatherMap 免费版，申请地址：https://openweathermap.org/api）
 weather:
   api:
     key: ${WEATHER_API_KEY:}    # 留空则降级返回提示，从 openweathermap.org 免费申请
+
+# ==================== 告警通知配置 ====================
+llm:
+  observability:
+    alert:
+      dingtalk:
+        enabled: ${ALERT_DINGTALK_ENABLED:false}
+        webhook: ${ALERT_DINGTALK_WEBHOOK:}
+      wecom:
+        enabled: ${ALERT_WECOM_ENABLED:false}
+        webhook: ${ALERT_WECOM_WEBHOOK:}
+      custom:
+        enabled: ${ALERT_CUSTOM_ENABLED:false}
+        webhook: ${ALERT_CUSTOM_WEBHOOK:}

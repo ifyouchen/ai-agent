@@ -26,7 +26,7 @@ import java.time.Instant;
  * 3. 提取 Token 用量（从 Response 的 TokenUsage 获取）
  * 4. 计算费用（根据模型定价表）
  * 5. 上报 Prometheus 指标
- * 6. 异步写入 MySQL（供成本报表使用）
+ * 6. 异步写入 PostgreSQL（供成本报表使用）
  * 7. 记录结构化日志
  *
  * 无需修改任何业务代码，自动生效。

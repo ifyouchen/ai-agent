@@ -15,7 +15,7 @@ import java.util.concurrent.Executor;
  *
  * 1. 为所有 Prometheus 指标添加全局标签（应用名、环境）
  * 2. 防止高基数标签（如 userId）被误加到 metrics，导致 Prometheus 内存爆炸
- * 3. 配置独立的异步线程池（写 MySQL 不占用业务线程）
+ * 3. 配置独立的异步线程池（写 PostgreSQL 不占用业务线程）
  */
 @Configuration
 public class ObservabilityConfig {
@@ -54,7 +54,7 @@ public class ObservabilityConfig {
     }
 
     /**
-     * 可观测性专用异步线程池（写 MySQL 用，不占用业务线程池）
+     * 可观测性专用异步线程池（写 PostgreSQL 用，不占用业务线程池）
      */
     @Bean("observabilityExecutor")
     public Executor observabilityExecutor() {
@@ -64,7 +64,7 @@ public class ObservabilityConfig {
         executor.setQueueCapacity(1000);
         executor.setThreadNamePrefix("obs-");
         executor.setRejectedExecutionHandler((r, e) -> {
-            // 队列满了就直接丢弃（写 MySQL 失败不能影响业务）
+            // 队列满了就直接丢弃（写 PostgreSQL 失败不能影响业务）
         });
         executor.initialize();
         return executor;

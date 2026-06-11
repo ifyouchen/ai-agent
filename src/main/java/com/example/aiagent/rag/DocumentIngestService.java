@@ -89,21 +89,20 @@ public class DocumentIngestService {
 
     /**
      * 核心导入逻辑：切片 → 向量化 → 存储（PgVector）→ 同步索引到 ES（BM25）
+     *
+     * 注意：只切片一次，PgVector 和 ES 共用同一批切片，保证两边数据一致。
      */
     private int ingestDocuments(List<Document> documents) {
-        // 1. 手动切片，以便拿到切片列表用于 ES 索引
+        // 1. 统一切片（只切一次）
         var splitter = DocumentSplitters.recursive(chunkSize, chunkOverlap);
         List<TextSegment> allSegments = documents.stream()
                 .flatMap(doc -> splitter.split(doc).stream())
                 .toList();
 
-        // 2. 向量化 + 存入 PgVector（使用 EmbeddingStoreIngestor 统一处理）
-        EmbeddingStoreIngestor ingestor = EmbeddingStoreIngestor.builder()
-                .documentSplitter(DocumentSplitters.recursive(chunkSize, chunkOverlap))
-                .embeddingModel(embeddingModel)
-                .embeddingStore(embeddingStore)
-                .build();
-        ingestor.ingest(documents);
+        // 2. 向量化 + 存入 PgVector
+        //    直接操作 segments，避免 EmbeddingStoreIngestor 内部再切片一次
+        var embeddings = embeddingModel.embedAll(allSegments).content();
+        embeddingStore.addAll(embeddings, allSegments);
 
         // 3. 同步索引到 Elasticsearch（BM25）
         if (bm25Retriever != null && bm25Retriever.isAvailable()) {

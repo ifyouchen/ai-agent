@@ -129,13 +129,13 @@ public class AlertService {
      * 每30分钟检查日费用预算
      *
      * 注意：Counter.count() 是累计值（应用启动到现在的总量），
-     * 不能直接当"今日费用"用。真正的今日费用应从 MySQL 查询。
+     * 不能直接当"今日费用"用。真正的今日费用应从 PostgreSQL 查询。
      * 这里保留 Prometheus 侧的快速检查作为辅助，精确数据用 TokenUsageService。
      */
     @Scheduled(fixedRateString = "${llm.observability.alert.budget-check-interval-ms:1800000}")
     public void checkDailyBudget() {
         try {
-            // 从 MySQL 查询今日精确费用（比从 Prometheus Counter 读取更准确）
+            // 从 PostgreSQL 查询今日精确费用（比从 Prometheus Counter 读取更准确）
             double todayCost = tokenUsageService.getTodayTotalCost().doubleValue();
 
             if (todayCost > dailyBudgetUsd) {

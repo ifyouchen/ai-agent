@@ -1,0 +1,282 @@
+package com.example.aiagent.kb.service;
+
+import com.example.aiagent.kb.entity.Document;
+import com.example.aiagent.kb.entity.KnowledgeBase;
+import com.example.aiagent.kb.entity.RetrievalLog;
+import com.example.aiagent.kb.repository.ChunkRepository;
+import com.example.aiagent.kb.repository.DocumentRepository;
+import com.example.aiagent.kb.repository.KnowledgeBaseRepository;
+import com.example.aiagent.kb.repository.RetrievalLogRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 知识库管理服务
+ *
+ * 提供知识库生命周期管理（CRUD）、文档管理、检索日志记录和统计分析功能。
+ * 所有写操作均在事务内执行，保证数据一致性。
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class KnowledgeBaseService {
+
+    private final KnowledgeBaseRepository kbRepository;
+    private final DocumentRepository      documentRepository;
+    private final ChunkRepository         chunkRepository;
+    private final RetrievalLogRepository  retrievalLogRepository;
+
+    // ====================================================================
+    // 知识库管理
+    // ====================================================================
+
+    /**
+     * 创建知识库
+     *
+     * @param tenantId    租户 ID
+     * @param name        知识库名称（同一租户内唯一）
+     * @param description 描述（可为 null）
+     * @return 已持久化的 KnowledgeBase 对象
+     * @throws IllegalArgumentException 若同名知识库已存在
+     */
+    @Transactional
+    public KnowledgeBase createKnowledgeBase(String tenantId, String name, String description) {
+        log.info("创建知识库 tenantId={} name={}", tenantId, name);
+
+        kbRepository.findByTenantIdAndName(tenantId, name).ifPresent(existing -> {
+            throw new IllegalArgumentException(
+                    String.format("知识库「%s」在租户 %s 下已存在（id=%d）", name, tenantId, existing.getId()));
+        });
+
+        KnowledgeBase kb = KnowledgeBase.builder()
+                .tenantId(tenantId)
+                .name(name)
+                .description(description)
+                .build();
+
+        KnowledgeBase saved = kbRepository.save(kb);
+        log.info("知识库创建成功 id={} tenantId={} name={}", saved.getId(), tenantId, name);
+        return saved;
+    }
+
+    /**
+     * 列出租户下的所有知识库
+     */
+    @Transactional(readOnly = true)
+    public List<KnowledgeBase> listKnowledgeBases(String tenantId) {
+        return kbRepository.findByTenantId(tenantId);
+    }
+
+    /**
+     * 获取单个知识库（多租户校验）
+     *
+     * @throws IllegalArgumentException 若知识库不存在或不属于该租户
+     */
+    @Transactional(readOnly = true)
+    public KnowledgeBase getKnowledgeBase(String tenantId, Long kbId) {
+        KnowledgeBase kb = kbRepository.findById(kbId)
+                .orElseThrow(() -> new IllegalArgumentException("知识库不存在：kbId=" + kbId));
+
+        if (!kb.getTenantId().equals(tenantId)) {
+            throw new IllegalArgumentException(
+                    String.format("知识库 %d 不属于租户 %s", kbId, tenantId));
+        }
+        return kb;
+    }
+
+    /**
+     * 删除知识库（级联删除全部文档和切片）
+     *
+     * 删除顺序：切片 → 文档 → 知识库，防止外键约束冲突。
+     *
+     * @throws IllegalArgumentException 若知识库不存在或不属于该租户
+     */
+    @Transactional
+    public void deleteKnowledgeBase(String tenantId, Long kbId) {
+        KnowledgeBase kb = getKnowledgeBase(tenantId, kbId);
+        log.info("删除知识库 id={} tenantId={} name={}", kbId, tenantId, kb.getName());
+
+        // 1. 查出该知识库下所有文档
+        List<Document> docs = documentRepository.findByKbId(kbId);
+
+        // 2. 逐文档删除切片（避免单次大批量 DELETE 锁表）
+        for (Document doc : docs) {
+            chunkRepository.deleteByDocId(doc.getId());
+        }
+
+        // 3. 批量删除文档
+        documentRepository.deleteAll(docs);
+
+        // 4. 删除知识库
+        kbRepository.delete(kb);
+        log.info("知识库删除完成 id={} 共删除文档 {} 个", kbId, docs.size());
+    }
+
+    // ====================================================================
+    // 文档管理
+    // ====================================================================
+
+    /**
+     * 列出知识库下的所有文档
+     *
+     * @throws IllegalArgumentException 若知识库不存在或不属于该租户
+     */
+    @Transactional(readOnly = true)
+    public List<Document> getDocuments(String tenantId, Long kbId) {
+        // 先校验知识库归属
+        getKnowledgeBase(tenantId, kbId);
+        return documentRepository.findByKbId(kbId);
+    }
+
+    /**
+     * 删除文档及其所有切片，同时更新知识库的 docCount
+     *
+     * @param tenantId 租户 ID（用于权限校验）
+     * @param docId    文档 ID
+     * @throws IllegalArgumentException 若文档不存在或不属于该租户
+     */
+    @Transactional
+    public void deleteDocument(String tenantId, Long docId) {
+        Document doc = documentRepository.findById(docId)
+                .orElseThrow(() -> new IllegalArgumentException("文档不存在：docId=" + docId));
+
+        if (!doc.getTenantId().equals(tenantId)) {
+            throw new IllegalArgumentException(
+                    String.format("文档 %d 不属于租户 %s", docId, tenantId));
+        }
+
+        log.info("删除文档 docId={} kbId={} name={}", docId, doc.getKbId(), doc.getName());
+
+        // 1. 删除切片
+        chunkRepository.deleteByDocId(docId);
+
+        // 2. 删除文档
+        documentRepository.delete(doc);
+
+        // 3. 更新知识库 docCount（减 1，最小为 0）
+        kbRepository.findById(doc.getKbId()).ifPresent(kb -> {
+            int newCount = Math.max(0, kb.getDocCount() - 1);
+            kb.setDocCount(newCount);
+            kbRepository.save(kb);
+        });
+
+        log.info("文档删除完成 docId={}", docId);
+    }
+
+    // ====================================================================
+    // 检索日志
+    // ====================================================================
+
+    /**
+     * 异步记录检索日志（不阻塞主链路响应）
+     *
+     * 需要在 Spring 配置中启用 @EnableAsync。
+     *
+     * @param tenantId   租户 ID
+     * @param kbId       知识库 ID
+     * @param sessionId  会话 ID
+     * @param userId     用户 ID
+     * @param query      原始查询
+     * @param topScore   最高相似度得分
+     * @param answerType 回答类型：ANSWERED | NO_ANSWER | PARTIAL
+     * @param totalMs    全链路耗时（毫秒）
+     */
+    @Async
+    public void recordRetrievalLog(String tenantId, Long kbId, String sessionId,
+                                   String userId, String query,
+                                   double topScore, String answerType, int totalMs) {
+        try {
+            RetrievalLog log = RetrievalLog.builder()
+                    .tenantId(tenantId)
+                    .kbId(kbId)
+                    .sessionId(sessionId)
+                    .userId(userId)
+                    .query(query)
+                    .topScore(BigDecimal.valueOf(topScore))
+                    .answerType(answerType)
+                    .totalMs(totalMs)
+                    .build();
+
+            retrievalLogRepository.save(log);
+        } catch (Exception e) {
+            // 日志记录失败不应影响主流程，仅打印警告
+            KnowledgeBaseService.log.warn("检索日志记录失败 tenantId={} kbId={}: {}",
+                    tenantId, kbId, e.getMessage());
+        }
+    }
+
+    // ====================================================================
+    // 统计分析
+    // ====================================================================
+
+    /**
+     * 获取知识库统计信息
+     *
+     * 返回 Map 包含：
+     * - docCount      : 文档总数
+     * - chunkCount    : 激活切片总数
+     * - recentQueries : 近 7 天查询次数
+     * - answerStats   : 近 7 天 answerType 分组统计（{"ANSWERED":120,"NO_ANSWER":30}）
+     *
+     * @throws IllegalArgumentException 若知识库不存在或不属于该租户
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getStats(String tenantId, Long kbId) {
+        // 先校验归属
+        getKnowledgeBase(tenantId, kbId);
+
+        Instant sevenDaysAgo = Instant.now().minus(7, ChronoUnit.DAYS);
+
+        long docCount   = documentRepository.countByKbId(kbId);
+        long chunkCount = chunkRepository.countByKbIdAndIsActive(kbId, true);
+        long recentQueries = retrievalLogRepository
+                .countByTenantIdAndKbIdAndCreatedAtAfter(tenantId, kbId, sevenDaysAgo);
+
+        // 按 answerType 分组统计
+        List<Object[]> answerTypeRows = retrievalLogRepository
+                .countGroupByAnswerType(tenantId, kbId, sevenDaysAgo);
+
+        Map<String, Long> answerStats = new HashMap<>();
+        for (Object[] row : answerTypeRows) {
+            String type  = row[0] != null ? row[0].toString() : "UNKNOWN";
+            Long   count = ((Number) row[1]).longValue();
+            answerStats.put(type, count);
+        }
+
+        // 获取最近 5 条查询记录摘要
+        List<RetrievalLog> recentLogs = retrievalLogRepository
+                .findRecentByKbId(tenantId, kbId, PageRequest.of(0, 5));
+
+        List<Map<String, Object>> recentLogSummary = recentLogs.stream()
+                .map(l -> {
+                    Map<String, Object> item = new HashMap<>();
+                    item.put("query",      l.getQuery());
+                    item.put("answerType", l.getAnswerType());
+                    item.put("topScore",   l.getTopScore());
+                    item.put("totalMs",    l.getTotalMs());
+                    item.put("createdAt",  l.getCreatedAt());
+                    return item;
+                })
+                .toList();
+
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("docCount",      docCount);
+        stats.put("chunkCount",    chunkCount);
+        stats.put("recentQueries", recentQueries);
+        stats.put("answerStats",   answerStats);
+        stats.put("recentLogs",    recentLogSummary);
+
+        return stats;
+    }
+}

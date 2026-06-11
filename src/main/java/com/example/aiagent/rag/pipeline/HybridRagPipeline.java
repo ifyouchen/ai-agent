@@ -5,6 +5,7 @@ import com.example.aiagent.rag.model.RagResponse;
 import com.example.aiagent.rag.model.RetrievedChunk;
 import com.example.aiagent.rag.query.QueryRewriter;
 import com.example.aiagent.rag.reranker.RerankerService;
+import com.example.aiagent.rag.retrieval.Bm25Retriever;
 import com.example.aiagent.rag.retrieval.RrfFusionRanker;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -13,6 +14,7 @@ import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -54,6 +56,10 @@ public class HybridRagPipeline {
     private final RrfFusionRanker rrfFusionRanker;
     private final RerankerService rerankerService;
     private final CitationAwareGenerator citationGenerator;
+
+    /** BM25 检索器，required=false：ES 未启用时 Bean 不存在，注入 null，不影响启动 */
+    @Autowired(required = false)
+    private Bm25Retriever bm25Retriever;
 
     @Value("${rag.retrieval.vector.top-k:20}")
     private int vectorTopK;
@@ -104,14 +110,26 @@ public class HybridRagPipeline {
         log.info("[Step 2] 向量检索完成，共{}个候选，耗时{}ms",
                 allVectorResults.size(), System.currentTimeMillis() - retrievalStart);
 
-        // 注意：BM25 需要接入 Elasticsearch，此处用纯向量结果演示完整流程
-        // 实际接入时取消注释 Bm25Retriever 相关代码即可
+        // 2c. BM25 检索（ES 已启用时执行）
+        List<RetrievedChunk> bm25Results = null;
+        if (bm25Retriever != null && bm25Retriever.isAvailable()) {
+            log.info("[Step 2] BM25 检索（Elasticsearch）...");
+            bm25Results = bm25Retriever.retrieve(userQuery, vectorTopK);
+            log.info("[Step 2] BM25 检索完成，命中 {} 条", bm25Results.size());
+        } else {
+            log.debug("[Step 2] Elasticsearch 未启用，跳过 BM25 检索");
+        }
 
         // ── Step 3：RRF 融合 ──────────────────────────────
-        log.info("[Step 3] RRF 融合排序...");
+        boolean bm25Active = bm25Results != null && !bm25Results.isEmpty();
+        log.info("[Step 3] RRF 融合排序（向量{}条{}）...",
+                allVectorResults.size(),
+                bm25Active ? "，BM25 " + bm25Results.size() + " 条" : "，未启用 BM25");
         Map<String, List<RetrievedChunk>> retrievalLists = new LinkedHashMap<>();
         retrievalLists.put("vector", allVectorResults);
-        // retrievalLists.put("bm25", bm25Results);  // 接入 ES 后取消注释
+        if (bm25Active) {
+            retrievalLists.put("bm25", bm25Results);
+        }
 
         List<RetrievedChunk> rrfResults = rrfFusionRanker.fuse(retrievalLists, rrfTopK);
 
