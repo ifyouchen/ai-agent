@@ -1,13 +1,13 @@
 <template>
-  <aside class="sidebar">
+  <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }">
     <div class="sidebar-logo">
       <h1><span class="logo-icon"><LogoMark /></span>AI Agent</h1>
       <div class="sidebar-tools">
-        <button class="icon-btn" type="button" title="搜索">
+        <button class="icon-btn" type="button" title="搜索" @click="openSearch">
           <svg viewBox="0 0 24 24" fill="none"><path d="m21 21-4.2-4.2m2.2-5.3a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
-        <button class="icon-btn" type="button" title="侧边栏">
-          <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="14" rx="3" stroke="currentColor" stroke-width="2"/><path d="M10 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <button class="icon-btn" type="button" title="收起侧边栏" @click="toggleSidebar">
+          <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="14" rx="3" stroke="currentColor" stroke-width="2"/><path d="M10 5v14M15 9l-3 3 3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
       </div>
     </div>
@@ -76,7 +76,11 @@
     </div>
   </aside>
 
-  <main class="main">
+  <button v-if="sidebarCollapsed" class="sidebar-expand-btn" type="button" title="展开侧边栏" @click="toggleSidebar">
+    <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="14" rx="3" stroke="currentColor" stroke-width="2"/><path d="M10 5v14M13 9l3 3-3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+
+  <main class="main" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
     <div class="topbar">
       <div class="topbar-title">{{ currentSessionTitle }}</div>
       <div class="topbar-actions">
@@ -94,15 +98,15 @@
     <div class="content">
       <section class="tab-panel" :class="{ active: activeTab === 'chat' }">
         <div ref="chatMessagesEl" class="chat-messages">
-          <div v-if="messages.length === 0" class="welcome">
+            <div v-if="messages.length === 0" class="welcome">
             <div class="welcome-icon"><LogoMark /></div>
-            <h2>使用快速模式开始对话</h2>
+            <h2>使用{{ reactEnabled ? '专家模式' : '快速模式' }}开始对话</h2>
             <div class="welcome-modes">
-              <button class="welcome-mode active" type="button" @click="streamEnabled = true; reactEnabled = false">
+              <button class="welcome-mode" :class="{ active: !reactEnabled }" type="button" @click="setChatMode('quick')">
                 <svg viewBox="0 0 24 24" fill="currentColor"><path d="m13 2-8 12h6l-1 8 9-13h-6l1-7Z"/></svg>
                 快速模式
               </button>
-              <button class="welcome-mode" type="button" @click="reactEnabled = true">
+              <button class="welcome-mode" :class="{ active: reactEnabled }" type="button" @click="setChatMode('expert')">
                 <svg viewBox="0 0 24 24" fill="none"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 9.8 12 7.8l3.5 2-3.5 2-3.5-2Z" stroke="currentColor" stroke-width="1.8"/></svg>
                 专家模式
               </button>
@@ -129,22 +133,24 @@
             ></textarea>
             <div class="composer-footer">
               <div class="composer-tools">
-                <button class="quick-prompt tool-chip" type="button" @click="streamEnabled = !streamEnabled" :class="{ active: streamEnabled }">
+                <button class="quick-prompt tool-chip" type="button" @click="setChatMode('quick')" :class="{ active: !reactEnabled }">
                   <svg viewBox="0 0 24 24" fill="currentColor"><path d="m13 2-8 12h6l-1 8 9-13h-6l1-7Z"/></svg>
                   快速模式
                 </button>
-                <button class="quick-prompt tool-chip" type="button" @click="toggleReact" :class="{ active: reactEnabled }">
+                <button class="quick-prompt tool-chip" type="button" @click="setChatMode('expert')" :class="{ active: reactEnabled }">
                   <svg viewBox="0 0 24 24" fill="none"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 9.8 12 7.8l3.5 2-3.5 2-3.5-2Z" stroke="currentColor" stroke-width="1.8"/></svg>
-                  深度思考
+                  专家模式
                 </button>
               </div>
               <div class="composer-actions">
                 <button class="attach-btn" type="button" title="上传附件">
                   <svg viewBox="0 0 24 24" fill="none"><path d="m20 11.5-7.7 7.7a5.2 5.2 0 0 1-7.4-7.4l8.4-8.4a3.6 3.6 0 0 1 5.1 5.1l-8.4 8.4a2 2 0 0 1-2.8-2.8l7.6-7.6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
-                <button class="send-btn" type="button" :disabled="isSending || !messageInput.trim()" @click="sendMessage">
+                <button v-if="isSending" class="stop-btn" type="button" title="停止生成" @click="stopGeneration">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+                </button>
+                <button v-else class="send-btn" type="button" :disabled="!messageInput.trim()" @click="sendMessage">
                   <svg v-if="!isSending" viewBox="0 0 24 24" fill="none"><path d="M12 19V5M6 11l6-6 6 6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  <svg v-else viewBox="0 0 24 24" fill="currentColor"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
                 </button>
               </div>
             </div>
@@ -323,6 +329,49 @@
     </div>
   </div>
 
+  <div v-if="searchVisible" class="search-overlay" @click.self="closeSearch">
+    <div class="search-modal">
+      <div class="search-bar">
+        <svg viewBox="0 0 24 24" fill="none"><path d="m21 21-4.2-4.2m2.2-5.3a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input
+          ref="searchInputEl"
+          v-model.trim="searchQuery"
+          type="text"
+          placeholder="搜索历史对话"
+          @keydown.esc.prevent="closeSearch"
+        >
+        <button class="search-close" type="button" title="关闭" @click="closeSearch">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="search-results">
+        <button
+          v-for="session in filteredSessions"
+          :key="session.id"
+          class="search-result"
+          :class="{ active: session.id === sessionId }"
+          type="button"
+          @click="openSearchResult(session.id)"
+        >
+          <span class="search-result-icon">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M8 10h8M8 14h5M6.5 19A7.5 7.5 0 1 1 18 17.7L21 20l-1.3 1.5-3.1-2.3A7.5 7.5 0 0 1 6.5 19Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="search-result-main">
+            <span class="search-result-title">{{ session.title }}</span>
+            <span class="search-result-snippet">{{ searchResultSnippet(session) }}</span>
+          </span>
+          <span class="search-result-date">{{ formatSessionDate(session.createdAt) }}</span>
+        </button>
+        <div v-if="filteredSessions.length === 0" class="search-empty">
+          <div class="search-empty-icon">
+            <svg viewBox="0 0 24 24" fill="none"><path d="m21 21-4.2-4.2m2.2-5.3a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </div>
+          <div>没有找到相关对话</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div v-if="dialog.visible" class="modal-overlay app-dialog-overlay" @click.self="resolveDialog(false)">
     <div class="modal-content app-dialog" :class="`dialog-${dialog.variant}`">
       <div class="dialog-icon">
@@ -425,16 +474,24 @@ const quickPrompts = [
 const user = ref(api.getUser());
 const model = ref('deepseek');
 const modelMenuOpen = ref(false);
+const searchVisible = ref(false);
+const searchQuery = ref('');
+const sidebarCollapsed = ref(false);
 const activeTab = ref('chat');
 const sessionId = ref(generateId());
 const sessions = ref([]);
+const sessionMessages = reactive({});
 const messages = ref([]);
 const messageInput = ref('');
 const streamEnabled = ref(true);
 const reactEnabled = ref(false);
 const isSending = ref(false);
+const activeEventSource = ref(null);
+const activeStreamBubble = ref(null);
+const activeStreamText = ref('');
 const chatMessagesEl = ref(null);
 const messageInputEl = ref(null);
+const searchInputEl = ref(null);
 
 const knowledgeBases = ref([]);
 const currentKbId = ref(null);
@@ -476,6 +533,11 @@ const modelOptions = [
   { value: 'claude', label: 'Claude', desc: '适合长文本与复杂分析' }
 ];
 const currentModelLabel = computed(() => modelOptions.find(option => option.value === model.value)?.label || '选择模型');
+const filteredSessions = computed(() => {
+  const keyword = searchQuery.value.trim().toLowerCase();
+  if (!keyword) return sessions.value;
+  return sessions.value.filter(session => session.title.toLowerCase().includes(keyword));
+});
 
 onMounted(async () => {
   if (!api.getToken()) {
@@ -505,11 +567,47 @@ function selectModel(value) {
   modelMenuOpen.value = false;
 }
 
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value;
+  modelMenuOpen.value = false;
+}
+
+function openSearch() {
+  searchVisible.value = true;
+  searchQuery.value = '';
+  nextTick(() => searchInputEl.value?.focus());
+}
+
+function closeSearch() {
+  searchVisible.value = false;
+}
+
+function openSearchResult(id) {
+  switchSession(id);
+  closeSearch();
+}
+
+function searchResultSnippet(session) {
+  const storedMessages = sessionMessages[session.id] || [];
+  if (storedMessages.length) {
+    const last = storedMessages[storedMessages.length - 1];
+    return stripHtml(last.html).slice(0, 80) || '当前对话';
+  }
+  return '点击打开这段历史对话';
+}
+
+function formatSessionDate(value) {
+  const date = new Date(value || Date.now());
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) return '今天';
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
 function newSession() {
   const id = generateId();
-  sessionId.value = id;
-  messages.value = [];
   addSession(id, '新对话');
+  sessionId.value = id;
+  setCurrentMessages(sessionMessages[id]);
   activeTab.value = 'chat';
 }
 
@@ -517,18 +615,29 @@ function addSession(id, title) {
   if (!sessions.value.some(s => s.id === id)) {
     sessions.value.unshift({ id, title, createdAt: Date.now() });
   }
+  if (!sessionMessages[id]) sessionMessages[id] = [];
 }
 
 function switchSession(id) {
+  if (!sessionMessages[id]) sessionMessages[id] = [];
   sessionId.value = id;
-  messages.value = [];
+  setCurrentMessages(sessionMessages[id]);
   activeTab.value = 'chat';
 }
 
-function removeSession(id) {
+async function removeSession(id) {
   const index = sessions.value.findIndex(s => s.id === id);
   if (index < 0) return;
+  const target = sessions.value[index];
+  const confirmed = await showConfirm({
+    title: '删除会话',
+    message: `确认删除会话「${target.title}」？\n删除后不会影响其他会话。`,
+    confirmText: '删除',
+    variant: 'danger'
+  });
+  if (!confirmed) return;
   const [removed] = sessions.value.splice(index, 1);
+  delete sessionMessages[id];
   showToast('info', `已删除会话：${removed.title}`);
   if (sessionId.value === id) {
     if (sessions.value.length) switchSession(sessions.value[0].id);
@@ -541,6 +650,16 @@ function updateSessionTitle(text) {
   if (session && session.title === '新对话') {
     session.title = text.slice(0, 12) + (text.length > 12 ? '...' : '');
   }
+}
+
+function setCurrentMessages(items) {
+  sessionMessages[sessionId.value] = items || [];
+  messages.value = sessionMessages[sessionId.value];
+}
+
+function setChatMode(mode) {
+  reactEnabled.value = mode === 'expert';
+  streamEnabled.value = true;
 }
 
 async function sendQuick(text) {
@@ -581,24 +700,33 @@ async function doStreamChat(text) {
   const bubble = pushMessage('ai', '');
   let fullText = '';
   const eventSource = api.chatStream(sessionId.value, text);
+  activeEventSource.value = eventSource;
+  activeStreamBubble.value = bubble;
+  activeStreamText.value = '';
 
   eventSource.onmessage = (event) => {
+    if (activeEventSource.value !== eventSource) return;
     if (event.data === '[DONE]') return;
     fullText += event.data;
+    activeStreamText.value = fullText;
     bubble.html = formatMarkdown(fullText) + '<span class="typing-cursor"></span>';
     scrollToBottom();
   };
   eventSource.addEventListener('replace', (event) => {
+    if (activeEventSource.value !== eventSource) return;
     fullText = event.data;
+    activeStreamText.value = fullText;
     bubble.html = formatMarkdown(fullText) + '<span class="typing-cursor"></span>';
     scrollToBottom();
   });
   eventSource.addEventListener('done', () => {
+    if (activeEventSource.value !== eventSource) return;
     eventSource.close();
     bubble.html = formatMarkdown(fullText);
     finish();
   });
   eventSource.onerror = () => {
+    if (activeEventSource.value !== eventSource) return;
     eventSource.close();
     if (!fullText) {
       bubble.html = '<span class="error-msg">连接失败，请重试</span>';
@@ -609,8 +737,29 @@ async function doStreamChat(text) {
 
   function finish() {
     isSending.value = false;
+    activeEventSource.value = null;
+    activeStreamBubble.value = null;
+    activeStreamText.value = '';
     scrollToBottom();
   }
+}
+
+function stopGeneration() {
+  if (activeEventSource.value) {
+    activeEventSource.value.close();
+    if (activeStreamBubble.value) {
+      const html = formatMarkdown(activeStreamText.value || '');
+      activeStreamBubble.value.html = `${html}<div class="stopped-msg">已停止生成</div>`;
+    }
+    activeEventSource.value = null;
+    activeStreamBubble.value = null;
+    activeStreamText.value = '';
+    isSending.value = false;
+    scrollToBottom();
+    return;
+  }
+  isSending.value = false;
+  showToast('info', '已停止等待响应');
 }
 
 async function doReactChat(text) {
@@ -649,6 +798,10 @@ function renderReactAnswer(data) {
 
 function pushMessage(role, html) {
   const item = { id: generateId(), role, html };
+  if (!sessionMessages[sessionId.value]) sessionMessages[sessionId.value] = [];
+  if (messages.value !== sessionMessages[sessionId.value]) {
+    messages.value = sessionMessages[sessionId.value];
+  }
   messages.value.push(item);
   scrollToBottom();
   return item;
@@ -664,7 +817,7 @@ async function handleClearMemory() {
   if (!confirmed) return;
   try {
     await api.clearMemory(sessionId.value);
-    messages.value = [];
+    setCurrentMessages([]);
     showToast('success', '记忆已清除，对话重新开始');
   } catch {
     showToast('error', '清除失败，请重试');
@@ -1096,5 +1249,9 @@ function escapeHtml(value) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function stripHtml(value) {
+  return String(value ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
 }
 </script>
