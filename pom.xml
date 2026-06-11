@@ -178,16 +178,7 @@
             <version>9.10.0</version>
         </dependency>
 
-        <!-- Flyway 数据库迁移（版本化管理 schema） -->
-        <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
-        </dependency>
-        <!-- Flyway PostgreSQL 支持（Flyway 10+ 需要单独引入）-->
-        <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-database-postgresql</artifactId>
-        </dependency>
+        
 
         <!-- Bean Validation（@Valid、@NotBlank 等注解生效需要） -->
         <dependency>

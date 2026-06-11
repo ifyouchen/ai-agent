@@ -15,7 +15,7 @@ npm run dev
 如需修改后端地址：
 
 ```bash
-cp .env.example .env
+cp .env .env
 # 修改 VITE_BACKEND_TARGET
 npm run dev
 ```

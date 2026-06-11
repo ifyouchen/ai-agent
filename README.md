@@ -143,7 +143,7 @@ npm run dev
 
 ```bash
 cd frontend
-cp .env.example .env
+cp .env .env
 # 修改 VITE_BACKEND_TARGET=http://your-backend:8080
 npm run dev
 ```

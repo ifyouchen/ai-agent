@@ -1,5 +1,5 @@
 # Claude 模型配置（备选 Profile）
 anthropic:
-  api-key: ${ANTHROPIC_API_KEY}
+  api-key: sk-ant-xxxxxxxxxxxxxxxxxxxx
   model-name: claude-opus-4-8
   max-tokens: 8192

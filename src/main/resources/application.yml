@@ -2,10 +2,10 @@ spring:
   profiles:
     active: deepseek   # 切换为 claude 即可换模型
   mail:
-    host: ${MAIL_SMTP_HOST:}
-    port: ${MAIL_SMTP_PORT:587}
-    username: ${MAIL_USERNAME:}
-    password: ${MAIL_PASSWORD:}
+    host:
+    port: 587
+    username:
+    password:
     properties:
       mail:
         smtp:
@@ -19,21 +19,21 @@ spring:
 
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
+      host: localhost
+      port: 6379
+      password:
 
   datasource:
-    url: jdbc:postgresql://${PG_HOST:localhost}:${PG_PORT:5432}/${PG_DB:aiagent}
-    username: ${PG_USER:postgres}
-    password: ${PG_PASSWORD:postgres}
+    url: jdbc:postgresql://localhost:5432/aiagent
+    username: postgres
+    password: 12345678
     driver-class-name: org.postgresql.Driver
 
-  flyway:
-    enabled: true
-    locations: classpath:db/migration
-    baseline-on-migrate: true        # 已有数据库时自动打基线，不报错
-    validate-on-migrate: true        # 迁移前校验 checksum，防止文件被篡改
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+      continue-on-error: true
 
 mybatis:
   mapper-locations: classpath:mapper/*.xml      # XML 映射文件位置
@@ -86,38 +86,38 @@ rag:
     #   tfidf  - 内置 TF-IDF（纯 Java，延迟极低，无网络调用，效果较弱）
     #   bge    - 外部 BGE Python 服务（精度最高，需另行部署 Python 推理服务）
     #   cohere - Cohere Rerank API（云端，需 API Key）
-    type: ${RERANKER_TYPE:llm}
+    type: llm
     top-k: 5                   # 最终送给 LLM 的上下文数
     llm:
       batch-size: 5            # 每批发给 LLM 评分的文档数（避免超长 Prompt）
     bge:
-      url: ${BGE_RERANKER_URL:http://localhost:8090/rerank}
+      url: http://localhost:8090/rerank
     cohere:
-      api-key: ${COHERE_API_KEY:}
+      api-key:
       model: rerank-multilingual-v3.0
 
   # 内嵌 BM25 检索（基于 Apache Lucene，无需外部服务，始终可用）
   bm25:
-    k1: ${BM25_K1:1.2}                # BM25 词频饱和参数（推荐 1.2~2.0）
-    b:  ${BM25_B:0.75}                # BM25 文档长度归一化参数（推荐 0.5~0.9）
+    k1: 1.2                # BM25 词频饱和参数（推荐 1.2~2.0）
+    b:  0.75               # BM25 文档长度归一化参数（推荐 0.5~0.9）
 
   # Elasticsearch（外部 BM25 检索，可选，需部署 ES 服务才能启用）
   # 启用后 Bm25Retriever 同时使用 Lucene（内嵌）和 ES（外部）双路 BM25，效果更好
   elasticsearch:
-    enabled: ${ES_ENABLED:false}        # 设为 true 启用外部 ES（默认关闭，内嵌 Lucene 始终可用）
-    host: ${ES_HOST:localhost}
-    port: ${ES_PORT:9200}
-    index-name: ${ES_INDEX:rag-documents}
-    username: ${ES_USERNAME:}           # 留空表示无认证（开发环境）
-    password: ${ES_PASSWORD:}
+    enabled: false              # 设为 true 启用外部 ES（默认关闭，内嵌 Lucene 始终可用）
+    host: localhost
+    port: 9200
+    index-name: rag-documents
+    username:                   # 留空表示无认证（开发环境）
+    password:
     # IK 中文分词器（需安装插件：bin/elasticsearch-plugin install analysis-ik）
     # 未安装时设为 false，自动使用 standard 分词器（英文效果好，中文效果较差）
-    ik-analyzer: ${ES_IK_ANALYZER:true}
+    ik-analyzer: true
 
 # 天气 API（OpenWeatherMap 免费版，申请地址：https://openweathermap.org/api）
 weather:
   api:
-    key: ${WEATHER_API_KEY:}    # 留空则降级返回提示，从 openweathermap.org 免费申请
+    key:                  # 留空则降级返回提示，从 openweathermap.org 免费申请
 
 # ==================== 邮件 SMTP 配置 ====================
 # 启用邮件告警时需配置此节。以 Gmail 为例：
@@ -132,29 +132,29 @@ llm:
   observability:
     alert:
       dingtalk:
-        enabled: ${ALERT_DINGTALK_ENABLED:false}
-        webhook: ${ALERT_DINGTALK_WEBHOOK:}
+        enabled: false
+        webhook:
       wecom:
-        enabled: ${ALERT_WECOM_ENABLED:false}
-        webhook: ${ALERT_WECOM_WEBHOOK:}
+        enabled: false
+        webhook:
       email:
-        enabled: ${ALERT_EMAIL_ENABLED:false}
-        to: ${ALERT_EMAIL_TO:}           # 多收件人用逗号分隔，如: ops@corp.com,cto@corp.com
-        from: ${ALERT_EMAIL_FROM:ai-agent@example.com}
+        enabled: false
+        to:                    # 多收件人用逗号分隔，如: ops@corp.com,cto@corp.com
+        from: ai-agent@example.com
       custom:
-        enabled: ${ALERT_CUSTOM_ENABLED:false}
-        webhook: ${ALERT_CUSTOM_WEBHOOK:}
+        enabled: false
+        webhook:
 
 # ==================== JWT 认证配置 ====================
 security:
   jwt:
-    # 生产环境必须通过环境变量注入，至少 32 个字符
-    secret: ${JWT_SECRET:change-this-secret-key-in-production-min-32-chars}
-    expiration-seconds: ${JWT_EXPIRATION:86400}   # 默认 24 小时
+    # 生产环境必须修改，至少 32 个字符
+    secret: change-this-secret-key-in-production-min-32-chars
+    expiration-seconds: 86400   # 默认 24 小时
   rate-limit:
-    per-minute: ${RATE_LIMIT_PER_MINUTE:10}
-    per-day: ${RATE_LIMIT_PER_DAY:500}
+    per-minute: 10
+    per-day: 500
 
 # 知识库置信度阈值
 kb:
-  confidence-threshold: ${KB_CONFIDENCE_THRESHOLD:0.6}
+  confidence-threshold: 0.6
