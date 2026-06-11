@@ -23,6 +23,9 @@ export const state = {
 
     /** 是否开启流式输出 */
     streamEnabled: true,
+
+    /** 是否开启 ReAct 多步推理模式 */
+    reactEnabled: false,
 };
 
 export { generateId };

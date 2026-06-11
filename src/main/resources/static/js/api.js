@@ -96,3 +96,24 @@ export async function deleteDocument(docId) {
     if (!res.ok) throw new Error(`删除失败: ${res.status}`);
 }
 
+/**
+ * ReAct 多步推理对话
+ *
+ * 适用于需要多工具协作的复杂任务，响应包含每轮推理步骤。
+ * @param {string} sessionId
+ * @param {string} message
+ * @returns {Promise<{answer: string, iterations: number, durationMs: number, steps: Array}>}
+ */
+export async function chatReact(sessionId, message) {
+    const res = await authFetch(`${BASE}/api/v1/chat/react`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, message })
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `请求失败: ${res.status}`);
+    }
+    return res.json();
+}
+

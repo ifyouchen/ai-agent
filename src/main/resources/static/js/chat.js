@@ -71,6 +71,18 @@ function initInputArea() {
         });
     }
 
+    // 深度推理（ReAct）开关
+    const reactToggle = document.getElementById('reactToggle');
+    if (reactToggle) {
+        reactToggle.addEventListener('click', () => {
+            state.reactEnabled = !state.reactEnabled;
+            reactToggle.classList.toggle('on', state.reactEnabled);
+            if (state.reactEnabled) {
+                showToast('info', '🧠 深度推理已开启，适合复杂多步任务');
+            }
+        });
+    }
+
     // 清除记忆按钮
     const clearBtn = document.getElementById('clearMemoryBtn');
     if (clearBtn) {
@@ -98,7 +110,9 @@ export async function sendMessage() {
     const title = message.slice(0, 12) + (message.length > 12 ? '...' : '');
     updateSessionTitle(state.sessionId, title);
 
-    if (state.streamEnabled) {
+    if (state.reactEnabled) {
+        await doReActChat(message);
+    } else if (state.streamEnabled) {
         await doStreamChat(message);
     } else {
         await doSyncChat(message);
@@ -167,6 +181,53 @@ async function doStreamChat(message) {
     function finishStream() {
         setSending(false);
         state.isStreaming = false;
+        scrollToBottom();
+    }
+}
+
+// ── ReAct 深度推理模式 ─────────────────────────────────────────
+
+async function doReActChat(message) {
+    setSending(true);
+    const bubble = appendMessage('ai', '');
+    showTypingDots(bubble);
+
+    try {
+        const data = await chatReact(state.sessionId, message);
+        clearTypingDots(bubble);
+
+        // 渲染最终答案
+        let html = formatMarkdown(data.answer);
+
+        // 若有推理步骤，折叠展示（点击可展开）
+        if (data.steps && data.steps.length > 0) {
+            const stepsHtml = data.steps.map(s => `
+                <div class="react-step">
+                    <div class="react-step-label">第 ${s.iteration} 步 · ${s.toolName}</div>
+                    ${s.thought ? `<div class="react-thought">💭 ${s.thought.substring(0, 120)}${s.thought.length > 120 ? '...' : ''}</div>` : ''}
+                    <div class="react-tool">🔧 ${s.toolName}(${s.toolArgs})</div>
+                    ${s.observation ? `<div class="react-obs">📋 ${s.observation.substring(0, 150)}${s.observation.length > 150 ? '...' : ''}</div>` : ''}
+                </div>
+            `).join('');
+
+            html = `
+                <details class="react-steps-container">
+                    <summary class="react-steps-summary">
+                        🧠 推理过程（${data.iterations} 步 · ${data.durationMs}ms）
+                    </summary>
+                    <div class="react-steps">${stepsHtml}</div>
+                </details>
+                <div class="react-answer">${formatMarkdown(data.answer)}</div>
+            `;
+        }
+
+        bubble.innerHTML = html;
+    } catch (e) {
+        clearTypingDots(bubble);
+        bubble.innerHTML = `<span class="error-msg">❌ 推理失败：${e.message}</span>`;
+        showToast('error', '深度推理失败，请重试');
+    } finally {
+        setSending(false);
         scrollToBottom();
     }
 }
