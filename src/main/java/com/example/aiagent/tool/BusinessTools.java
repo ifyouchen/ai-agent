@@ -14,6 +14,9 @@ import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -109,6 +112,10 @@ public class BusinessTools {
     @Tool("查询指定用户最近的订单列表，返回最多10条订单记录")
     public String queryUserOrders(@P("用户ID，如 U001") String userId) {
         log.info("[Tool] 查询用户订单列表: {}", userId);
+        if (!hasDataPermission(userId)) {
+            log.warn("[SECURITY] 数据越权访问被拒绝：当前用户无权查询用户 {} 的订单", userId);
+            return "权限不足：只能查询您自己的订单信息。";
+        }
         try {
             List<Order> orders = orderMapper.findByUserId(userId, 10);
             if (orders.isEmpty()) {
@@ -141,6 +148,10 @@ public class BusinessTools {
     @Tool("统计用户各状态的订单数量，包括待付款、已付款、已发货、已签收、已取消等")
     public String queryOrderSummary(@P("用户ID，如 U001") String userId) {
         log.info("[Tool] 查询用户订单统计: {}", userId);
+        if (!hasDataPermission(userId)) {
+            log.warn("[SECURITY] 数据越权访问被拒绝：当前用户无权查询用户 {} 的订单统计", userId);
+            return "权限不足：只能查询您自己的订单统计信息。";
+        }
         try {
             List<Map<String, Object>> groups = orderMapper.countGroupByStatus(userId);
             if (groups.isEmpty()) {
@@ -234,6 +245,10 @@ public class BusinessTools {
     @Tool("查询用户的账户余额、会员等级和基本账户信息")
     public String queryUserAccount(@P("用户ID，如 U001") String userId) {
         log.info("[Tool] 查询用户账户: {}", userId);
+        if (!hasDataPermission(userId)) {
+            log.warn("[SECURITY] 数据越权访问被拒绝：当前用户无权查询用户 {} 的账户", userId);
+            return "权限不足：只能查询您自己的账户信息。";
+        }
         try {
             Optional<UserAccount> opt = userAccountMapper.findByUserId(userId);
             if (opt.isEmpty()) {
@@ -272,6 +287,10 @@ public class BusinessTools {
     @Tool("查询用户当前积分余额及积分等级权益说明")
     public String queryUserPoints(@P("用户ID，如 U001") String userId) {
         log.info("[Tool] 查询用户积分: {}", userId);
+        if (!hasDataPermission(userId)) {
+            log.warn("[SECURITY] 数据越权访问被拒绝：当前用户无权查询用户 {} 的积分", userId);
+            return "权限不足：只能查询您自己的积分信息。";
+        }
         try {
             Optional<UserAccount> opt = userAccountMapper.findByUserId(userId);
             if (opt.isEmpty()) {
@@ -375,6 +394,34 @@ public class BusinessTools {
     }
 
     // ── 私有辅助方法 ──────────────────────────────────────────────
+
+    /**
+     * 数据权限校验：只允许用户查询自己的数据，ADMIN 角色可查所有用户数据
+     *
+     * <p>从 Spring Security 上下文获取当前登录用户（由 JwtAuthFilter 注入），
+     * 若请求的 userId 与当前用户不符且非 ADMIN，则返回 false。
+     *
+     * @param requestedUserId 被查询的用户ID
+     * @return true 表示有权限，false 表示无权限
+     */
+    private boolean hasDataPermission(String requestedUserId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            return false;
+        }
+
+        // ADMIN 角色可查询任意用户数据
+        boolean isAdmin = auth.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(a -> "ROLE_ADMIN".equals(a) || "ADMIN".equals(a));
+        if (isAdmin) {
+            return true;
+        }
+
+        // 普通用户：只能查自己的数据
+        String currentUserId = String.valueOf(auth.getPrincipal());
+        return currentUserId.equals(requestedUserId);
+    }
 
     private Optional<Order> findOrder(String orderId) {
         // 先用原始格式查

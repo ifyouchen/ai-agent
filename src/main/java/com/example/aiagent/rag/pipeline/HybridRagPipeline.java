@@ -77,6 +77,57 @@ public class HybridRagPipeline {
     private int queryVariants;
 
     /**
+     * 仅执行检索阶段（Step 1-4），不调用 LLM 生成答案
+     *
+     * <p>专供 {@link com.example.aiagent.rag.retrieval.HybridRagContentRetriever} 使用。
+     * Agent 框架在获取检索结果后会自行调用 LLM 生成回答，
+     * 此方法避免了在检索阶段重复触发一次无用的 LLM 调用。
+     *
+     * @param userQuery 用户原始问题
+     * @return 经过精排的 chunk 列表（已完成 HyDE + 混合检索 + RRF + Reranker）
+     */
+    public List<RetrievedChunk> retrieveOnly(String userQuery) {
+        log.info("=== 开始混合 RAG 检索（不生成答案），查询：'{}' ===", userQuery);
+        long start = System.currentTimeMillis();
+
+        // Step 1：查询改写
+        String hydeDoc = queryRewriter.generateHypotheticalDocument(userQuery);
+        List<String> rewrittenQueries = queryRewriter.rewriteMultiPerspective(userQuery, queryVariants);
+
+        // Step 2：混合检索
+        List<RetrievedChunk> hydeResults = vectorSearch(hydeDoc, vectorTopK);
+        List<RetrievedChunk> multiQueryResults = rewrittenQueries.parallelStream()
+                .flatMap(q -> vectorSearch(q, vectorTopK / Math.max(rewrittenQueries.size(), 1)).stream())
+                .collect(Collectors.toList());
+
+        Map<String, RetrievedChunk> vectorMap = new LinkedHashMap<>();
+        mergeIntoMap(vectorMap, hydeResults);
+        mergeIntoMap(vectorMap, multiQueryResults);
+        List<RetrievedChunk> allVectorResults = new ArrayList<>(vectorMap.values());
+        allVectorResults.sort((a, b) -> Double.compare(b.getVectorScore(), a.getVectorScore()));
+
+        List<RetrievedChunk> bm25Results = null;
+        if (bm25Retriever != null && bm25Retriever.isAvailable()) {
+            bm25Results = bm25Retriever.retrieve(userQuery, vectorTopK);
+        }
+
+        // Step 3：RRF 融合
+        Map<String, List<RetrievedChunk>> retrievalLists = new LinkedHashMap<>();
+        retrievalLists.put("vector", allVectorResults);
+        if (bm25Results != null && !bm25Results.isEmpty()) {
+            retrievalLists.put("bm25", bm25Results);
+        }
+        List<RetrievedChunk> rrfResults = rrfFusionRanker.fuse(retrievalLists, rrfTopK);
+
+        // Step 4：Reranker 精排
+        List<RetrievedChunk> reranked = rerankerService.rerank(userQuery, rrfResults, rerankerTopK);
+
+        log.info("=== 混合 RAG 检索完成，返回 {} 个片段，耗时 {}ms ===",
+                reranked.size(), System.currentTimeMillis() - start);
+        return reranked;
+    }
+
+    /**
      * 执行完整的混合 RAG Pipeline
      */
     public RagResponse execute(String userQuery) {

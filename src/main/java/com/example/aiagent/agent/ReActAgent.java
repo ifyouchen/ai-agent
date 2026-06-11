@@ -1,6 +1,8 @@
 package com.example.aiagent.agent;
 
 import com.example.aiagent.tool.BusinessTools;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.agent.tool.Tools;
@@ -17,6 +19,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * ReAct（Reason + Act）多步推理 Agent
@@ -59,6 +62,9 @@ public class ReActAgent {
 
     /** 工具规格列表（懒加载，启动后不再变化） */
     private volatile List<ToolSpecification> cachedToolSpecs;
+
+    /** JSON 解析器（线程安全，全局复用） */
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static final String SYSTEM_PROMPT = """
             你是一个具备多步推理能力的智能助手（ReAct Agent）。
@@ -170,57 +176,60 @@ public class ReActAgent {
     /**
      * 根据工具名和 JSON 参数字符串调用对应的 BusinessTools 方法
      *
-     * LangChain4j 的工具调用约定：
-     *   - 方法上标注 @Tool，框架自动生成 ToolSpecification
-     *   - 调用时 arguments 是 JSON 字符串，单参数形如 {"city":"北京"}
+     * <p>使用 Jackson 解析 JSON 参数，按各工具的实际参数名精确提取，
+     * 支持嵌套 JSON、特殊字符、多参数等复杂场景，不再依赖脆弱的字符串截取。
      */
     private String invokeTool(String toolName, String arguments) {
-        // 使用 LangChain4j 的工具执行器通过反射调用 BusinessTools 中的方法
         try {
-            // 解析参数（LangChain4j arguments 格式为 JSON 对象）
-            String param = extractFirstStringParam(arguments);
+            // 使用 Jackson 解析 JSON 参数（健壮，支持嵌套/特殊字符）
+            Map<String, Object> params = parseArgs(arguments);
 
             return switch (toolName) {
-                case "queryOrderStatus"  -> businessTools.queryOrderStatus(param);
-                case "queryUserOrders"   -> businessTools.queryUserOrders(param);
-                case "queryOrderSummary" -> businessTools.queryOrderSummary(param);
-                case "getWeather"        -> businessTools.getWeather(param);
-                case "queryUserAccount"  -> businessTools.queryUserAccount(param);
-                case "queryUserPoints"   -> businessTools.queryUserPoints(param);
-                case "calculate"         -> businessTools.calculate(param);
-                case "getCurrentDateTime"-> businessTools.getCurrentDateTime();
+                case "queryOrderStatus"   -> businessTools.queryOrderStatus(getString(params, "orderId"));
+                case "queryUserOrders"    -> businessTools.queryUserOrders(getString(params, "userId"));
+                case "queryOrderSummary"  -> businessTools.queryOrderSummary(getString(params, "userId"));
+                case "getWeather"         -> businessTools.getWeather(getString(params, "city"));
+                case "queryUserAccount"   -> businessTools.queryUserAccount(getString(params, "userId"));
+                case "queryUserPoints"    -> businessTools.queryUserPoints(getString(params, "userId"));
+                case "calculate"          -> businessTools.calculate(getString(params, "expression"));
+                case "getCurrentDateTime" -> businessTools.getCurrentDateTime(getString(params, "timezone"));
                 default -> "未知工具：" + toolName;
             };
         } catch (Exception e) {
+            log.warn("[ReAct] 工具 {} 调用异常: {}", toolName, e.getMessage());
             return "工具执行异常：" + e.getMessage();
         }
     }
 
     /**
-     * 从 JSON 参数字符串中提取第一个字符串参数值
+     * 解析 LangChain4j 工具调用的 JSON 参数字符串
      *
-     * 示例：{"city":"北京"} → "北京"
-     *       {"orderId":"#12345"} → "#12345"
-     *       {"expression":"1+2*3"} → "1+2*3"
-     *       {}  → ""（无参数工具）
+     * <p>示例：{@code {"city":"北京"}} → Map{"city" → "北京"}
+     *
+     * @param jsonArgs LangChain4j 传入的 JSON 字符串（可为 null / 空 / "{}"）
+     * @return 参数 Map，若解析失败返回空 Map
      */
-    private String extractFirstStringParam(String jsonArgs) {
+    private Map<String, Object> parseArgs(String jsonArgs) {
         if (jsonArgs == null || jsonArgs.isBlank() || "{}".equals(jsonArgs.trim())) {
-            return "";
+            return Map.of();
         }
-        // 简单解析：找到第一个冒号后的值
-        int colonIdx = jsonArgs.indexOf(':');
-        if (colonIdx == -1) return jsonArgs;
+        try {
+            return MAPPER.readValue(jsonArgs, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            log.warn("[ReAct] JSON 参数解析失败，原始参数：{}，错误：{}", jsonArgs, e.getMessage());
+            return Map.of();
+        }
+    }
 
-        String valueStr = jsonArgs.substring(colonIdx + 1).trim();
-        // 去掉结尾的 }
-        int endIdx = valueStr.lastIndexOf('}');
-        if (endIdx > 0) valueStr = valueStr.substring(0, endIdx).trim();
-        // 去掉两端引号
-        if (valueStr.startsWith("\"") && valueStr.endsWith("\"")) {
-            valueStr = valueStr.substring(1, valueStr.length() - 1);
-        }
-        return valueStr;
+    /**
+     * 从参数 Map 中安全获取字符串值
+     *
+     * <p>若 Map 中该 key 不存在，返回空字符串（防止 NullPointerException）。
+     */
+    private String getString(Map<String, Object> params, String key) {
+        Object val = params.get(key);
+        if (val == null) return "";
+        return String.valueOf(val);
     }
 
     /**

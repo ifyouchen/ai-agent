@@ -23,15 +23,19 @@ import java.util.List;
  * 而项目的 {@link HybridRagPipeline} 是独立的 Service Bean，
  * 本类作为适配器，将 Pipeline 包装为 LangChain4j 可直接使用的 ContentRetriever。
  *
- * <p>检索流程（完整的 5 步混合 RAG）：
+ * <p>检索流程（4 步混合 RAG，不含 LLM 生成）：
  * <pre>
  *   用户查询
  *     → [1] 查询改写（HyDE + 多角度改写）
  *     → [2] 混合检索（向量检索 + BM25）
  *     → [3] RRF 融合排序
  *     → [4] Reranker 精排
- *     → [5] 返回 Content 列表（携带文档来源 Metadata）
+ *     → 返回 Content 列表（携带文档来源 Metadata，由 Agent 自行调用 LLM 生成答案）
  * </pre>
+ *
+ * <p>注意：此处仅执行步骤 1-4，不触发 Step 5（LLM 生成答案）。
+ * 原先调用 {@code execute()} 会在检索阶段额外消耗一次 LLM 调用来生成答案然后丢弃，
+ * 现已改用 {@code retrieveOnly()} 修复该性能浪费问题。
  *
  * <p>与原始 EmbeddingStoreContentRetriever 的对比：
  * <table>
@@ -50,10 +54,9 @@ public class HybridRagContentRetriever implements ContentRetriever {
     private final HybridRagPipeline hybridRagPipeline;
 
     /**
-     * 实现 ContentRetriever 接口：将用户查询委托给 HybridRagPipeline 执行
+     * 实现 ContentRetriever 接口：将用户查询委托给 HybridRagPipeline 执行（仅检索阶段）
      *
-     * <p>注意：HybridRagPipeline 的 execute() 方法同时完成检索和生成，
-     * 这里只使用其检索结果（rerankedChunks），不使用 LLM 生成的答案。
+     * <p>调用 {@code retrieveOnly()} 执行 Step 1-4，不触发 LLM 答案生成（Step 5）。
      * Agent 框架会将检索到的 Content 注入 Prompt，然后由 Agent 自己调用 LLM 生成答案。
      *
      * @param query LangChain4j 查询对象（包含用户文本）
@@ -92,30 +95,12 @@ public class HybridRagContentRetriever implements ContentRetriever {
     /**
      * 执行 Pipeline 的检索阶段（步骤 1-4），提取精排后的 chunk 列表
      *
-     * 通过访问 HybridRagPipeline 内部实现来获取 reranked chunks。
-     * 由于 HybridRagPipeline 目前将检索和生成作为一个完整流程，
-     * 我们这里只需要其 Citations 中包含的 chunk 信息即可。
+     * <p>直接调用 {@link HybridRagPipeline#retrieveOnly(String)}，
+     * 仅执行查询改写 + 混合检索 + RRF 融合 + Reranker 精排，
+     * 不触发 LLM 生成答案（Step 5），避免每次检索浪费一次 LLM 调用。
      */
     private List<RetrievedChunk> retrieveChunks(String userText) {
-        // 调用完整 Pipeline，从返回的 citations 中还原 RetrievedChunk 信息
-        // 这样保留了完整的 5 步流程（包括 HyDE、RRF、Reranker）
-        var ragResponse = hybridRagPipeline.execute(userText);
-
-        if (ragResponse.getCitations() == null || ragResponse.getCitations().isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        // 将 Citation（带引用信息的片段）映射为 RetrievedChunk
-        return ragResponse.getCitations().stream()
-                .map(citation -> RetrievedChunk.builder()
-                        .chunkId(citation.getChunkId())
-                        .content(citation.getExcerpt())
-                        .documentName(citation.getDocumentName())
-                        .documentPath(citation.getDocumentPath())
-                        .pageNumber(citation.getPageNumber())
-                        .rerankerScore(citation.getRelevanceScore())
-                        .build())
-                .toList();
+        return hybridRagPipeline.retrieveOnly(userText);
     }
 
     /**

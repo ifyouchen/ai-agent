@@ -163,6 +163,13 @@ async function doStreamChat(message) {
         scrollToBottom();
     };
 
+    // 收到 replace 事件：服务端检测到敏感内容，用脱敏后的完整文本替换已显示内容
+    eventSource.addEventListener('replace', (e) => {
+        fullText = e.data;
+        bubble.innerHTML = formatMarkdown(fullText) + '<span class="typing-cursor"></span>';
+        scrollToBottom();
+    });
+
     eventSource.addEventListener('done', () => {
         eventSource.close();
         bubble.innerHTML = formatMarkdown(fullText);

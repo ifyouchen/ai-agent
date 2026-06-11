@@ -133,7 +133,8 @@ public class StreamingChatController {
                 .onComplete(response -> {
                     try {
                         // ── Step 5：输出内容脱敏 ──────────────────
-                        // 对完整回复做一次脱敏检查；若检测到敏感内容，推送一条警告事件
+                        // 对完整回复做脱敏处理；若检测到敏感内容，推送脱敏后的完整文本
+                        // 让前端用 replace 事件替换已渲染的原始内容，确保用户看到的是脱敏文本
                         String fullText = fullTextRef.get().toString();
                         OutputContentFilter.FilterResult outputCheck = outputContentFilter.filter(fullText);
                         if (!outputCheck.detectedTypes().isEmpty()) {
@@ -141,16 +142,27 @@ public class StreamingChatController {
                                     AuditLogService.EventType.OUTPUT_SENSITIVE_FILTERED,
                                     userId, clientIp,
                                     "流式输出脱敏，检测到：" + outputCheck.detectedTypes());
-                            // 向前端推送一条标记事件，通知输出已被脱敏（前端可选处理）
+                            // 推送脱敏后的完整替换文本（前端收到 replace 事件后整体替换已显示内容）
                             emitter.send(SseEmitter.event()
-                                    .name("desensitized")
-                                    .data(String.join(",", outputCheck.detectedTypes())));
+                                    .name("replace")
+                                    .data(outputCheck.filteredContent()));
+                            log.info("[SECURITY] 流式输出已脱敏，类型：{}", outputCheck.detectedTypes());
                         }
 
                         // ── Step 6：审计日志（对话完成）──────────
                         long duration = System.currentTimeMillis() - startMs;
-                        auditLogService.logAiChat(userId, sessionId, clientIp, 0, 0);
-                        log.info("流式对话完成 userId={} sessionId={} 耗时={}ms", userId, sessionId, duration);
+                        // 从 LangChain4j Response 中提取 Token 用量（streaming 模式下由 onComplete 返回）
+                        int inputTokens  = 0;
+                        int outputTokens = 0;
+                        if (response != null && response.tokenUsage() != null) {
+                            inputTokens  = response.tokenUsage().inputTokenCount()  != null
+                                    ? response.tokenUsage().inputTokenCount()  : 0;
+                            outputTokens = response.tokenUsage().outputTokenCount() != null
+                                    ? response.tokenUsage().outputTokenCount() : 0;
+                        }
+                        auditLogService.logAiChat(userId, sessionId, clientIp, inputTokens, outputTokens);
+                        log.info("流式对话完成 userId={} sessionId={} tokens={}/{} 耗时={}ms",
+                                userId, sessionId, inputTokens, outputTokens, duration);
 
                         emitter.send(SseEmitter.event().name("done").data("[DONE]"));
                         emitter.complete();
