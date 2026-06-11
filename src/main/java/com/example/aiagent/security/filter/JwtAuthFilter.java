@@ -24,6 +24,7 @@ import java.util.List;
  *
  * 每次请求执行一次（OncePerRequestFilter），负责：
  * 1. 从 Authorization Header 中提取 Bearer Token
+ *    （SSE 场景 EventSource 不支持自定义 Header，额外支持从 ?token= URL 参数读取）
  * 2. 调用 JwtService 验证签名和过期
  * 3. 解析 userId、roles，构造 Authentication 注入 SecurityContext
  * 4. 将 userId、sessionId 写入 MDC，供日志和 AOP 切面使用
@@ -89,12 +90,21 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     /**
-     * 从 Authorization: Bearer <token> 中提取 Token 字符串
+     * 提取 Token 字符串
+     *
+     * 优先从 Authorization: Bearer <token> Header 读取；
+     * 若 Header 不存在（如 SSE EventSource 场景），则从 ?token= URL 参数读取。
      */
     private String extractToken(HttpServletRequest request) {
+        // 1. 优先读 Authorization Header
         String header = request.getHeader(AUTHORIZATION_HEADER);
         if (StringUtils.hasText(header) && header.startsWith(BEARER_PREFIX)) {
             return header.substring(BEARER_PREFIX.length());
+        }
+        // 2. 降级读 URL 参数（专为 SSE/EventSource 场景设计，EventSource 无法设置自定义 Header）
+        String tokenParam = request.getParameter("token");
+        if (StringUtils.hasText(tokenParam)) {
+            return tokenParam;
         }
         return null;
     }

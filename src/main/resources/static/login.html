@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Agent — 登录</title>
+    <link rel="stylesheet" href="/css/main.css">
+    <style>
+        /* 登录页专用样式 */
+        body {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: auto;
+        }
+
+        .auth-container {
+            width: 100%;
+            max-width: 420px;
+            padding: 16px;
+        }
+
+        .auth-logo {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .auth-logo .logo-icon {
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin: 0 auto 16px;
+        }
+
+        .auth-logo h1 {
+            color: #fff;
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .auth-logo p {
+            color: rgba(255,255,255,.5);
+            font-size: 14px;
+        }
+
+        .auth-card {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 20px 60px rgba(0,0,0,.3);
+        }
+
+        .auth-tabs {
+            display: flex;
+            background: #f3f4f6;
+            border-radius: 10px;
+            padding: 4px;
+            margin-bottom: 28px;
+        }
+
+        .auth-tab {
+            flex: 1;
+            padding: 8px;
+            text-align: center;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            color: #6b7280;
+            transition: all 0.2s;
+            border: none;
+            background: none;
+        }
+
+        .auth-tab.active {
+            background: #fff;
+            color: #111827;
+            box-shadow: 0 1px 4px rgba(0,0,0,.1);
+        }
+
+        .auth-form { display: none; }
+        .auth-form.active { display: block; }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 6px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 11px 14px;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 14px;
+            color: #111827;
+            background: #fafafa;
+            transition: all 0.15s;
+            outline: none;
+            box-sizing: border-box;
+        }
+
+        .form-input:focus {
+            border-color: #6366f1;
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(99,102,241,.1);
+        }
+
+        .form-input.error {
+            border-color: #dc2626;
+            background: #fef2f2;
+        }
+
+        .form-error {
+            font-size: 12px;
+            color: #dc2626;
+            margin-top: 5px;
+            display: none;
+        }
+
+        .form-error.visible { display: block; }
+
+        .submit-btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 8px;
+        }
+
+        .submit-btn:hover { opacity: 0.92; transform: translateY(-1px); }
+        .submit-btn:active { transform: translateY(0); }
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .global-error {
+            background: #fef2f2;
+            border: 1px solid #fca5a5;
+            border-radius: 10px;
+            padding: 10px 14px;
+            color: #dc2626;
+            font-size: 13px;
+            margin-bottom: 18px;
+            display: none;
+        }
+
+        .global-error.visible { display: block; }
+
+        .auth-footer {
+            text-align: center;
+            margin-top: 20px;
+            color: rgba(255,255,255,.35);
+            font-size: 12px;
+        }
+
+        /* 加载动画 */
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255,255,255,.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+<div class="auth-container">
+    <!-- Logo -->
+    <div class="auth-logo">
+        <div class="logo-icon">🤖</div>
+        <h1>AI Agent</h1>
+        <p>企业级智能对话平台</p>
+    </div>
+
+    <!-- 登录卡片 -->
+    <div class="auth-card">
+        <!-- 标签页切换 -->
+        <div class="auth-tabs">
+            <button class="auth-tab active" id="tab-login">登录</button>
+            <button class="auth-tab" id="tab-register">注册</button>
+        </div>
+
+        <!-- 全局错误提示 -->
+        <div class="global-error" id="globalError"></div>
+
+        <!-- 登录表单 -->
+        <form class="auth-form active" id="loginForm" novalidate>
+            <div class="form-group">
+                <label class="form-label" for="loginUsername">用户名</label>
+                <input class="form-input" id="loginUsername" type="text"
+                       placeholder="请输入用户名" autocomplete="username">
+                <div class="form-error" id="loginUsernameError">请输入用户名</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="loginPassword">密码</label>
+                <input class="form-input" id="loginPassword" type="password"
+                       placeholder="请输入密码" autocomplete="current-password">
+                <div class="form-error" id="loginPasswordError">请输入密码</div>
+            </div>
+            <button class="submit-btn" type="submit" id="loginBtn">登录</button>
+        </form>
+
+        <!-- 注册表单 -->
+        <form class="auth-form" id="registerForm" novalidate>
+            <div class="form-group">
+                <label class="form-label" for="regUsername">用户名</label>
+                <input class="form-input" id="regUsername" type="text"
+                       placeholder="请输入用户名（4-32位字母数字）" autocomplete="username">
+                <div class="form-error" id="regUsernameError">用户名需为4-32位字母或数字</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="regPassword">密码</label>
+                <input class="form-input" id="regPassword" type="password"
+                       placeholder="请设置密码（至少6位）" autocomplete="new-password">
+                <div class="form-error" id="regPasswordError">密码不能少于6位</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="regConfirm">确认密码</label>
+                <input class="form-input" id="regConfirm" type="password"
+                       placeholder="再次输入密码" autocomplete="new-password">
+                <div class="form-error" id="regConfirmError">两次密码不一致</div>
+            </div>
+            <button class="submit-btn" type="submit" id="registerBtn">注册并登录</button>
+        </form>
+    </div>
+
+    <div class="auth-footer">© 2025 AI Agent Platform · 企业内部系统</div>
+</div>
+
+<script type="module">
+    // ── 常量 ────────────────────────────────────────────────────
+    const TOKEN_KEY = 'ai_agent_token';
+    const USER_KEY  = 'ai_agent_user';
+
+    // 已登录直接跳转主页
+    if (localStorage.getItem(TOKEN_KEY)) {
+        location.replace('/index.html');
+    }
+
+    // ── 标签页切换 ───────────────────────────────────────────────
+    const tabLogin    = document.getElementById('tab-login');
+    const tabRegister = document.getElementById('tab-register');
+    const loginForm   = document.getElementById('loginForm');
+    const registerForm= document.getElementById('registerForm');
+    const globalError = document.getElementById('globalError');
+
+    tabLogin.addEventListener('click', () => {
+        tabLogin.classList.add('active');
+        tabRegister.classList.remove('active');
+        loginForm.classList.add('active');
+        registerForm.classList.remove('active');
+        clearErrors();
+    });
+
+    tabRegister.addEventListener('click', () => {
+        tabRegister.classList.add('active');
+        tabLogin.classList.remove('active');
+        registerForm.classList.add('active');
+        loginForm.classList.remove('active');
+        clearErrors();
+    });
+
+    // ── 登录表单提交 ─────────────────────────────────────────────
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearErrors();
+
+        const username = document.getElementById('loginUsername').value.trim();
+        const password = document.getElementById('loginPassword').value;
+
+        if (!validateLogin(username, password)) return;
+
+        const btn = document.getElementById('loginBtn');
+        setLoading(btn, true, '登录中...');
+
+        try {
+            const data = await callApi('/api/v1/auth/login', { username, password });
+            saveAuth(data);
+            location.replace('/index.html');
+        } catch (err) {
+            showGlobalError(err.message || '登录失败，请检查用户名和密码');
+        } finally {
+            setLoading(btn, false, '登录');
+        }
+    });
+
+    // ── 注册表单提交 ─────────────────────────────────────────────
+    registerForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearErrors();
+
+        const username = document.getElementById('regUsername').value.trim();
+        const password = document.getElementById('regPassword').value;
+        const confirm  = document.getElementById('regConfirm').value;
+
+        if (!validateRegister(username, password, confirm)) return;
+
+        const btn = document.getElementById('registerBtn');
+        setLoading(btn, true, '注册中...');
+
+        try {
+            const data = await callApi('/api/v1/auth/register', { username, password });
+            saveAuth(data);
+            location.replace('/index.html');
+        } catch (err) {
+            showGlobalError(err.message || '注册失败，用户名可能已存在');
+        } finally {
+            setLoading(btn, false, '注册并登录');
+        }
+    });
+
+    // ── 校验函数 ─────────────────────────────────────────────────
+    function validateLogin(username, password) {
+        let ok = true;
+        if (!username) {
+            showFieldError('loginUsername', 'loginUsernameError', '请输入用户名'); ok = false;
+        }
+        if (!password) {
+            showFieldError('loginPassword', 'loginPasswordError', '请输入密码'); ok = false;
+        }
+        return ok;
+    }
+
+    function validateRegister(username, password, confirm) {
+        let ok = true;
+        if (!username || !/^[a-zA-Z0-9]{4,32}$/.test(username)) {
+            showFieldError('regUsername', 'regUsernameError', '用户名需为4-32位字母或数字'); ok = false;
+        }
+        if (!password || password.length < 6) {
+            showFieldError('regPassword', 'regPasswordError', '密码不能少于6位'); ok = false;
+        }
+        if (password !== confirm) {
+            showFieldError('regConfirm', 'regConfirmError', '两次密码不一致'); ok = false;
+        }
+        return ok;
+    }
+
+    // ── 工具函数 ─────────────────────────────────────────────────
+    async function callApi(url, body) {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `请求失败 (${res.status})`);
+        return data;
+    }
+
+    function saveAuth(data) {
+        localStorage.setItem(TOKEN_KEY, data.token);
+        localStorage.setItem(USER_KEY, JSON.stringify({
+            userId: data.userId,
+            username: data.username,
+            roles: data.roles
+        }));
+    }
+
+    function showFieldError(inputId, errorId, msg) {
+        document.getElementById(inputId)?.classList.add('error');
+        const errEl = document.getElementById(errorId);
+        if (errEl) { errEl.textContent = msg; errEl.classList.add('visible'); }
+    }
+
+    function showGlobalError(msg) {
+        globalError.textContent = msg;
+        globalError.classList.add('visible');
+    }
+
+    function clearErrors() {
+        globalError.classList.remove('visible');
+        document.querySelectorAll('.form-input').forEach(el => el.classList.remove('error'));
+        document.querySelectorAll('.form-error').forEach(el => el.classList.remove('visible'));
+    }
+
+    function setLoading(btn, loading, text) {
+        btn.disabled = loading;
+        btn.innerHTML = loading
+            ? `<span class="spinner"></span>${text}`
+            : text;
+    }
+</script>
+</body>
+</html>
+

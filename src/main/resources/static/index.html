@@ -136,6 +136,15 @@
 <!-- Toast 容器 -->
 <div class="toast-container" id="toastContainer"></div>
 
+<!-- 快速认证守卫：在模块加载前判断是否已登录，未登录立即跳转（避免页面内容闪烁） -->
+<script>
+    (function () {
+        if (!localStorage.getItem('ai_agent_token')) {
+            location.replace('/login.html');
+        }
+    })();
+</script>
+
 <!-- ES Module 入口（type="module" 原生支持，无需构建工具） -->
 <script type="module" src="/js/app.js"></script>
 

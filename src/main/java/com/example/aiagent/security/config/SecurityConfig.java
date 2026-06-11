@@ -62,13 +62,16 @@ public class SecurityConfig {
 
             // 接口权限配置
             .authorizeHttpRequests(auth -> auth
-                // 公开接口：认证、健康检查、前端静态页
+                // 公开接口：认证、健康检查、前端静态资源（含 login.html 和 JS/CSS）
                 .requestMatchers(
                     "/api/v1/auth/**",
                     "/actuator/health",
                     "/actuator/prometheus",
                     "/index.html",
-                    "/"
+                    "/login.html",
+                    "/",
+                    "/js/**",
+                    "/css/**"
                 ).permitAll()
                 // 管理接口：需要 ADMIN 角色
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
