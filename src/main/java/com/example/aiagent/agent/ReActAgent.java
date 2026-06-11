@@ -5,7 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
-import dev.langchain4j.agent.tool.Tools;
+import dev.langchain4j.agent.tool.ToolSpecifications;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
@@ -242,7 +242,7 @@ public class ReActAgent {
         if (cachedToolSpecs == null) {
             synchronized (this) {
                 if (cachedToolSpecs == null) {
-                    cachedToolSpecs = Tools.toolSpecificationsFrom(businessTools);
+                    cachedToolSpecs = ToolSpecifications.toolSpecificationsFrom(businessTools);
                     log.info("[ReAct] 已加载工具规格 {} 个: {}",
                             cachedToolSpecs.size(),
                             cachedToolSpecs.stream().map(ToolSpecification::name).toList());

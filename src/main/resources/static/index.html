@@ -12,14 +12,19 @@
 <div class="sidebar">
     <div class="sidebar-logo">
         <h1>
-            <div class="logo-icon">🤖</div>
+            <div class="logo-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/>
+                </svg>
+            </div>
             AI Agent
         </h1>
     </div>
 
     <div class="sidebar-section">
         <button class="new-chat-btn" id="newChatBtn">
-            ✏️ 新建对话
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13H13V19H11V13H5V11H11V5H13V11H19V13Z"/></svg>
+            新建对话
         </button>
     </div>
 
@@ -47,15 +52,15 @@
     <div class="topbar">
         <div class="topbar-title" id="topbarTitle">新对话</div>
         <div class="topbar-actions">
-            <button class="topbar-btn danger" id="clearMemoryBtn">🗑️ 清除记忆</button>
-            <button class="topbar-btn" id="kbShortcutBtn">📚 知识库</button>
+            <button class="topbar-btn danger" id="clearMemoryBtn">清除记忆</button>
+            <button class="topbar-btn" id="kbShortcutBtn">知识库</button>
         </div>
     </div>
 
     <!-- 标签页 -->
     <div class="tabs">
-        <div class="tab active" id="tab-chat" data-tab="chat">💬 对话</div>
-        <div class="tab" id="tab-kb" data-tab="kb">📚 知识库</div>
+        <div class="tab active" id="tab-chat" data-tab="chat">对话</div>
+        <div class="tab" id="tab-kb" data-tab="kb">知识库</div>
     </div>
 
     <!-- 内容区 -->
@@ -66,14 +71,18 @@
             <div class="chat-messages" id="chatMessages">
                 <!-- 欢迎页（由 chat.js 动态渲染） -->
                 <div class="welcome" id="welcomeScreen">
-                    <div class="welcome-icon">🤖</div>
+                    <div class="welcome-icon">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/>
+                        </svg>
+                    </div>
                     <h2>你好，我是 AI Agent</h2>
                     <p>我可以回答问题、查询信息、帮你完成各种任务</p>
                     <div class="quick-prompts" id="quickPrompts">
-                        <div class="quick-prompt" data-msg="帮我查一下订单 #12345 的状态">📦 查询订单状态</div>
-                        <div class="quick-prompt" data-msg="北京今天天气怎么样？">🌤️ 查询天气</div>
-                        <div class="quick-prompt" data-msg="帮我介绍一下你能做什么">🤔 了解功能</div>
-                        <div class="quick-prompt" data-msg="查询用户 U001 的账户余额">💰 查询账户</div>
+                        <div class="quick-prompt" data-msg="帮我查一下订单 #12345 的状态">查询订单状态</div>
+                        <div class="quick-prompt" data-msg="北京今天天气怎么样？">查询天气</div>
+                        <div class="quick-prompt" data-msg="帮我介绍一下你能做什么">了解功能</div>
+                        <div class="quick-prompt" data-msg="查询用户 U001 的账户余额">查询账户</div>
                     </div>
                 </div>
             </div>
@@ -86,7 +95,9 @@
                         placeholder="输入消息，Ctrl+Enter 发送..."
                         rows="1"
                     ></textarea>
-                    <button class="send-btn" id="sendBtn">➤</button>
+                    <button class="send-btn" id="sendBtn">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                    </button>
                 </div>
                 <div class="input-hints">
                     <span class="hint-text">Ctrl+Enter 发送 · Enter 换行</span>
@@ -94,9 +105,9 @@
                         <div class="toggle on" id="streamToggle"></div>
                         <span>流式输出</span>
                     </label>
-                    <label class="stream-toggle" title="多步推理：适合复杂任务（查订单+统计金额等）">
+                    <label class="stream-toggle" title="适合复杂任务，多步推理自动拆解">
                         <div class="toggle" id="reactToggle"></div>
-                        <span>🧠 深度推理</span>
+                        <span>深度推理</span>
                     </label>
                 </div>
             </div>
@@ -107,7 +118,14 @@
             <div class="kb-panel">
                 <!-- 上传区 -->
                 <div class="kb-upload-area" id="uploadArea">
-                    <div class="kb-upload-icon">📄</div>
+                    <div class="kb-upload-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="12" y1="18" x2="12" y2="12"/>
+                            <line x1="9" y1="15" x2="15" y2="15"/>
+                        </svg>
+                    </div>
                     <div class="kb-upload-title">上传文档到知识库</div>
                     <div class="kb-upload-desc">支持 PDF、Word、TXT、Markdown 等格式 · 拖拽或点击上传 · 最大 50MB</div>
                     <button class="upload-btn">选择文件</button>
@@ -129,7 +147,7 @@
                 <!-- 文档列表 -->
                 <div class="kb-docs-title">已导入文档</div>
                 <div id="docList">
-                    <div class="empty-docs">📭 暂无文档，上传后 AI 可基于文档内容回答</div>
+                    <div class="empty-docs">暂无文档，上传后 AI 可基于文档内容回答</div>
                 </div>
             </div>
         </div>
