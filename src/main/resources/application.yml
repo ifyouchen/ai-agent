@@ -1,6 +1,21 @@
 spring:
   profiles:
     active: deepseek   # 切换为 claude 即可换模型
+  mail:
+    host: ${MAIL_SMTP_HOST:}
+    port: ${MAIL_SMTP_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
 
   data:
     redis:
@@ -110,22 +125,7 @@ weather:
 #   port: 587
 #   username: your-account@gmail.com
 #   password: your-app-password（开启两步验证后生成"应用密码"）
-spring:
-  mail:
-    host: ${MAIL_SMTP_HOST:}
-    port: ${MAIL_SMTP_PORT:587}
-    username: ${MAIL_USERNAME:}
-    password: ${MAIL_PASSWORD:}
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
-            required: true
-          connectiontimeout: 5000
-          timeout: 5000
-          writetimeout: 5000
+
 
 # ==================== 告警通知配置 ====================
 llm:
