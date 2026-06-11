@@ -1,6 +1,7 @@
 package com.example.aiagent.rag.reranker;
 
 import com.example.aiagent.rag.model.RetrievedChunk;
+import dev.langchain4j.model.chat.ChatLanguageModel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -34,16 +35,20 @@ class RerankerServiceTest {
     @Mock
     private RestTemplate restTemplate;
 
+    @Mock
+    private ChatLanguageModel chatModel;
+
     private RerankerService rerankerService;
 
     @BeforeEach
     void setUp() {
-        rerankerService = new RerankerService(restTemplate);
+        rerankerService = new RerankerService(restTemplate, chatModel);
         // 使用反射注入 @Value 字段
         injectField(rerankerService, "rerankerType", "llm");
         injectField(rerankerService, "bgeUrl", "http://localhost:8090/rerank");
         injectField(rerankerService, "cohereApiKey", "");
         injectField(rerankerService, "cohereModel", "rerank-multilingual-v3.0");
+        injectField(rerankerService, "llmBatchSize", 5);
     }
 
     // ── 基础功能（LLM 内置 Reranker）──────────────────────

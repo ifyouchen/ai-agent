@@ -1,9 +1,11 @@
 package com.example.aiagent.rag.retrieval;
 
 import com.example.aiagent.rag.model.RetrievedChunk;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 
@@ -18,19 +20,29 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("Bm25Retriever - BM25 检索器（降级路径）")
 class Bm25RetrieverTest {
 
-    /** 不注入 ES 客户端，模拟 ES 未启用 */
     private Bm25Retriever retriever;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         retriever = new Bm25Retriever();
-        // elasticsearchClient 字段保持 null（不注入）→ isAvailable()=false
+        // 注入默认 BM25 参数（替代 @Value 注入）
+        ReflectionTestUtils.setField(retriever, "bm25K1", 1.2f);
+        ReflectionTestUtils.setField(retriever, "bm25B", 0.75f);
+        // 手动触发 @PostConstruct init()（无 Spring 容器时需要手动调用）
+        retriever.init();
+    }
+
+    @AfterEach
+    void tearDown() {
+        // 邀清 Lucene 资源（替代 @PreDestroy shutdown()）
+        retriever.shutdown();
     }
 
     @Test
-    @DisplayName("ES 未启用时 isAvailable() 应返回 false")
+    @DisplayName("Lucene 内嵌引擎初始化后 isAvailable() 应返回 true")
     void shouldReturnFalseWhenEsNotEnabled() {
-        assertThat(retriever.isAvailable()).isFalse();
+        // 内嵌 Lucene 已初始化，始终可用
+        assertThat(retriever.isAvailable()).isTrue();
     }
 
     @Test

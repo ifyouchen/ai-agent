@@ -107,6 +107,9 @@ public class JwtService {
      * @return true = 有效
      */
     public boolean isTokenValid(String token) {
+        if (token == null || token.isBlank()) {
+            return false;
+        }
         try {
             parseClaims(token);
             return true;
@@ -115,6 +118,9 @@ public class JwtService {
             return false;
         } catch (JwtException e) {
             log.warn("JWT 验证失败: {}", e.getMessage());
+            return false;
+        } catch (IllegalArgumentException e) {
+            log.debug("JWT 参数非法（空/null）: {}", e.getMessage());
             return false;
         }
     }
