@@ -58,3 +58,8 @@ rag:
     cohere:
       api-key: ${COHERE_API_KEY:}
       model: rerank-multilingual-v3.0
+
+# 天气 API（OpenWeatherMap 免费版，申请地址：https://openweathermap.org/api）
+weather:
+  api:
+    key: ${WEATHER_API_KEY:}    # 留空则降级返回提示，从 openweathermap.org 免费申请

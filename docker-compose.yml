@@ -1,0 +1,142 @@
+version: "3.9"
+
+# ============================================================
+# AI Agent 开发环境依赖服务
+#
+# 用法：
+#   启动所有服务：docker compose up -d
+#   停止并清理：  docker compose down -v
+#
+# Spring Boot 应用本地运行（不加入 compose）：
+#   mvn spring-boot:run -Dspring-boot.run.profiles=deepseek
+# ============================================================
+
+networks:
+  ai-agent-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  elasticsearch-data:
+
+services:
+
+  # ──────────────────────────────────────────────────────────
+  # PostgreSQL + pgvector（向量数据库 + 业务数据）
+  # ──────────────────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ai-agent-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: aiagent
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # 容器首次启动时自动执行建表脚本
+      - ./src/main/resources/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    networks:
+      - ai-agent-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d aiagent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ──────────────────────────────────────────────────────────
+  # Redis（对话记忆 / 限流计数器）
+  # ──────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: ai-agent-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - ai-agent-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # ──────────────────────────────────────────────────────────
+  # Elasticsearch（BM25 关键词检索 / 全文搜索）
+  # ──────────────────────────────────────────────────────────
+  elasticsearch:
+    image: elasticsearch:8.11.4
+    container_name: ai-agent-es
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.http.ssl.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - bootstrap.memory_lock=true
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    networks:
+      - ai-agent-network
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 40s
+
+  # ──────────────────────────────────────────────────────────
+  # Kibana（可选，ES 可视化管理）
+  # 访问：http://localhost:5601
+  # ──────────────────────────────────────────────────────────
+  kibana:
+    image: kibana:8.11.4
+    container_name: ai-agent-kibana
+    restart: unless-stopped
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - xpack.security.enabled=false
+    ports:
+      - "5601:5601"
+    networks:
+      - ai-agent-network
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5601/api/status || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ──────────────────────────────────────────────────────────
+  # Zipkin（可选，分布式链路追踪）
+  # 访问：http://localhost:9411
+  # ──────────────────────────────────────────────────────────
+  zipkin:
+    image: openzipkin/zipkin:latest
+    container_name: ai-agent-zipkin
+    restart: unless-stopped
+    ports:
+      - "9411:9411"
+    networks:
+      - ai-agent-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9411/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

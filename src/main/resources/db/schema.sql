@@ -130,3 +130,54 @@ CREATE TABLE llm_token_usage (
 CREATE INDEX idx_usage_user_id   ON llm_token_usage(user_id);
 CREATE INDEX idx_usage_called_at ON llm_token_usage(called_at DESC);
 CREATE INDEX idx_usage_model     ON llm_token_usage(model_name);
+
+-- ============================================================
+-- 业务工具表（BusinessTools 真实数据支撑）
+-- ============================================================
+
+-- 订单表
+CREATE TABLE IF NOT EXISTS biz_order (
+    id                BIGSERIAL    PRIMARY KEY,
+    order_no          VARCHAR(64)  NOT NULL UNIQUE,         -- 订单编号，如 #12345
+    status            VARCHAR(32)  NOT NULL DEFAULT 'PENDING',
+    -- PENDING|PAID|SHIPPED|DELIVERED|CANCELLED|REFUNDED
+    amount            DECIMAL(12,2) NOT NULL DEFAULT 0,     -- 订单金额
+    product_name      VARCHAR(256) NOT NULL,                -- 商品名称
+    shipping_no       VARCHAR(64),                          -- 快递单号
+    shipping_company  VARCHAR(64),                          -- 快递公司
+    expected_arrival  DATE,                                 -- 预计到达日期
+    user_id           VARCHAR(64)  NOT NULL,                -- 下单用户 ID
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_biz_order_no      ON biz_order(order_no);
+CREATE INDEX idx_biz_order_user_id ON biz_order(user_id);
+
+-- 天气缓存表
+CREATE TABLE IF NOT EXISTS biz_weather_cache (
+    id           BIGSERIAL    PRIMARY KEY,
+    city         VARCHAR(128) NOT NULL UNIQUE,              -- 城市名称
+    weather_desc VARCHAR(128),                              -- 天气描述，如：晴天
+    temperature  DECIMAL(5,2),                              -- 温度（°C）
+    humidity     INT,                                       -- 湿度（%）
+    wind         DECIMAL(6,2),                              -- 风速（m/s）
+    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()        -- 缓存时间
+);
+
+CREATE INDEX idx_biz_weather_city ON biz_weather_cache(city);
+
+-- 用户账户表
+CREATE TABLE IF NOT EXISTS biz_user_account (
+    id               BIGSERIAL    PRIMARY KEY,
+    user_id          VARCHAR(64)  NOT NULL UNIQUE,          -- 用户 ID
+    username         VARCHAR(128) NOT NULL,                 -- 用户名
+    balance          DECIMAL(12,2) NOT NULL DEFAULT 0,      -- 账户余额
+    membership_level VARCHAR(32)  NOT NULL DEFAULT 'NORMAL',
+    -- NORMAL|SILVER|GOLD|PLATINUM|DIAMOND
+    points           INT          NOT NULL DEFAULT 0,       -- 积分
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_biz_user_account_user_id ON biz_user_account(user_id);

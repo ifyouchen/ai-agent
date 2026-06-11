@@ -61,6 +61,7 @@ public class AlertService {
 
     private final TokenUsageService tokenUsageService;
     private final MeterRegistry meterRegistry;
+    private final AlertNotifier alertNotifier;
 
     @Value("${llm.observability.alert.error-rate-threshold:0.05}")
     private double errorRateThreshold;
@@ -80,7 +81,8 @@ public class AlertService {
         if (errorRate > errorRateThreshold) {
             sendAlert("LLM_HIGH_ERROR_RATE",
                     String.format("近5分钟 LLM 错误率 %.1f%% 超过阈值 %.1f%%",
-                            errorRate * 100, errorRateThreshold * 100));
+                            errorRate * 100, errorRateThreshold * 100),
+                    AlertNotifier.AlertLevel.CRITICAL);
         }
     }
 
@@ -115,7 +117,8 @@ public class AlertService {
             if (p99Ms > p99LatencyThresholdMs) {
                 sendAlert("LLM_HIGH_P99_LATENCY",
                         String.format("LLM P99 延迟 %.0fms 超过阈值 %dms",
-                                p99Ms, p99LatencyThresholdMs));
+                                p99Ms, p99LatencyThresholdMs),
+                        AlertNotifier.AlertLevel.WARNING);
             }
         } catch (Exception e) {
             log.debug("P99 延迟检查失败: {}", e.getMessage());
@@ -138,11 +141,13 @@ public class AlertService {
             if (todayCost > dailyBudgetUsd) {
                 sendAlert("LLM_BUDGET_EXCEEDED",
                         String.format("今日 LLM 费用 $%.2f 已超预算 $%.2f",
-                                todayCost, dailyBudgetUsd));
+                                todayCost, dailyBudgetUsd),
+                        AlertNotifier.AlertLevel.CRITICAL);
             } else if (todayCost > dailyBudgetUsd * 0.8) {
                 sendAlert("LLM_BUDGET_WARNING",
                         String.format("今日 LLM 费用 $%.2f 已达预算 80%%（预算 $%.2f）",
-                                todayCost, dailyBudgetUsd));
+                                todayCost, dailyBudgetUsd),
+                        AlertNotifier.AlertLevel.WARNING);
             }
         } catch (Exception e) {
             log.debug("预算检查失败: {}", e.getMessage());
@@ -150,13 +155,9 @@ public class AlertService {
     }
 
     /**
-     * 发送告警通知
-     * 实际项目接入钉钉/企微/邮件/PagerDuty
+     * 发送告警通知（委托给 AlertNotifier，支持钉钉/企微/自定义 Webhook）
      */
-    private void sendAlert(String alertType, String message) {
-        log.warn("[ALERT][{}] {}", alertType, message);
-        // TODO: 接入企业通知渠道
-        // dingTalkClient.sendAlert(alertType, message);
-        // wechatWorkClient.sendAlert(alertType, message);
+    private void sendAlert(String alertType, String message, AlertNotifier.AlertLevel level) {
+        alertNotifier.send(alertType, message, level);
     }
 }
