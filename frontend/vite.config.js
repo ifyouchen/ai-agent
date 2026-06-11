@@ -1,4 +1,5 @@
 import { fileURLToPath, URL } from 'node:url';
+import vue from '@vitejs/plugin-vue';
 import { defineConfig, loadEnv } from 'vite';
 
 export default defineConfig(({ mode }) => {
@@ -6,6 +7,7 @@ export default defineConfig(({ mode }) => {
   const backendTarget = env.VITE_BACKEND_TARGET || 'http://localhost:8080';
 
   return {
+    plugins: [vue()],
     server: {
       host: '0.0.0.0',
       port: Number(env.VITE_PORT || 5173),

@@ -52,6 +52,13 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
+#app {
+    display: flex;
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
+}
+
 /* ===== 滚动条 ===== */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
