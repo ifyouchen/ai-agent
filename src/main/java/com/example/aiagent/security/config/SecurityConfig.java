@@ -17,6 +17,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.http.HttpMethod;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -62,16 +63,12 @@ public class SecurityConfig {
 
             // 接口权限配置
             .authorizeHttpRequests(auth -> auth
-                // 公开接口：认证、健康检查、前端静态资源（含 login.html 和 JS/CSS）
+                // 公开接口：认证、健康检查、跨域预检
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers(
                     "/api/v1/auth/**",
                     "/actuator/health",
-                    "/actuator/prometheus",
-                    "/index.html",
-                    "/login.html",
-                    "/",
-                    "/js/**",
-                    "/css/**"
+                    "/actuator/prometheus"
                 ).permitAll()
                 // 管理接口：需要 ADMIN 角色
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")

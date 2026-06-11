@@ -1,6 +1,11 @@
 # ===== Maven 编译输出 =====
 target/
 
+# ===== Node / 前端构建输出 =====
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
 # ===== IDEA 工程文件 =====
 .idea/
 *.iml

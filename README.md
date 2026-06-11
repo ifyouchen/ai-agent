@@ -2,7 +2,7 @@
 
 基于 **Spring Boot 3.3.5 + LangChain4j 0.36.2** 构建的企业级 AI Agent。
 
-支持同步对话、SSE 流式输出、ReAct 多步推理、多轮记忆、混合 RAG 知识库、Function Calling、JWT 认证、Token 成本追踪与智能告警。内置登录/注册页面，开箱即用。
+支持同步对话、SSE 流式输出、ReAct 多步推理、多轮记忆、混合 RAG 知识库、Function Calling、JWT 认证、Token 成本追踪与智能告警。项目已前后端分离：后端提供 Spring Boot API，前端在 `frontend/` 中使用 Node.js + Vite 独立启动。
 
 ---
 
@@ -11,6 +11,7 @@
 | 分类 | 技术 | 版本 |
 |------|------|------|
 | 后端框架 | Spring Boot | 3.3.5 |
+| 前端工程 | Node.js + Vite | 20+ / 5.x |
 | 语言 | Java | 21 |
 | AI 框架 | LangChain4j | 0.36.2 |
 | 对话模型 | DeepSeek Chat（默认）/ Claude Opus 4.8 | — |
@@ -87,6 +88,7 @@ AI 在对话时**自动决策**何时调用，无需用户触发：
 |------|------|
 | JDK | **21+**（必须，项目使用 Java 21 特性） |
 | Maven | 3.8+ |
+| Node.js | **20+**（前端独立启动） |
 | Docker | 24+ |
 | DeepSeek API Key | [platform.deepseek.com](https://platform.deepseek.com) 注册申请 |
 
@@ -117,7 +119,7 @@ export PG_PASSWORD=postgres
 export REDIS_HOST=localhost
 ```
 
-### 第三步：启动
+### 第三步：启动后端
 
 ```bash
 # 确认 Java 版本
@@ -127,14 +129,33 @@ java -version   # 必须显示 21.x.x
 mvn spring-boot:run
 ```
 
-### 第四步：验证
+### 第四步：启动前端
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+前端默认运行在 `http://localhost:5173`，开发环境会把 `/api` 和 `/actuator` 代理到 `http://localhost:8080`。
+
+如需修改代理目标：
+
+```bash
+cd frontend
+cp .env.example .env
+# 修改 VITE_BACKEND_TARGET=http://your-backend:8080
+npm run dev
+```
+
+### 第五步：验证
 
 ```bash
 # 健康检查
 curl http://localhost:8080/actuator/health
 
-# 打开内置 Web 界面（含登录/注册页 + 对话 + 知识库管理）
-open http://localhost:8080
+# 打开独立前端（含登录/注册页 + 对话 + 知识库管理）
+open http://localhost:5173
 
 # 或用命令行注册并登录
 curl -X POST http://localhost:8080/api/v1/auth/register \
@@ -520,11 +541,14 @@ ai-agent/
 │   │   └── V1__init_schema.sql        # Flyway 初始化脚本（8 张表）
 │   ├── prompts/
 │   │   └── system-assistant.st        # 系统提示词模板
-│   └── static/                        # 内置 Web 界面
-│       ├── index.html                 # 主页（对话 + 知识库管理）
-│       ├── login.html                 # 登录 / 注册页（响应式，移动端适配）
-│       ├── css/main.css
-│       └── js/                        # app / auth / api / chat / knowledge-base 等
+│
+├── frontend/                          # 独立 Node.js 前端工程
+│   ├── index.html                     # 主页（对话 + 知识库管理）
+│   ├── login.html                     # 登录 / 注册页（响应式，移动端适配）
+│   ├── src/css/main.css
+│   ├── src/js/                        # app / auth / api / chat / knowledge-base 等
+│   ├── package.json
+│   └── vite.config.js                 # 本地代理 / 多页面构建配置
 │
 └── docker-compose.yml                 # PostgreSQL + Redis + Elasticsearch
 ```
@@ -549,6 +573,17 @@ Flyway 在首次启动时自动执行建表脚本，无需手动操作。
 ---
 
 ## 生产部署
+
+### 前端部署
+
+```bash
+cd frontend
+npm install
+VITE_API_BASE_URL=https://api.example.com npm run build
+npm run preview
+```
+
+如果前端和后端同域反代，`VITE_API_BASE_URL` 可以留空，让请求继续走相对路径 `/api/...`。
 
 ### 环境变量清单
 

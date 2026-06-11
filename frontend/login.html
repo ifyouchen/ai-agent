@@ -510,6 +510,7 @@
 <script type="module">
     const TOKEN_KEY = 'ai_agent_token';
     const USER_KEY  = 'ai_agent_user';
+    const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
     if (localStorage.getItem(TOKEN_KEY)) location.replace('/index.html');
 
@@ -602,7 +603,7 @@
     }
 
     async function callApi(url, body) {
-        const res  = await fetch(url, {
+        const res  = await fetch(`${API_BASE}${url}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)

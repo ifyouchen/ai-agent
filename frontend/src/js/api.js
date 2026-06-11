@@ -7,7 +7,7 @@
 
 import {authFetch, getToken} from './auth.js';
 
-const BASE = '';
+const BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
 // ── 通用请求工具 ──────────────────────────────────────────────
 

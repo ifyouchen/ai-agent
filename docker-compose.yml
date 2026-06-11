@@ -117,6 +117,21 @@ services:
       start_period: 60s
     restart: unless-stopped
 
+  # ── 独立前端（Node.js + Vite）────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${FRONTEND_API_BASE_URL:-http://localhost:8080}
+    container_name: ai-agent-frontend
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-5173}:4173"
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:

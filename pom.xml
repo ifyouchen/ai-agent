@@ -245,26 +245,6 @@
 
     <build>
         <plugins>
-            <!-- Toolchain：确保 Maven 使用 JDK 21 编译，避免系统默认 JDK 版本不匹配 -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-toolchains-plugin</artifactId>
-                <version>3.1.0</version>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>toolchain</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <toolchains>
-                        <jdk>
-                            <version>21</version>
-                        </jdk>
-                    </toolchains>
-                </configuration>
-            </plugin>
             <!-- 显式指定编译器版本为 Java 21，支持 switch 表达式、yield、record 等新语法 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
