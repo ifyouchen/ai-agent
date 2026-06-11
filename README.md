@@ -2,7 +2,7 @@
 
 基于 **Spring Boot 3.3.5 + LangChain4j 0.36.2** 构建的企业级 AI Agent。
 
-支持同步对话、SSE 流式输出、**ReAct 多步推理**、多轮记忆、混合 RAG 知识库、Function Calling、JWT 认证、Token 成本追踪与智能告警。
+支持同步对话、SSE 流式输出、ReAct 多步推理、多轮记忆、混合 RAG 知识库、Function Calling、JWT 认证、Token 成本追踪与智能告警。内置登录/注册页面，开箱即用。
 
 ---
 
@@ -33,48 +33,49 @@
 
 | 模式 | 接口 | 说明 |
 |------|------|------|
-| 同步对话 | `POST /api/v1/chat` | 等待完整回复，适合后端集成 |
+| 同步对话 | `POST /api/v1/chat` | 等待完整回复，适合后端调用 |
 | 流式对话 | `GET /api/v1/chat/stream` | SSE 逐 token 推送，实时打字效果 |
-| ReAct 推理 | `POST /api/v1/chat/react` | 复杂任务自动拆解，多步调用工具，步骤可见 |
+| ReAct 推理 | `POST /api/v1/chat/react` | 复杂任务自动拆解，多步调用工具，推理过程可见 |
 
 ### 知识库（RAG）
+
 - 上传 **PDF / Word / TXT** 等多种格式，上传即可问答，无需编码
 - **混合 RAG 5 步流水线**：查询改写（HyDE）→ 向量检索 → BM25 检索 → RRF 融合 → Reranker 精排
-- **4 种 Reranker**：LLM / TF-IDF / BGE 本地 / Cohere API
+- **4 种 Reranker**：LLM / TF-IDF / BGE 本地 / Cohere API，环境变量切换
 - **引用溯源**：答案自动标注来源文档和段落
 - **置信度评估**：低置信度时明确返回"未找到"，不胡编
-- **RAG 效果评估**：Faithfulness / AnswerRelevance / ContextPrecision 等指标
+- **RAG 效果评估**：Faithfulness / AnswerRelevance / ContextPrecision 三项指标
 
 ### 安全防护
-- **JWT 无状态认证**，支持 `Authorization: Bearer` Header 和 `?token=` URL 参数
-- **Prompt 注入检测**：覆盖中英文 7 种攻击模式（越狱/角色扮演/指令覆盖等）
+
+- **JWT 无状态认证**，支持 `Authorization: Bearer` Header 和 `?token=` URL 参数（SSE 场景）
+- **Prompt 注入检测**：覆盖中英文 7 种攻击模式（越狱 / 角色扮演 / 指令覆盖 / 提示词泄露等）
 - **输出内容脱敏**：手机号、身份证、银行卡号、密码/密钥
 - **用户级限流**：每分钟 + 每日双维度，Redis 令牌桶，超限返回 429
 - **操作审计**：登录、对话、安全拦截事件异步记录
 
 ### 可观测性
+
 - **Token 成本追踪**：每次 LLM 调用的 Token 数和 USD 费用实时入库
-- **成本报表 API**：按用户、按模型、按天统计，开箱即用
+- **成本报表 API**：按用户、按模型、按天统计，管理员直接查询
 - **Prometheus 指标**：调用次数、P99 延迟、错误率、当前并发（7 类指标）
-- **链路追踪**：TraceId 全链路贯穿，每行日志自动携带，支持上报 Zipkin
-- **智能告警**：错误率 / P99 延迟 / 日费用超阈值，自动推送钉钉/企微
+- **链路追踪**：TraceId 全链路贯穿，每行日志自动携带，支持 Zipkin 上报
+- **智能告警**：错误率 / P99 延迟 / 日费用超阈值，自动推送通知
 
 ### 内置工具（Function Calling）
 
-AI 在对话时**自动决策**何时调用工具，无需用户显式触发：
+AI 在对话时**自动决策**何时调用，无需用户触发：
 
 | 工具 | 说明 |
 |------|------|
-| `queryOrderStatus` | 查询订单状态和物流信息 |
+| `queryOrderStatus` | 查询订单状态和物流 |
 | `queryUserOrders` | 查询用户最近 10 条订单 |
-| `queryOrderSummary` | 统计用户各状态订单数量 |
-| `getWeather` | 查城市天气（30 分钟缓存 + OpenWeatherMap 三级降级）|
+| `queryOrderSummary` | 统计各状态订单数量 |
+| `getWeather` | 查城市天气（30 分钟缓存 + 三级降级）|
 | `queryUserAccount` | 查账户余额和会员等级 |
 | `queryUserPoints` | 查积分余额和升级进度 |
-| `calculate` | 安全数学计算（Aviator 沙箱，禁止代码注入）|
+| `calculate` | 安全数学计算（Aviator 沙箱）|
 | `getCurrentDateTime` | 获取当前日期时间（支持时区）|
-
-> 工具基于 `biz_order` / `biz_user_account` 等示例表。替换为真实业务时，只需修改 `BusinessTools.java` 中对应方法的数据库查询，AI 的调用逻辑无需改动。
 
 ---
 
@@ -87,7 +88,7 @@ AI 在对话时**自动决策**何时调用工具，无需用户显式触发：
 | JDK | **21+**（必须，项目使用 Java 21 特性） |
 | Maven | 3.8+ |
 | Docker | 24+ |
-| DeepSeek API Key | [platform.deepseek.com](https://platform.deepseek.com) 免费注册 |
+| DeepSeek API Key | [platform.deepseek.com](https://platform.deepseek.com) 注册申请 |
 
 ### 第一步：启动依赖服务
 
@@ -108,11 +109,9 @@ docker-compose ps   # Status 显示 healthy
 # 必填
 export DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxx
 export SPRING_PROFILES_ACTIVE=deepseek
-
-# 安全（生产必填，至少 32 字符）
 export JWT_SECRET=your-secret-key-min-32-characters-long
 
-# 可选（不填则使用默认 localhost）
+# 可选（不填则用默认值 localhost）
 export PG_HOST=localhost
 export PG_PASSWORD=postgres
 export REDIS_HOST=localhost
@@ -134,31 +133,29 @@ mvn spring-boot:run
 # 健康检查
 curl http://localhost:8080/actuator/health
 
-# 注册账号
+# 打开内置 Web 界面（含登录/注册页 + 对话 + 知识库管理）
+open http://localhost:8080
+
+# 或用命令行注册并登录
 curl -X POST http://localhost:8080/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"Admin123!"}'
 
-# 登录获取 Token
 TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"Admin123!"}' | jq -r '.token')
 
-# 发起对话
 curl -X POST http://localhost:8080/api/v1/chat \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"sessionId":"s001","message":"你好，介绍一下你能做什么"}'
-
-# 打开内置 Web 界面（含登录页 + 对话 + 知识库管理）
-open http://localhost:8080
 ```
 
 ---
 
 ## API 文档
 
-> 除认证接口外，所有接口均需在 Header 中携带 `Authorization: Bearer <token>`
+> 除认证接口外，所有接口需携带 `Authorization: Bearer <token>`
 
 ### 认证
 
@@ -199,7 +196,6 @@ GET /api/v1/chat/stream?sessionId=s001&message=你好
 ```
 
 ```javascript
-// 前端接收
 const es = new EventSource(
   `/api/v1/chat/stream?sessionId=s001&message=${encodeURIComponent(msg)}`,
   { headers: { 'Authorization': 'Bearer ' + token } }
@@ -216,9 +212,9 @@ POST /api/v1/chat/react
 
 ```json
 // 请求
-{"sessionId": "s001", "message": "查询用户 U001 的所有订单，统计总金额"}
+{"sessionId": "s001", "message": "查询用户 U001 的所有订单并统计总金额"}
 
-// 响应（包含完整推理链）
+// 响应（包含完整推理过程）
 {
   "answer": "用户 U001 共有 3 笔订单，总金额 ¥1,580.00",
   "iterations": 2,
@@ -226,17 +222,17 @@ POST /api/v1/chat/react
   "steps": [
     {
       "iteration": 1,
-      "thought": "需要先查询用户 U001 的订单列表",
+      "thought": "需要先查询 U001 的订单列表",
       "toolName": "queryUserOrders",
       "toolArgs": "{\"userId\":\"U001\"}",
-      "observation": "找到 3 笔订单：#001(¥580)、#002(¥600)、#003(¥400)"
+      "observation": "找到 3 笔订单：¥580、¥600、¥400"
     },
     {
       "iteration": 2,
-      "thought": "已有数据，可以计算总金额",
+      "thought": "已有数据，计算总金额",
       "toolName": "calculate",
       "toolArgs": "{\"expression\":\"580+600+400\"}",
-      "observation": "计算结果：580+600+400 = 1580"
+      "observation": "计算结果：1580"
     }
   ]
 }
@@ -255,12 +251,12 @@ DELETE /api/v1/chat/memory/{sessionId}
 ```
 POST   /api/v1/kb                              创建知识库
 GET    /api/v1/kb                              列出我的知识库
-DELETE /api/v1/kb/{kbId}                       删除知识库（含所有文档）
-POST   /api/v1/kb/{kbId}/documents            上传文档（multipart/form-data）
+DELETE /api/v1/kb/{kbId}                       删除知识库（级联删除所有文档）
+POST   /api/v1/kb/{kbId}/documents            上传文档（PDF/Word/TXT）
 GET    /api/v1/kb/{kbId}/documents            列出文档
 DELETE /api/v1/kb/{kbId}/documents/{docId}    删除文档
 POST   /api/v1/kb/{kbId}/query                知识库问答
-GET    /api/v1/kb/{kbId}/stats                统计（文档数/切片数/近期查询量）
+GET    /api/v1/kb/{kbId}/stats                统计信息
 ```
 
 **上传文档**：
@@ -271,18 +267,13 @@ curl -X POST http://localhost:8080/api/v1/kb/1/documents \
   -F "file=@员工手册.pdf"
 ```
 
-**知识库问答**：
+**知识库问答响应示例**：
 
 ```json
-// POST /api/v1/kb/1/query
-// 请求
-{"question": "年假政策是怎么规定的？"}
-
-// 响应
 {
   "answer": "根据员工手册第三章，正式员工享有 10 天带薪年假...",
   "answerFound": true,
-  "confidence": "0.850",
+  "confidence": "0.870",
   "citations": [
     {
       "source": "员工手册.pdf",
@@ -298,87 +289,63 @@ curl -X POST http://localhost:8080/api/v1/kb/1/documents \
 ### 管理接口（需要 ADMIN 角色）
 
 ```
-GET /api/v1/token-usage/my/today                      我今日费用
-GET /api/v1/admin/token-usage/today                   全局今日总费用
-GET /api/v1/admin/token-usage/report/model?days=7     按模型成本报表
-GET /api/v1/admin/token-usage/report/user?days=7      按用户成本 Top N
-GET /api/v1/admin/token-usage/error-rate?minutes=5    近 N 分钟错误率
+GET  /api/v1/token-usage/my/today                     我今日费用
+GET  /api/v1/admin/token-usage/today                  全局今日总费用（USD）
+GET  /api/v1/admin/token-usage/report/model?days=7    按模型成本报表
+GET  /api/v1/admin/token-usage/report/user?days=7     按用户成本 Top N
+GET  /api/v1/admin/token-usage/error-rate?minutes=5   近 N 分钟错误率
 POST /api/v1/rag/eval/single                           单条 RAG 评估
 POST /api/v1/rag/eval/batch                            批量 RAG 评估（最多 100 条）
-GET /actuator/health                                   健康检查（公开）
-GET /actuator/prometheus                               Prometheus 指标（需 ADMIN）
-```
-
-**RAG 批量评估示例**：
-
-```json
-// POST /api/v1/rag/eval/batch
-// 请求
-{
-  "testCases": [
-    {"question": "退款政策是什么？", "referenceAnswer": "7天无理由..."},
-    {"question": "如何申请年假？"}
-  ]
-}
-
-// 响应
-{
-  "summary": {
-    "totalCases": 2,
-    "avgFaithfulness": 0.89,
-    "avgAnswerRelevance": 0.92,
-    "avgContextPrecision": 0.78,
-    "avgOverallScore": 0.86
-  },
-  "results": [...]
-}
+GET  /actuator/health                                  健康检查（公开）
+GET  /actuator/prometheus                              Prometheus 指标
 ```
 
 ---
 
 ## 配置说明
 
-### 主要配置项
+### 核心配置项
 
 ```yaml
 # application.yml
 
 agent:
   memory:
-    max-messages: 20       # 每会话保留最近 N 条消息
-    ttl-hours: 24          # 记忆过期时间（从最后活跃时间起算）
+    max-messages: 20        # 每会话保留最近 N 条消息
+    ttl-hours: 24           # 记忆过期时间（从最后活跃时间起算）
 
 rag:
   retrieval:
     vector:
-      top-k: 20            # 向量检索初始召回数
-      threshold: 0.5       # 相似度阈值，低于丢弃
+      top-k: 20             # 向量检索初始召回数
+      threshold: 0.5        # 相似度阈值，低于丢弃
     rrf:
-      top-k: 10            # RRF 融合后保留数
+      top-k: 10             # RRF 融合后保留数
   reranker:
-    type: llm              # llm / tfidf / bge / cohere
-    top-k: 5               # 最终送给 LLM 的段落数
+    type: llm               # llm / tfidf / bge / cohere（环境变量 RERANKER_TYPE）
+    top-k: 5                # 最终送给 LLM 的段落数
   elasticsearch:
-    enabled: false         # true 启用 BM25 混合检索
+    enabled: false          # true 启用 ES BM25，需先启动 ES
 
 security:
   jwt:
-    secret: ${JWT_SECRET}  # 至少 32 字符
+    secret: ${JWT_SECRET}   # 至少 32 字符
     expiration-seconds: 86400
   rate-limit:
     per-minute: 10
     per-day: 500
 
 kb:
-  confidence-threshold: 0.6  # 低于此值返回"未找到"
+  confidence-threshold: 0.6   # 低于此值返回"未找到"
 ```
 
 ### 生产覆盖（application-prod.yml）
 
-- SQL 日志关闭，日志级别 INFO，输出 JSON 格式（ELK/Loki 兼容）
-- 数据库连接池：最大 20，最小 5
+- SQL 日志关闭，日志 INFO 级别，JSON 格式（ELK/Loki 兼容）
+- 数据库连接池：最大 20，最小空闲 5
 - 告警阈值：错误率 3%，P99 延迟 20s，日预算 $50
-- Actuator 仅暴露 health、prometheus
+- Actuator 只暴露 `health`、`prometheus`、`info`
+- 优雅停机：30 秒等待在途请求
 
 ### 告警通知
 
@@ -401,14 +368,14 @@ llm:
 
 ## 切换对话模型
 
-### 使用 DeepSeek（默认）
+### DeepSeek（默认）
 
 ```bash
 export SPRING_PROFILES_ACTIVE=deepseek
 export DEEPSEEK_API_KEY=sk-xxx
 ```
 
-### 使用 Claude
+### Claude
 
 ```bash
 export SPRING_PROFILES_ACTIVE=claude
@@ -416,24 +383,23 @@ export ANTHROPIC_API_KEY=sk-ant-xxx
 export DEEPSEEK_API_KEY=sk-xxx   # Embedding 仍使用 DeepSeek，必须设置
 ```
 
-> Embedding 统一使用 DeepSeek（向量维度 1536），切换对话模型无需重建知识库向量数据。
+> Embedding 统一使用 DeepSeek（向量维度 1536），切换对话模型无需重建知识库。
 
 ---
 
 ## 启用 BM25 混合检索
 
-默认使用内置 Apache Lucene 做轻量 BM25。可选择启动 Elasticsearch 以支持中文 IK 分词和分布式扩展：
+默认使用内置 Apache Lucene 做 BM25。可选接入 Elasticsearch 以支持中文 IK 分词：
 
 ```bash
-# 启动 Elasticsearch（约 1GB 内存）
+# 启动 Elasticsearch
 docker-compose --profile bm25 up -d elasticsearch
 
-# 设置环境变量，重启应用
 export ES_ENABLED=true
 export ES_HOST=localhost
 ```
 
-启用后向量检索和 BM25 检索并行执行，RRF 融合排序，Recall@5 约提升 30%。
+启用后向量检索与 BM25 并行执行，RRF 融合，Recall@5 约提升 30%。
 
 ---
 
@@ -443,7 +409,7 @@ export ES_HOST=localhost
 |--------|------|------|
 | `llm`（默认）| 调 DeepSeek 打分 | 效果最好，消耗 Token |
 | `tfidf` | 本地 TF-IDF | 零成本，适合快速验证 |
-| `bge` | 本地 BGE 模型（需部署 Python 服务）| 效果好，不消耗 Token |
+| `bge` | 本地 BGE 模型 | 效果好，不耗 Token，需部署 Python 服务 |
 | `cohere` | Cohere Rerank API | 无需 GPU，按量付费 |
 
 ### 部署 BGE Reranker
@@ -458,7 +424,7 @@ from pydantic import BaseModel
 from typing import List
 
 app = FastAPI()
-model = CrossEncoder("BAAI/bge-reranker-v2-m3")  # 支持中英文
+model = CrossEncoder("BAAI/bge-reranker-v2-m3")
 
 class RerankRequest(BaseModel):
     query: str
@@ -473,7 +439,7 @@ EOF
 uvicorn reranker_server:app --host 0.0.0.0 --port 8090
 ```
 
-修改配置：`rag.reranker.type: bge`
+配置：`RERANKER_TYPE=bge`
 
 ---
 
@@ -485,15 +451,15 @@ ai-agent/
 │   ├── AiAgentApplication.java
 │   │
 │   ├── agent/
-│   │   ├── AgentFactory.java          # 组装 LLM + 记忆 + RAG + 工具（标准对话）
-│   │   └── ReActAgent.java            # ReAct 多步推理，最多 8 轮迭代
+│   │   ├── AgentFactory.java          # 组装 LLM + 记忆 + RAG + 工具
+│   │   └── ReActAgent.java            # ReAct 多步推理（最多 8 轮迭代）
 │   │
 │   ├── config/
 │   │   ├── AppConfig.java             # RestTemplate / 异步 / 定时
 │   │   ├── LlmConfig.java             # 对话模型 Bean（按 Profile 激活）
-│   │   ├── RagConfig.java             # Embedding 模型 + PgVector
+│   │   ├── RagConfig.java             # Embedding + PgVector
 │   │   ├── ElasticsearchConfig.java   # ES 客户端（@ConditionalOnProperty）
-│   │   └── DeepSeekProperties.java    # DeepSeek 配置属性绑定
+│   │   └── DeepSeekProperties.java
 │   │
 │   ├── controller/
 │   │   ├── ChatController.java            # POST /api/v1/chat
@@ -501,7 +467,7 @@ ai-agent/
 │   │   └── ReActChatController.java       # POST /api/v1/chat/react
 │   │
 │   ├── kb/                            # 知识库模块
-│   │   ├── controller/                # REST 接口（CRUD + 问答）
+│   │   ├── controller/                # CRUD + 问答接口
 │   │   ├── entity/                    # KnowledgeBase / Document / Chunk / RetrievalLog
 │   │   ├── mapper/                    # MyBatis Mapper（4 个）
 │   │   └── service/                   # KnowledgeBaseService / KnowledgeBaseQueryService
@@ -509,7 +475,7 @@ ai-agent/
 │   ├── rag/                           # RAG 核心
 │   │   ├── pipeline/HybridRagPipeline # 5 步混合检索流水线
 │   │   ├── query/QueryRewriter        # HyDE + 多角度查询改写
-│   │   ├── retrieval/                 # 向量检索 / BM25 / RRF 融合
+│   │   ├── retrieval/                 # 向量检索 / BM25 / RRF 融合 / 索引恢复
 │   │   ├── reranker/RerankerService   # 4 种 Reranker 统一接口
 │   │   ├── generation/                # 带引用标注的答案生成
 │   │   ├── evaluation/                # RAG 质量评估（Controller + Service）
@@ -520,32 +486,29 @@ ai-agent/
 │   │   ├── config/SecurityConfig      # Spring Security 配置
 │   │   ├── controller/AuthController  # 登录 / 注册
 │   │   ├── filter/                    # JWT 验证 / Prompt 注入检测 / 输出脱敏
-│   │   ├── entity/SysUser.java        # 用户表
+│   │   ├── entity/SysUser.java
 │   │   ├── mapper/SysUserMapper.java
 │   │   └── service/                   # JWT / 限流 / 审计 / 用户详情
 │   │
 │   ├── observability/                 # 可观测性
-│   │   ├── aop/LlmObservabilityAspect # AOP 拦截所有 ChatLanguageModel.generate()
+│   │   ├── aop/LlmObservabilityAspect # AOP 拦截所有 LLM 调用
 │   │   ├── aop/TraceIdMdcFilter       # 每个请求注入唯一 TraceId
 │   │   ├── metrics/LlmMetricsRecorder # 7 类 Prometheus 指标
-│   │   ├── alert/                     # 定时检查 + 多渠道告警发送
+│   │   ├── alert/                     # 定时检查 + 多渠道告警
 │   │   ├── controller/                # Token 用量 / 成本报表接口
-│   │   ├── entity/TokenUsageRecord    # Token 用量表实体
+│   │   ├── entity/TokenUsageRecord
 │   │   ├── mapper/TokenUsageMapper
 │   │   ├── model/                     # LlmCallContext / TokenPricing 枚举
-│   │   └── service/TokenUsageService  # 成本统计 / 报表生成
+│   │   └── service/TokenUsageService  # 成本统计 / 报表
 │   │
 │   ├── tool/                          # Function Calling 工具
 │   │   ├── BusinessTools.java         # 8 个工具方法（@Tool 注解）
-│   │   ├── client/WeatherApiClient    # OpenWeatherMap API 调用
+│   │   ├── client/WeatherApiClient    # OpenWeatherMap + 三级降级
 │   │   ├── entity/                    # Order / UserAccount / WeatherCache
 │   │   └── mapper/                    # MyBatis Mapper（3 个）
 │   │
-│   ├── memory/
-│   │   └── RedisChatMemoryStore       # Redis 持久化对话记忆（滑动 TTL）
-│   │
-│   └── exception/
-│       └── GlobalExceptionHandler     # 全局异常处理
+│   └── memory/
+│       └── RedisChatMemoryStore       # Redis 持久化对话记忆（滑动 TTL）
 │
 ├── src/main/resources/
 │   ├── application.yml                # 主配置
@@ -553,26 +516,17 @@ ai-agent/
 │   ├── application-claude.yml         # Claude 模型配置
 │   ├── application-prod.yml           # 生产覆盖（日志/连接池/告警阈值）
 │   ├── mapper/                        # MyBatis XML（9 个文件）
-│   │   ├── KnowledgeBaseMapper.xml
-│   │   ├── DocumentMapper.xml
-│   │   ├── ChunkMapper.xml
-│   │   ├── RetrievalLogMapper.xml
-│   │   ├── TokenUsageMapper.xml
-│   │   ├── SysUserMapper.xml
-│   │   ├── UserAccountMapper.xml
-│   │   ├── OrderMapper.xml
-│   │   └── WeatherCacheMapper.xml
 │   ├── db/migration/
 │   │   └── V1__init_schema.sql        # Flyway 初始化脚本（8 张表）
 │   ├── prompts/
-│   │   └── system-assistant.st        # 系统提示词模板（StringTemplate）
+│   │   └── system-assistant.st        # 系统提示词模板
 │   └── static/                        # 内置 Web 界面
 │       ├── index.html                 # 主页（对话 + 知识库管理）
-│       ├── login.html                 # 登录页
+│       ├── login.html                 # 登录 / 注册页（响应式，移动端适配）
 │       ├── css/main.css
 │       └── js/                        # app / auth / api / chat / knowledge-base 等
 │
-└── docker-compose.yml                 # PostgreSQL + Redis + Elasticsearch + App
+└── docker-compose.yml                 # PostgreSQL + Redis + Elasticsearch
 ```
 
 ---
@@ -581,8 +535,8 @@ ai-agent/
 
 | 表名 | 说明 |
 |------|------|
-| `biz_user_account` | 用户表（含认证字段 password_hash、roles） |
-| `kb_knowledge_base` | 知识库（多租户隔离，tenant_id 字段） |
+| `biz_user_account` | 用户表（含 password_hash、roles、会员等级、积分）|
+| `kb_knowledge_base` | 知识库（多租户隔离，tenant_id 字段）|
 | `kb_document` | 上传文档（含 parse_status、file_hash 增量检测）|
 | `kb_chunk` | 文档切片（含 content_hash，支持增量更新）|
 | `kb_retrieval_log` | 检索日志（含各阶段耗时，用于 RAG 效果分析）|
@@ -590,23 +544,23 @@ ai-agent/
 | `biz_order` | 示例业务：订单 |
 | `biz_weather_cache` | 天气缓存（30 分钟有效期）|
 
-Flyway 在首次启动时自动执行 `V1__init_schema.sql`，无需手动建表。
+Flyway 在首次启动时自动执行建表脚本，无需手动操作。
 
 ---
 
 ## 生产部署
 
-### 所有环境变量
+### 环境变量清单
 
 ```bash
 # LLM（必填）
-DEEPSEEK_API_KEY=sk-xxx             # DeepSeek API Key（对话 + Embedding）
-ANTHROPIC_API_KEY=sk-ant-xxx        # Claude API Key（仅 claude profile 需要）
+DEEPSEEK_API_KEY=sk-xxx
+ANTHROPIC_API_KEY=sk-ant-xxx   # claude profile 时必填
 
 # 安全（必填）
 JWT_SECRET=<至少 32 字符的随机字符串>
 
-# PostgreSQL
+# 数据库
 PG_HOST=your-db-host
 PG_PORT=5432
 PG_DB=aiagent
@@ -617,14 +571,10 @@ PG_PASSWORD=your-password
 REDIS_HOST=your-redis-host
 REDIS_PASSWORD=your-password
 
-# Elasticsearch（可选）
+# 可选
 ES_ENABLED=true
 ES_HOST=your-es-host
-
-# 天气 API（可选，留空则降级）
 WEATHER_API_KEY=your-openweathermap-key
-
-# 告警通知（可选）
 ALERT_DINGTALK_ENABLED=true
 ALERT_DINGTALK_WEBHOOK=https://oapi.dingtalk.com/robot/send?access_token=xxx
 ```
@@ -632,7 +582,6 @@ ALERT_DINGTALK_WEBHOOK=https://oapi.dingtalk.com/robot/send?access_token=xxx
 ### 启动命令
 
 ```bash
-# 激活生产配置（JSON 日志 / 连接池优化 / 优雅停机）
 export SPRING_PROFILES_ACTIVE=deepseek,prod
 
 java -Xmx2g -jar ai-agent-1.0.0.jar
@@ -651,26 +600,26 @@ export JWT_SECRET=$(openssl rand -base64 32)
 
 **Q：mvn compile 报 Text Block / record 语法错误**
 
-项目需要 Java 21：
+需要 Java 21：
 ```bash
 java -version           # 确认显示 21.x.x
 export JAVA_HOME=/path/to/jdk21
 ```
 
-**Q：知识库上传文档后查询不到**
+**Q：知识库上传后查询不到内容**
 
 确认 pgvector 扩展已安装（Flyway 脚本会自动执行，需要 superuser 权限）：
 ```sql
 CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
-**Q：切换到 Claude 后需要重建知识库吗？**
+**Q：切换 Claude 后需要重建知识库吗？**
 
 不需要。Embedding 统一使用 DeepSeek，与对话模型无关。
 
-**Q：文档问答 vs Function Calling，怎么选？**
+**Q：文档问答 vs Function Calling，该用哪个？**
 
-| 场景 | 选择 |
+| 场景 | 方案 |
 |------|------|
-| 企业制度、产品手册、FAQ 等静态文档 | **上传知识库（RAG）**，无需写代码 |
-| 查询实时数据库、做增删改操作 | **Function Calling（工具）**，在 `BusinessTools.java` 中实现 |
+| 企业制度、产品手册、FAQ 等静态文档 | 上传知识库（RAG），无需写代码 |
+| 查询实时数据库、做增删改操作 | Function Calling，在 `BusinessTools.java` 中实现对应方法 |
