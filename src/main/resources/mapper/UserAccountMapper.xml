@@ -21,6 +21,19 @@
         WHERE user_id = #{userId}
     </select>
 
+    <select id="findByUsername" resultMap="UserAccountResultMap">
+        SELECT *
+        FROM biz_user_account
+        WHERE username = #{username}
+    </select>
+
+    <update id="updatePoints">
+        UPDATE biz_user_account
+        SET points     = GREATEST(0, points + #{pointsDelta}),
+            updated_at = NOW()
+        WHERE user_id = #{userId}
+    </update>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO biz_user_account (
             user_id, username, balance, membership_level, points,

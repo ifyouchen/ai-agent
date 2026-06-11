@@ -66,17 +66,30 @@ rag:
 
   # Reranker 精排
   reranker:
-    type: bge                  # bge（本地）或 cohere（API）
+    # 可选值：
+    #   llm    - 内置 LLM 打分（默认，无额外依赖，利用已有 LLM）
+    #   tfidf  - 内置 TF-IDF（纯 Java，延迟极低，无网络调用，效果较弱）
+    #   bge    - 外部 BGE Python 服务（精度最高，需另行部署 Python 推理服务）
+    #   cohere - Cohere Rerank API（云端，需 API Key）
+    type: ${RERANKER_TYPE:llm}
     top-k: 5                   # 最终送给 LLM 的上下文数
+    llm:
+      batch-size: 5            # 每批发给 LLM 评分的文档数（避免超长 Prompt）
     bge:
-      url: http://localhost:8090/rerank   # BGE Python 服务地址
+      url: ${BGE_RERANKER_URL:http://localhost:8090/rerank}
     cohere:
       api-key: ${COHERE_API_KEY:}
       model: rerank-multilingual-v3.0
 
-  # Elasticsearch（BM25 检索，可选）
+  # 内嵌 BM25 检索（基于 Apache Lucene，无需外部服务，始终可用）
+  bm25:
+    k1: ${BM25_K1:1.2}                # BM25 词频饱和参数（推荐 1.2~2.0）
+    b:  ${BM25_B:0.75}                # BM25 文档长度归一化参数（推荐 0.5~0.9）
+
+  # Elasticsearch（外部 BM25 检索，可选，需部署 ES 服务才能启用）
+  # 启用后 Bm25Retriever 同时使用 Lucene（内嵌）和 ES（外部）双路 BM25，效果更好
   elasticsearch:
-    enabled: ${ES_ENABLED:false}        # 设为 true 启用 BM25 混合检索
+    enabled: ${ES_ENABLED:false}        # 设为 true 启用外部 ES（默认关闭，内嵌 Lucene 始终可用）
     host: ${ES_HOST:localhost}
     port: ${ES_PORT:9200}
     index-name: ${ES_INDEX:rag-documents}
