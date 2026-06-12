@@ -1,0 +1,59 @@
+# 本地第三方配置（key profile）
+# 默认由 application.yml 的 spring.profiles.active=deepseek,key 自动加载。
+# 第三方 URL、模型名、密钥、Webhook 等统一放在这里。
+# 生产环境建议改用环境变量或外部配置中心，不要提交真实配置。
+
+# DeepSeek 模型配置
+deepseek:
+  api-key:
+  base-url: https://api.deepseek.com/v1
+  model-name: deepseek-v4-flash
+  temperature: 0.7
+  max-tokens: 4096
+
+# 百度千帆 Embedding 配置
+qianfan:
+  api-key:
+  base-url: https://qianfan.baidubce.com/v2
+  embedding:
+    model: bge-large-zh
+
+# Claude Profile 使用时可在这里配置
+anthropic:
+  api-key: sk-ant-xxxxxxxxxxxxxxxxxxxx
+  model-name: claude-opus-4-8
+  max-tokens: 8192
+
+# 外部 Reranker 服务
+rag:
+  reranker:
+    bge:
+      url: http://localhost:8090/rerank
+    cohere:
+      api-key:
+      model: rerank-multilingual-v3.0
+  # Elasticsearch（外部 BM25 检索，可选，需部署 ES 服务才能启用）
+  elasticsearch:
+    enabled: false
+    host: localhost
+    port: 9200
+    index-name: rag-documents
+    username:
+    password:
+    ik-analyzer: true
+
+# 天气 API（OpenWeatherMap）
+weather:
+  api:
+    key:
+
+# 告警 Webhook
+llm:
+  observability:
+    alert:
+      dingtalk:
+        webhook:
+      wecom:
+        webhook:
+      custom:
+        webhook:
