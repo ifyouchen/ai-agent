@@ -127,7 +127,7 @@ public class StreamingChatController {
                 userId, sessionId, orgId, kbId, model);
         String sanitizedMessage = promptInjectionFilter.check(message).sanitizedInput();
 
-        // 设置 RAG 检索上下文（指定知识库时生效）
+        // 设置 RAG 检索上下文：只有显式选择知识库（kbId 非空）时生效。
         HybridRagContentRetriever.RetrievalContext ragContext;
         try {
             ragContext = chatRagContextService.resolve(userId, orgId, kbId);

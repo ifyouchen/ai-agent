@@ -13,6 +13,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @DisplayName("ChatRagContextService - 聊天 RAG 上下文")
@@ -50,15 +51,13 @@ class ChatRagContextServiceTest {
     }
 
     @Test
-    @DisplayName("没有 kbId 时应按当前组织做租户级检索")
-    void shouldResolveTenantContextWithoutKbId() {
-        when(organizationService.resolveOrgId("user-1", "org_user-1")).thenReturn("org_user-1");
-
+    @DisplayName("没有 kbId 时不应启用知识库检索")
+    void shouldNotResolveContextWithoutKbId() {
         HybridRagContentRetriever.RetrievalContext context =
                 service.resolve("user-1", "org_user-1", null);
 
-        assertThat(context.tenantId()).isEqualTo("org_user-1");
-        assertThat(context.kbId()).isNull();
+        assertThat(context).isNull();
+        verifyNoInteractions(organizationService, knowledgeBaseService, kbMemberService);
     }
 
     @Test

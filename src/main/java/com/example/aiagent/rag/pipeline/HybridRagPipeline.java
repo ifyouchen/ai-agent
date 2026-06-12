@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 /**
@@ -104,32 +105,13 @@ public class HybridRagPipeline {
 
         // Step 1：查询改写
         // HyDE：用假设文档做向量检索，效果比直接用问题更好
-        String hydeDoc = queryRewriter.generateHypotheticalDocument(userQuery);
+        String hydeDoc = safeGenerateHypotheticalDocument(userQuery);
         // 多变体改写：variants <= 0 时跳过额外 LLM 调用，仅用原始问题，减少延迟
-        List<String> rewrittenQueries;
-        if (queryVariants > 0) {
-            rewrittenQueries = queryRewriter.rewriteMultiPerspective(userQuery, queryVariants);
-        } else {
-            rewrittenQueries = List.of(userQuery);
-            log.debug("查询改写变体数为 {}，跳过 LLM 多变体改写，仅使用原始问题", queryVariants);
-        }
+        List<String> rewrittenQueries = safeRewriteMultiPerspective(userQuery);
 
         // Step 2：混合检索（带 tenantId/kbId 过滤）
-        List<RetrievedChunk> hydeResults = vectorSearch(hydeDoc, vectorTopK, tenantId, kbId);
-        List<RetrievedChunk> multiQueryResults = rewrittenQueries.parallelStream()
-                .flatMap(q -> vectorSearch(q, vectorTopK / Math.max(rewrittenQueries.size(), 1), tenantId, kbId).stream())
-                .collect(Collectors.toList());
-
-        Map<String, RetrievedChunk> vectorMap = new LinkedHashMap<>();
-        mergeIntoMap(vectorMap, hydeResults);
-        mergeIntoMap(vectorMap, multiQueryResults);
-        List<RetrievedChunk> allVectorResults = new ArrayList<>(vectorMap.values());
-        allVectorResults.sort((a, b) -> Double.compare(b.getVectorScore(), a.getVectorScore()));
-
-        List<RetrievedChunk> bm25Results = null;
-        if (bm25Retriever != null && bm25Retriever.isAvailable()) {
-            bm25Results = bm25Retriever.retrieve(userQuery, vectorTopK, tenantId, kbId);
-        }
+        List<RetrievedChunk> allVectorResults = retrieveVectorCandidates(hydeDoc, rewrittenQueries, tenantId, kbId);
+        List<RetrievedChunk> bm25Results = retrieveBm25Candidates(userQuery, tenantId, kbId);
 
         // Step 3：RRF 融合
         Map<String, List<RetrievedChunk>> retrievalLists = new LinkedHashMap<>();
@@ -171,46 +153,20 @@ public class HybridRagPipeline {
 
         // ── Step 1：查询改写 ──────────────────────────────
         log.info("[Step 1] 查询改写...");
-        String hydeDoc = queryRewriter.generateHypotheticalDocument(userQuery);
-        List<String> rewrittenQueries;
-        if (queryVariants > 0) {
-            rewrittenQueries = queryRewriter.rewriteMultiPerspective(userQuery, queryVariants);
-        } else {
-            rewrittenQueries = List.of(userQuery);
-            log.debug("[Step 1] 跳过 LLM 多变体改写（variants={}），仅使用原始问题", queryVariants);
-        }
+        String hydeDoc = safeGenerateHypotheticalDocument(userQuery);
+        List<String> rewrittenQueries = safeRewriteMultiPerspective(userQuery);
 
         // ── Step 2：混合检索（带 tenantId/kbId 过滤） ────
         log.info("[Step 2] 混合检索（tenantId={}, kbId={}）...", tenantId, kbId);
         long retrievalStart = System.currentTimeMillis();
 
-        // 2a. 向量检索：用 HyDE 文档（主语义检索）
-        List<RetrievedChunk> hydeResults = vectorSearch(hydeDoc, vectorTopK, tenantId, kbId);
-
-        // 2b. 向量检索：用多角度改写的查询并行检索
-        List<RetrievedChunk> multiQueryResults = rewrittenQueries.parallelStream()
-                .flatMap(q -> vectorSearch(q, vectorTopK / rewrittenQueries.size(), tenantId, kbId).stream())
-                .collect(Collectors.toList());
-
-        // 合并向量检索结果，去重保留最高分
-        Map<String, RetrievedChunk> vectorMap = new LinkedHashMap<>();
-        mergeIntoMap(vectorMap, hydeResults);
-        mergeIntoMap(vectorMap, multiQueryResults);
-        List<RetrievedChunk> allVectorResults = new ArrayList<>(vectorMap.values());
-        allVectorResults.sort((a, b) -> Double.compare(b.getVectorScore(), a.getVectorScore()));
+        List<RetrievedChunk> allVectorResults = retrieveVectorCandidates(hydeDoc, rewrittenQueries, tenantId, kbId);
 
         log.info("[Step 2] 向量检索完成，共{}个候选，耗时{}ms",
                 allVectorResults.size(), System.currentTimeMillis() - retrievalStart);
 
         // 2c. BM25 检索（带 tenantId/kbId 过滤）
-        List<RetrievedChunk> bm25Results = null;
-        if (bm25Retriever != null && bm25Retriever.isAvailable()) {
-            log.info("[Step 2] BM25 检索（tenantId={}, kbId={}）...", tenantId, kbId);
-            bm25Results = bm25Retriever.retrieve(userQuery, vectorTopK, tenantId, kbId);
-            log.info("[Step 2] BM25 检索完成，命中 {} 条", bm25Results.size());
-        } else {
-            log.debug("[Step 2] BM25 未启用，跳过 BM25 检索");
-        }
+        List<RetrievedChunk> bm25Results = retrieveBm25Candidates(userQuery, tenantId, kbId);
 
         // ── Step 3：RRF 融合 ──────────────────────────────
         boolean bm25Active = bm25Results != null && !bm25Results.isEmpty();
@@ -240,6 +196,7 @@ public class HybridRagPipeline {
         response.setRewrittenQueries(rewrittenQueries);
         response.setStats(RagResponse.RetrievalStats.builder()
                 .totalVectorResults(allVectorResults.size())
+                .totalBm25Results(bm25Results.size())
                 .afterRrfFusion(rrfResults.size())
                 .afterReranking(rerankedResults.size())
                 .retrievalTimeMs(System.currentTimeMillis() - retrievalStart - rerankTime)
@@ -295,6 +252,120 @@ public class HybridRagPipeline {
                     .retrievalSource(RetrievedChunk.RetrievalSource.VECTOR_ONLY)
                     .build();
         }).collect(Collectors.toList());
+    }
+
+    private String safeGenerateHypotheticalDocument(String userQuery) {
+        try {
+            String hydeDoc = queryRewriter.generateHypotheticalDocument(userQuery);
+            return (hydeDoc == null || hydeDoc.isBlank()) ? userQuery : hydeDoc;
+        } catch (Exception e) {
+            log.warn("[Step 1] HyDE 生成失败，回退原始问题。原因：{}", e.getMessage());
+            return userQuery;
+        }
+    }
+
+    private List<String> safeRewriteMultiPerspective(String userQuery) {
+        if (queryVariants <= 0) {
+            log.debug("[Step 1] 跳过 LLM 多变体改写（variants={}），仅使用原始问题", queryVariants);
+            return List.of(userQuery);
+        }
+
+        try {
+            List<String> rewritten = queryRewriter.rewriteMultiPerspective(userQuery, queryVariants);
+            return normalizeQueries(userQuery, rewritten);
+        } catch (Exception e) {
+            log.warn("[Step 1] 多角度查询改写失败，回退原始问题。原因：{}", e.getMessage());
+            return List.of(userQuery);
+        }
+    }
+
+    private List<String> normalizeQueries(String userQuery, List<String> rewrittenQueries) {
+        List<String> normalized = new ArrayList<>();
+        normalized.add(userQuery);
+
+        if (rewrittenQueries != null) {
+            for (String query : rewrittenQueries) {
+                if (query != null && !query.isBlank() && !normalized.contains(query)) {
+                    normalized.add(query);
+                }
+            }
+        }
+
+        return normalized;
+    }
+
+    private List<RetrievedChunk> retrieveVectorCandidates(String hydeDoc,
+                                                          List<String> rewrittenQueries,
+                                                          String tenantId,
+                                                          Long kbId) {
+        AtomicBoolean vectorHealthy = new AtomicBoolean(true);
+
+        // 2a. 向量检索：用 HyDE 文档（主语义检索）
+        List<RetrievedChunk> hydeResults = safeVectorSearch(
+                hydeDoc, vectorTopK, tenantId, kbId, "HyDE", vectorHealthy);
+
+        // 如果第一跳向量检索已经因为外部服务失败而不可用，直接交给 BM25 兜底，避免重复打失败接口。
+        List<RetrievedChunk> multiQueryResults = vectorHealthy.get()
+                ? rewrittenQueries.parallelStream()
+                    .flatMap(q -> safeVectorSearch(
+                            q,
+                            Math.max(vectorTopK / Math.max(rewrittenQueries.size(), 1), 1),
+                            tenantId,
+                            kbId,
+                            "multi-query",
+                            vectorHealthy
+                    ).stream())
+                    .collect(Collectors.toList())
+                : List.of();
+
+        // 合并向量检索结果，去重保留最高分
+        Map<String, RetrievedChunk> vectorMap = new LinkedHashMap<>();
+        mergeIntoMap(vectorMap, hydeResults);
+        mergeIntoMap(vectorMap, multiQueryResults);
+        List<RetrievedChunk> allVectorResults = new ArrayList<>(vectorMap.values());
+        allVectorResults.sort((a, b) -> Double.compare(b.getVectorScore(), a.getVectorScore()));
+        return allVectorResults;
+    }
+
+    private List<RetrievedChunk> safeVectorSearch(String query,
+                                                  int topK,
+                                                  String tenantId,
+                                                  Long kbId,
+                                                  String stage,
+                                                  AtomicBoolean vectorHealthy) {
+        if (!vectorHealthy.get()) {
+            return List.of();
+        }
+
+        try {
+            return vectorSearch(query, Math.max(topK, 1), tenantId, kbId);
+        } catch (Exception e) {
+            vectorHealthy.set(false);
+            log.warn("[Step 2] 向量检索失败（{}），将降级使用 BM25/其他可用结果。原因：{}",
+                    stage, e.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<RetrievedChunk> retrieveBm25Candidates(String userQuery, String tenantId, Long kbId) {
+        if (bm25Retriever == null) {
+            log.debug("[Step 2] BM25 未启用，跳过 BM25 检索");
+            return List.of();
+        }
+
+        try {
+            if (!bm25Retriever.isAvailable()) {
+                log.debug("[Step 2] BM25 未启用，跳过 BM25 检索");
+                return List.of();
+            }
+            log.info("[Step 2] BM25 检索（tenantId={}, kbId={}）...", tenantId, kbId);
+            List<RetrievedChunk> bm25Results = bm25Retriever.retrieve(userQuery, vectorTopK, tenantId, kbId);
+            log.info("[Step 2] BM25 检索完成，命中 {} 条", bm25Results.size());
+            return bm25Results;
+        } catch (Exception e) {
+            log.warn("[Step 2] BM25 检索异常，降级为空列表。原因：{}", e.getMessage());
+            return List.of();
+        }
     }
 
     /**

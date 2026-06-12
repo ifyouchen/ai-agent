@@ -17,11 +17,11 @@ public class ChatRagContextService {
     private final KbMemberService kbMemberService;
 
     public HybridRagContentRetriever.RetrievalContext resolve(String userId, String orgId, Long kbId) {
-        String tenantId = organizationService.resolveOrgId(userId, orgId);
-
         if (kbId == null) {
-            return new HybridRagContentRetriever.RetrievalContext(tenantId, null);
+            return null;
         }
+
+        String tenantId = organizationService.resolveOrgId(userId, orgId);
 
         // Strictly bind the selected knowledge base to the current organization.
         knowledgeBaseService.getKnowledgeBase(tenantId, kbId);

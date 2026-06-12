@@ -102,9 +102,8 @@ public class ChatController {
                     userId, request.getSessionId(), clientIp, true,
                     Map.of("messageLength", injectionCheck.sanitizedInput().length()));
 
-            // ── Step 4：LLM 调用（设置 RAG 上下文后执行）──────────
-            // 若请求中指定了 kbId，则将当前组织的 tenantId 和 kbId 注入 ThreadLocal，
-            // HybridRagContentRetriever 会据此过滤只检索指定知识库的内容
+            // ── Step 4：LLM 调用（请求指定 kbId 时设置 RAG 上下文）──────────
+            // 只有显式选择知识库时才注入 ThreadLocal；未选择知识库则保持普通对话。
             HybridRagContentRetriever.RetrievalContext ragContext =
                     chatRagContextService.resolve(userId, request.getOrgId(), request.getKbId());
             if (ragContext != null) {

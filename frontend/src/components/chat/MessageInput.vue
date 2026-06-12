@@ -314,9 +314,6 @@ function buildMentionAwareMessage(text) {
     .filter(doc => text.includes(`@${doc.filename}`))
     .map(doc => doc.filename);
   if (!matchedDocs.length) return text;
-  if (!sess.currentKbId && kb.currentKbId) {
-    sess.currentKbId = kb.currentKbId;
-  }
   const docList = matchedDocs.map(name => `《${name}》`).join('、');
   return `${text}\n\n请优先基于已引用文档 ${docList} 的内容进行检索和回答；如果文档中没有依据，请明确说明。`;
 }

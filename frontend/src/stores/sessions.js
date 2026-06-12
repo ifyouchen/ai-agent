@@ -12,7 +12,6 @@ import * as api from '../services/api.js';
 import { formatMarkdown } from '../js/utils.js';
 import { useUiStore } from './ui.js';
 import { useOrgStore } from './org.js';
-import { useKbStore } from './kb.js';
 import {
   EXPERT_MODEL,
   MAX_MSGS,
@@ -29,7 +28,6 @@ import {
 export const useSessionStore = defineStore('sessions', () => {
   const ui = useUiStore();
   const org = useOrgStore();
-  const kb = useKbStore();
 
   // ── 状态 ─────────────────────────────────────────────────────────────
   const sessions       = ref([]);            // [{id, title, createdAt}]
@@ -312,8 +310,7 @@ export const useSessionStore = defineStore('sessions', () => {
     const rt    = ensureRuntime(reqId);
     if (!text?.trim() || rt.sending) return;
     const outboundText = requestText?.trim() || text;
-    const effectiveKbId = kbId ?? currentKbId.value ?? kb.currentKbId ?? null;
-    if (!currentKbId.value && effectiveKbId) currentKbId.value = effectiveKbId;
+    const effectiveKbId = kbId ?? currentKbId.value ?? null;
 
     pushMessage(reqId, 'user', formatMarkdown(text));
     updateSessionTitle(text, reqId);
@@ -334,8 +331,7 @@ export const useSessionStore = defineStore('sessions', () => {
     messages.value = [...msgs];
     sessionMessages[sessionId.value] = messages.value;
     const text = stripHtml(userMsg.html);
-    const effectiveKbId = kbId ?? currentKbId.value ?? kb.currentKbId ?? null;
-    if (!currentKbId.value && effectiveKbId) currentKbId.value = effectiveKbId;
+    const effectiveKbId = kbId ?? currentKbId.value ?? null;
     if (reactEnabled.value)   await doReactChat(sessionId.value, text, effectiveKbId);
     else if (streamEnabled.value) await doStreamChat(sessionId.value, text, effectiveKbId);
     else                       await doSyncChat(sessionId.value, text, effectiveKbId);

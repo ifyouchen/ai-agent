@@ -112,14 +112,51 @@ class HybridRagPipelineTest {
         // 注入 bm25Retriever
         injectField(pipeline, "bm25Retriever", bm25Retriever);
         when(bm25Retriever.isAvailable()).thenReturn(true);
-        when(bm25Retriever.retrieve(anyString(), anyInt())).thenReturn(Collections.emptyList());
+        when(bm25Retriever.retrieve(anyString(), anyInt(), any(), any())).thenReturn(Collections.emptyList());
 
         String query = "测试查询";
         setupMocks(query);
 
         pipeline.execute(query);
 
-        verify(bm25Retriever).retrieve(eq(query), anyInt());
+        verify(bm25Retriever).retrieve(eq(query), anyInt(), any(), any());
+    }
+
+    @Test
+    @DisplayName("向量 embedding 失败时应继续返回 BM25 结果")
+    void shouldFallbackToBm25WhenVectorEmbeddingFails() {
+        String query = "资质服务讲了啥？";
+        String tenantId = "org_user";
+        Long kbId = 1L;
+
+        injectField(pipeline, "bm25Retriever", bm25Retriever);
+        when(queryRewriter.generateHypotheticalDocument(query)).thenReturn("资质评估服务介绍");
+        when(queryRewriter.rewriteMultiPerspective(eq(query), anyInt()))
+                .thenReturn(List.of(query));
+        when(embeddingModel.embed(anyString()))
+                .thenThrow(new RuntimeException("account_overdue"));
+        when(bm25Retriever.isAvailable()).thenReturn(true);
+
+        List<RetrievedChunk> bm25Results = List.of(
+                RetrievedChunk.builder()
+                        .chunkId("chunk-1")
+                        .content("资质评估服务是金融资质评估平台。")
+                        .documentName("资质.md")
+                        .tenantId(tenantId)
+                        .kbId(kbId)
+                        .bm25Score(3.5)
+                        .build()
+        );
+        when(bm25Retriever.retrieve(eq(query), anyInt(), eq(tenantId), eq(kbId)))
+                .thenReturn(bm25Results);
+        when(rrfFusionRanker.fuse(any(), anyInt())).thenReturn(bm25Results);
+        when(rerankerService.rerank(eq(query), any(), anyInt())).thenReturn(bm25Results);
+
+        List<RetrievedChunk> results = pipeline.retrieveOnly(query, tenantId, kbId);
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).getDocumentName()).isEqualTo("资质.md");
+        verify(bm25Retriever).retrieve(eq(query), anyInt(), eq(tenantId), eq(kbId));
     }
 
     @Test

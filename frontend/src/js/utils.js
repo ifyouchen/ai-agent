@@ -2,6 +2,7 @@
  * 工具函数集合
  */
 import DOMPurify from 'dompurify';
+import { marked, Renderer } from 'marked';
 
 /**
  * DOMPurify 白名单配置
@@ -10,41 +11,80 @@ import DOMPurify from 'dompurify';
  * 防止 LLM 输出中的恶意 HTML（如 <img onerror=...>、<script>）执行。
  */
 const PURIFY_CONFIG = {
-    ALLOWED_TAGS: ['pre', 'code', 'strong', 'em', 'h2', 'h3', 'li', 'br',
-                   'div', 'span', 'details', 'summary', 'button'],
-    ALLOWED_ATTR: ['class', 'type', 'data-code'],
+    ALLOWED_TAGS: ['p', 'pre', 'code', 'strong', 'em', 'del', 'h2', 'h3', 'h4',
+                   'ul', 'ol', 'li', 'br', 'blockquote', 'hr', 'table', 'thead',
+                   'tbody', 'tr', 'th', 'td', 'div', 'span', 'details', 'summary',
+                   'button', 'a'],
+    ALLOWED_ATTR: ['class', 'type', 'data-code', 'href', 'title', 'target', 'rel',
+                   'colspan', 'rowspan'],
+    ALLOW_DATA_ATTR: false,
+    FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input'],
+    FORBID_ATTR: ['style'],
 };
 
+const markdownRenderer = new Renderer();
+
+markdownRenderer.html = ({ text }) => escapeHtml(text);
+
+markdownRenderer.heading = function ({ tokens, depth }) {
+    const inner = this.parser.parseInline(tokens);
+    const level = depth <= 2 ? 2 : 3;
+    const cls = level === 2 ? 'md-h2' : 'md-h3';
+    return `<h${level} class="${cls}">${inner}</h${level}>\n`;
+};
+
+markdownRenderer.codespan = ({ text }) =>
+    `<code class="inline-code">${escapeHtml(text)}</code>`;
+
+markdownRenderer.code = ({ text, lang, escaped }) => {
+    const rawCode = text || '';
+    const langName = (lang || '').match(/^\S+/)?.[0] || '';
+    const safeLang = escapeHtml(langName);
+    const langLabel = safeLang ? `<span class="code-lang">${safeLang}</span>` : '';
+    const copyBtn = `<button type="button" class="copy-code-btn" data-code="${encodeURIComponent(rawCode)}">复制</button>`;
+    const codeClass = safeLang ? `code-block language-${safeLang}` : 'code-block';
+    const codeHtml = escaped ? rawCode : escapeHtml(rawCode);
+    return `<div class="code-block-wrap">${langLabel}${copyBtn}<pre class="${codeClass}"><code>${codeHtml}</code></pre></div>\n`;
+};
+
+marked.setOptions({
+    gfm: true,
+    breaks: false,
+    renderer: markdownRenderer,
+});
+
 /**
- * 简易 Markdown 渲染 + DOMPurify 二次过滤
+ * Markdown 渲染 + DOMPurify 二次过滤
  *
  * 渲染流程：
- *   1. 先 HTML 转义（& < > "），防止原始 HTML 直通
- *   2. 应用 Markdown 正则，仅生成白名单标签
+ *   1. 预处理连续空行和常见占位列表项，避免 AI 回复视觉发散
+ *   2. marked 负责 Markdown 结构化渲染
  *   3. DOMPurify 白名单过滤，作为最后一道防线
  *
- * 支持：代码块、行内代码、加粗、斜体、h1/h2/h3、列表、换行
+ * 支持：段落、列表、标题、加粗、斜体、代码块、行内代码、表格等常见 Markdown
  */
 export function formatMarkdown(text) {
     if (!text) return '';
-    const html = text
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        // 代码块：添加语言标签 + 复制按钮
-        .replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
-            const langLabel = lang ? `<span class="code-lang">${lang}</span>` : '';
-            const copyBtn   = `<button type="button" class="copy-code-btn" data-code="${encodeURIComponent(code)}">复制</button>`;
-            return `<div class="code-block-wrap">${langLabel}${copyBtn}<pre class="code-block"><code>${code}</code></pre></div>`;
-        })
-        .replace(/`([^`]+)`/g,
-            '<code class="inline-code">$1</code>')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        .replace(/^###\s*(.+)$/gm, '<h3 class="md-h3">$1</h3>')
-        .replace(/^##\s*(.+)$/gm, '<h2 class="md-h2">$1</h2>')
-        .replace(/^#\s*(.+)$/gm, '<h2 class="md-h2">$1</h2>')
-        .replace(/^-\s*(.+)$/gm, '<li>$1</li>')
-        .replace(/\n/g, '<br>');
+    const normalized = normalizeMarkdownText(text);
+    const html = marked.parse(normalized);
     return DOMPurify.sanitize(html, PURIFY_CONFIG);
+}
+
+function normalizeMarkdownText(text) {
+    return String(text)
+        .replace(/\r\n?/g, '\n')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/^\s*[-*+]\s*-{2,}\s*$/gm, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
 
 /**
