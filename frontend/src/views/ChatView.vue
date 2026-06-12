@@ -1,13 +1,16 @@
 <template>
-  <div class="chat-view">
+  <div class="chat-view" :class="{ 'is-empty': sess.messages.length === 0 }">
     <!-- 消息列表 -->
     <div ref="chatEl" class="chat-messages">
       <!-- 欢迎页 -->
       <div v-if="sess.messages.length === 0" class="welcome">
-        <div class="welcome-icon">
+        <div class="welcome-title-row">
+          <div class="welcome-icon">
           <svg viewBox="0 0 32 32" fill="currentColor" width="40" height="40">
             <path d="M27.6 11.8c-1.8.2-3.4-.2-4.8-1.1-1.9-1.3-3-3.3-3.5-5.9-.1-.6-.8-.9-1.3-.5-2.5 1.7-4 4-4.4 6.9-2.2-1.2-4.9-1.5-8-.9-.6.1-.9.8-.6 1.3 1.4 2.6 3.3 4.6 5.7 5.9-1.2.8-2.5 1.1-3.9 1.1-.7 0-1.1.8-.7 1.4 2 3.3 5.4 5.2 9.7 5.2 6.1 0 10.7-3.8 11.6-9.2.6-.6 1.1-1.4 1.5-2.3.4-.9-.2-2-1.3-1.9Zm-8 6.6c-1.9 1.6-4.5 1.8-6.5.4 1.7-.4 3-1.2 4-2.5 1.4.7 3 .9 4.7.6-.5.6-1.2 1.1-2.2 1.5Z"/>
           </svg>
+          </div>
+          <h2>使用{{ sess.reactEnabled ? '专家模式' : '快速模式' }}开始对话</h2>
         </div>
         <!-- P2-12：当前 RAG 模式感知提示 -->
         <div v-if="sess.currentKbId" class="welcome-kb-hint">
@@ -17,7 +20,6 @@
           </svg>
           RAG 模式：{{ kb.currentKbName || '已关联知识库' }}
         </div>
-        <h2>使用{{ sess.reactEnabled ? '专家模式' : '快速模式' }}开始对话</h2>
         <div class="welcome-modes">
           <button class="welcome-mode" :class="{ active: !sess.reactEnabled }" type="button" @click="sess.reactEnabled = false; sess.streamEnabled = true">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="m13 2-8 12h6l-1 8 9-13h-6l1-7Z"/></svg>
@@ -29,18 +31,6 @@
               <path d="M8.5 9.8 12 7.8l3.5 2-3.5 2-3.5-2Z" stroke="currentColor" stroke-width="1.8"/>
             </svg>
             专家模式
-          </button>
-        </div>
-        <div class="welcome-prompts">
-          <button
-            v-for="p in quickPrompts"
-            :key="p.label"
-            class="welcome-prompt-btn"
-            type="button"
-            @click="sendQuick(p.message)"
-          >
-            <span class="welcome-prompt-icon" v-html="p.icon"></span>
-            <span>{{ p.label }}</span>
           </button>
         </div>
       </div>
@@ -76,42 +66,12 @@ const ui     = useUiStore();
 const router = useRouter();
 const chatEl = ref(null);
 
-// P2-11：快捷提示词使用通用示例，不使用硬编码测试数据
-const quickPrompts = [
-  {
-    label: '帮我查询订单',
-    message: '我想查一下我最近的订单状态，有什么方法吗？',
-    icon: '<svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
-  },
-  {
-    label: '查询当前天气',
-    message: '帮我查一下北京当前的天气情况',
-    icon: '<svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  },
-  {
-    label: '了解你的能力',
-    message: '你都能帮我做什么？请介绍一下你具备的功能',
-    icon: '<svg viewBox="0 0 24 24" fill="none" width="14" height="14"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
-  },
-  {
-    label: '计算一道题',
-    message: '帮我计算一下：(1234 + 5678) × 2 ÷ 3 等于多少？',
-    icon: '<svg viewBox="0 0 24 24" fill="none" width="14" height="14"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2"/><path d="M9 9h.01M12 9h.01M15 9h.01M9 12h.01M12 12h.01M15 12h.01M9 15h3M15 15h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
-  },
-];
-
 // 消息更新时自动滚动到底部
 onUpdated(() => {
   nextTick(() => {
     if (chatEl.value) chatEl.value.scrollTop = chatEl.value.scrollHeight;
   });
 });
-
-async function sendQuick(text) {
-  sess.messageInput = text;
-  await sess.sendMessage(text, sess.currentKbId);
-  sess.messageInput = '';
-}
 
 async function handleRegenerate(messageId) {
   await sess.regenerateMessage(messageId, sess.currentKbId);

@@ -2,6 +2,7 @@
   <div class="chat-input-area">
     <div class="input-wrapper">
       <textarea
+        id="messageInput"
         ref="inputEl"
         v-model="inputText"
         :disabled="sess.currentSessionSending"
@@ -15,36 +16,24 @@
           <button
             class="quick-prompt tool-chip"
             type="button"
-            :class="{ active: !sess.reactEnabled }"
-            @click="sess.reactEnabled = false; sess.streamEnabled = true"
+            :class="{ active: sess.reactEnabled }"
+            @click="sess.reactEnabled = !sess.reactEnabled; sess.streamEnabled = true"
           >
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="m13 2-8 12h6l-1 8 9-13h-6l1-7Z"/></svg>
-            快速模式
+            深度思考
           </button>
           <button
             class="quick-prompt tool-chip"
             type="button"
-            :class="{ active: sess.reactEnabled }"
-            @click="sess.reactEnabled = true; sess.streamEnabled = true"
+            :class="{ active: sess.currentKbId }"
+            @click="$emit('attachKb')"
           >
             <svg viewBox="0 0 24 24" fill="none">
-              <path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z" stroke="currentColor" stroke-width="1.8"/>
-              <path d="M8.5 9.8 12 7.8l3.5 2-3.5 2-3.5-2Z" stroke="currentColor" stroke-width="1.8"/>
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/>
+              <path d="M3 12h18M12 3c2.3 2.6 3.5 5.6 3.5 9s-1.2 6.4-3.5 9M12 3c-2.3 2.6-3.5 5.6-3.5 9s1.2 6.4 3.5 9"
+                    stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
             </svg>
-            专家模式
-          </button>
-          <button
-            class="quick-prompt tool-chip"
-            type="button"
-            :class="{ active: sess.enterToSend }"
-            :title="sess.enterToSend ? '当前：Enter 发送，点击切换为 Ctrl+Enter' : '当前：Ctrl+Enter 发送，点击切换为 Enter'"
-            @click="sess.enterToSend = !sess.enterToSend"
-          >
-            <svg viewBox="0 0 24 24" fill="none" width="12" height="12">
-              <path d="M20 6H4M4 12h10M4 18h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              <path d="m16 15 3 3-3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            {{ sess.enterToSend ? 'Enter 发送' : 'Ctrl+Enter' }}
+            智能搜索
           </button>
         </div>
         <div class="composer-actions">
@@ -123,9 +112,7 @@ const inputText = computed({
 const currentKbName = computed(() => kb.currentKbName);
 
 const enterToSendHint = computed(() =>
-  sess.enterToSend
-    ? '输入消息，Enter 发送，Shift+Enter 换行...'
-    : '输入消息，Ctrl+Enter 发送...'
+  '给 DeepSeek 发送消息'
 );
 
 function autoResize() {

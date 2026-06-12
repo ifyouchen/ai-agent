@@ -2,7 +2,7 @@
   <aside class="sidebar" :class="{ collapsed: collapsed }">
     <!-- Logo + 工具栏 -->
     <div class="sidebar-logo">
-      <h1><span class="logo-icon"><LogoMark /></span>AI Agent</h1>
+      <h1><span class="logo-icon"><LogoMark /></span>deepseek</h1>
       <div class="sidebar-tools">
         <button class="icon-btn" type="button" title="搜索" @click="openSearch">
           <svg viewBox="0 0 24 24" fill="none"><path d="m21 21-4.2-4.2m2.2-5.3a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -22,59 +22,53 @@
     </div>
 
     <!-- 会话列表 -->
-    <div class="sidebar-section">
-      <div class="sidebar-section-title">最近</div>
-    </div>
     <div class="session-list">
       <div v-if="sess.sessions.length === 0" class="session-empty">暂无历史对话</div>
-      <div
-        v-for="session in sess.sessions"
-        :key="session.id"
-        class="session-item"
-        :class="{ active: session.id === sess.sessionId, generating: sess.sessionRuntime[session.id]?.sending }"
-        :title="session.title"
-        @click="handleSwitchSession(session.id)"
-      >
-        <span class="session-icon">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" opacity=".5">
-            <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
-          </svg>
-        </span>
-
-        <!-- 标题（双击可编辑） -->
-        <span
-          v-if="editingSessionId !== session.id"
-          class="session-title"
-          @dblclick.stop="startEditTitle(session)"
-        >{{ session.title }}</span>
-        <input
-          v-else
-          ref="titleInputEl"
-          class="session-title-input"
-          :value="editingTitle"
-          @input="editingTitle = $event.target.value"
-          @blur="saveTitle(session.id)"
-          @keydown.enter.prevent="saveTitle(session.id)"
-          @keydown.esc.prevent="cancelEditTitle"
-          @click.stop
-        />
-
-        <!-- 生成中动态指示器 -->
-        <span v-if="sess.sessionRuntime[session.id]?.sending" class="session-generating">
-          <span></span><span></span><span></span>
-        </span>
-        <button
-          v-else-if="editingSessionId !== session.id"
-          class="session-delete"
-          type="button"
-          title="删除会话"
-          @click.stop="sess.removeSession(session.id)"
+      <template v-for="group in groupedSessions" :key="group.label">
+        <div v-if="group.items.length" class="sidebar-section-title">{{ group.label }}</div>
+        <div
+          v-for="session in group.items"
+          :key="session.id"
+          class="session-item"
+          :class="{ active: session.id === sess.sessionId, generating: sess.sessionRuntime[session.id]?.sending }"
+          :title="session.title"
+          @click="handleSwitchSession(session.id)"
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-          </svg>
-        </button>
-      </div>
+          <!-- 标题（双击可编辑） -->
+          <span
+            v-if="editingSessionId !== session.id"
+            class="session-title"
+            @dblclick.stop="startEditTitle(session)"
+          >{{ session.title }}</span>
+          <input
+            v-else
+            ref="titleInputEl"
+            class="session-title-input"
+            :value="editingTitle"
+            @input="editingTitle = $event.target.value"
+            @blur="saveTitle(session.id)"
+            @keydown.enter.prevent="saveTitle(session.id)"
+            @keydown.esc.prevent="cancelEditTitle"
+            @click.stop
+          />
+
+          <!-- 生成中动态指示器 -->
+          <span v-if="sess.sessionRuntime[session.id]?.sending" class="session-generating">
+            <span></span><span></span><span></span>
+          </span>
+          <button
+            v-else-if="editingSessionId !== session.id"
+            class="session-delete"
+            type="button"
+            title="删除会话"
+            @click.stop="sess.removeSession(session.id)"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+            </svg>
+          </button>
+        </div>
+      </template>
     </div>
 
     <!-- 底部：用户信息 + 模型选择 -->
@@ -264,6 +258,30 @@ function selectModel(v) {
   sess.model      = v;
   modelMenuOpen.value = false;
 }
+
+const groupedSessions = computed(() => {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const groups = [
+    { label: '今天', items: [] },
+    { label: '昨天', items: [] },
+    { label: '7 天内', items: [] },
+    { label: '30 天内', items: [] },
+    { label: '更早', items: [] },
+  ];
+
+  sess.sessions.forEach(session => {
+    const time = new Date(session.createdAt || Date.now()).getTime();
+    if (time >= startOfToday) groups[0].items.push(session);
+    else if (time >= startOfToday - dayMs) groups[1].items.push(session);
+    else if (time >= startOfToday - 7 * dayMs) groups[2].items.push(session);
+    else if (time >= startOfToday - 30 * dayMs) groups[3].items.push(session);
+    else groups[4].items.push(session);
+  });
+
+  return groups;
+});
 
 // ── 会话操作 ────────────────────────────────────────────────────────
 function handleNewSession() {
