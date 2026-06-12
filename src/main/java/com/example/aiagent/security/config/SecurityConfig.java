@@ -2,10 +2,13 @@ package com.example.aiagent.security.config;
 
 import com.example.aiagent.security.filter.JwtAuthFilter;
 import com.example.aiagent.security.service.UserDetailsServiceImpl;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -16,13 +19,16 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Spring Security 完整配置
@@ -82,6 +88,12 @@ public class SecurityConfig {
             .httpBasic(basic -> basic.disable())
             .formLogin(form -> form.disable())
 
+            // 统一异常响应：401 / 403 返回 JSON，避免 response 被提前 commit
+            .exceptionHandling(ex -> ex
+                .authenticationEntryPoint(jwtAuthenticationEntryPoint())
+                .accessDeniedHandler(jwtAccessDeniedHandler())
+            )
+
             // 注册 JWT 过滤器：在 UsernamePasswordAuthenticationFilter 之前执行
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
 
@@ -89,6 +101,34 @@ public class SecurityConfig {
             .authenticationProvider(authenticationProvider());
 
         return http.build();
+    }
+
+    /**
+     * 401 Unauthorized：Token 缺失或无效时直接返回 JSON，不重定向登录页
+     */
+    @Bean
+    public AuthenticationEntryPoint jwtAuthenticationEntryPoint() {
+        return (request, response, authException) -> {
+            response.setStatus(HttpStatus.UNAUTHORIZED.value());
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE + ";charset=UTF-8");
+            String body = new ObjectMapper().writeValueAsString(
+                    Map.of("error", "未认证", "message", "请先登录或检查 Token 是否有效"));
+            response.getWriter().write(body);
+        };
+    }
+
+    /**
+     * 403 Forbidden：已认证但权限不足时返回 JSON
+     */
+    @Bean
+    public AccessDeniedHandler jwtAccessDeniedHandler() {
+        return (request, response, accessDeniedException) -> {
+            response.setStatus(HttpStatus.FORBIDDEN.value());
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE + ";charset=UTF-8");
+            String body = new ObjectMapper().writeValueAsString(
+                    Map.of("error", "权限不足", "message", "您没有权限访问该资源"));
+            response.getWriter().write(body);
+        };
     }
 
     /**

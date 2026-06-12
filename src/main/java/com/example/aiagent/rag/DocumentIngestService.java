@@ -69,6 +69,15 @@ public class DocumentIngestService {
     private int chunkOverlap;
 
     /**
+     * Embedding API 单次批量上限。
+     * 百度千帆 bge-large-zh 限制每次最多 16 条；
+     * OpenAI / 其他模型通常支持更大批次（256+），但设小一些更安全。
+     * 可通过 agent.rag.embedding-batch-size 覆盖。
+     */
+    @Value("${agent.rag.embedding-batch-size:16}")
+    private int embeddingBatchSize;
+
+    /**
      * 导入上传的文件到指定知识库（支持 PDF、Word、TXT 等）
      *
      * <p>完整闭环：
@@ -320,9 +329,8 @@ public class DocumentIngestService {
             segment.metadata().put("chunkId", String.valueOf(chunkEntity.getId()));
         }
 
-        // 向量化 + 存入 PgVector
-        var embeddings = embeddingModel.embedAll(segments).content();
-        embeddingStore.addAll(embeddings, segments);
+        // 向量化 + 存入 PgVector（分批调用，避免超出 API 单次批次限制）
+        embedAllInBatches(segments);
 
         // 同步索引到 Lucene（BM25）
         if (bm25Retriever != null && bm25Retriever.isAvailable()) {
@@ -365,8 +373,8 @@ public class DocumentIngestService {
                 .flatMap(doc -> splitter.split(doc).stream())
                 .toList();
 
-        var embeddings = embeddingModel.embedAll(allSegments).content();
-        embeddingStore.addAll(embeddings, allSegments);
+        // 分批向量化，避免超出 API 单次批次限制
+        embedAllInBatches(allSegments);
 
         if (bm25Retriever != null && bm25Retriever.isAvailable()) {
             log.info("[BM25] 开始将 {} 个切片索引到 Lucene...", allSegments.size());
@@ -394,6 +402,37 @@ public class DocumentIngestService {
     }
 
     // ── 辅助方法 ─────────────────────────────────────────────
+
+    /**
+     * 分批调用 EmbeddingModel，避免超出 API 单次批次上限（如百度千帆限制 16 条/次）。
+     *
+     * <p>策略：将 segments 按 {@code embeddingBatchSize} 分组，逐批调用 embedAll，
+     * 每批调用后立即写入 EmbeddingStore，避免在内存中积累大量向量。
+     *
+     * @param segments 需要向量化并存储的所有切片
+     */
+    private void embedAllInBatches(List<TextSegment> segments) {
+        int total = segments.size();
+        int batchSize = Math.max(1, embeddingBatchSize);
+        log.info("[Embed] 开始分批向量化，共 {} 个切片，每批 {} 条", total, batchSize);
+
+        for (int start = 0; start < total; start += batchSize) {
+            int end = Math.min(start + batchSize, total);
+            List<TextSegment> batch = segments.subList(start, end);
+
+            try {
+                var embeddings = embeddingModel.embedAll(batch).content();
+                embeddingStore.addAll(embeddings, batch);
+                log.debug("[Embed] 批次 {}/{} 完成（{}-{}）",
+                        (start / batchSize) + 1, (int) Math.ceil((double) total / batchSize),
+                        start, end - 1);
+            } catch (Exception e) {
+                log.error("[Embed] 批次 {}-{} 向量化失败：{}", start, end - 1, e.getMessage(), e);
+                throw e;  // 重新抛出，让外层事务回滚
+            }
+        }
+        log.info("[Embed] 向量化完成，共 {} 个切片已写入向量库", total);
+    }
 
     /** 校验知识库存在且属于该租户 */
     private void validateKnowledgeBase(String tenantId, Long kbId) {
