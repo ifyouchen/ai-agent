@@ -79,6 +79,7 @@ agent:
     min-score: 0.7            # 相似度阈值（低于此值不返回）
     chunk-size: 500           # 文档切片大小（字符数）
     chunk-overlap: 50         # 切片重叠（避免信息截断）
+    embedding-batch-size: 16  # Embedding API 单次批量上限（百度千帆 bge-large-zh 最大 16；OpenAI 可设 256）
 
 # ==================== 混合 RAG 配置 ====================
 rag:
@@ -133,10 +134,12 @@ rag:
 # ==================== 百度千帆 Embedding 配置 ====================
 # 申请地址：https://qianfan.cloud.baidu.com，在「密钥管理」创建 API Key
 qianfan:
-  api-key:                                            # 填入千帆 API Key
+  api-key: bce-v3/ALTAK-hwJAPZlBMtrht9Zskb4hO/26375852b3614d653c162440589d6c9bcc9cab7a
+  # 填入千帆 API Key
   base-url: https://qianfan.baidubce.com/v2
   embedding:
-    model: bge-large-zh                               # 向量维度 1024，中文效果好
+    # 向量维度 1024，中文效果好
+    model: bge-large-zh
 
 
 # 天气 API（OpenWeatherMap 免费版，申请地址：https://openweathermap.org/api）
