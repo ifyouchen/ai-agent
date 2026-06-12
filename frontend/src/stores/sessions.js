@@ -35,7 +35,7 @@ export const useSessionStore = defineStore('sessions', () => {
   const sessionRuntime  = reactive({});      // {sessionId: {sending,eventSource,...}}
   const reactEnabled   = ref(false);
   const streamEnabled  = ref(true);
-  const enterToSend    = ref(false);
+  const enterToSend    = ref(true);
   const model          = ref(QUICK_MODEL);
   const currentKbId    = ref(null);
   const messageInput   = ref('');
