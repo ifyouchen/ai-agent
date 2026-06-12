@@ -28,6 +28,8 @@ public interface DocumentMapper {
                                    @Param("parseStatus") String parseStatus,
                                    @Param("parseError") String parseError);
 
+    int updateChunkCount(@Param("id") Long id, @Param("chunkCount") int chunkCount);
+
     void insert(Document document);
 
     void deleteById(@Param("id") Long id);

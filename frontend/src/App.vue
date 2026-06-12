@@ -129,6 +129,19 @@
                 专家模式
               </button>
             </div>
+            <!-- 快捷提示词 -->
+            <div class="welcome-prompts">
+              <button
+                v-for="p in quickPrompts"
+                :key="p.label"
+                class="welcome-prompt-btn"
+                type="button"
+                @click="sendQuick(p.message)"
+              >
+                <span class="welcome-prompt-icon" v-html="p.icon"></span>
+                <span>{{ p.label }}</span>
+              </button>
+            </div>
           </div>
 
           <div v-for="message in messages" :key="message.id" class="message" :class="message.role">
@@ -144,10 +157,10 @@
               ref="messageInputEl"
               v-model="messageInput"
               :disabled="currentSessionSending"
-              placeholder="输入消息，Ctrl+Enter 发送..."
+              :placeholder="enterToSend ? '输入消息，Enter 发送，Shift+Enter 换行...' : '输入消息，Ctrl+Enter 发送...'"
               rows="1"
               @input="autoResize"
-              @keydown.ctrl.enter.prevent="sendMessage"
+              @keydown="handleInputKeydown"
             ></textarea>
             <div class="composer-footer">
               <div class="composer-tools">
@@ -159,9 +172,13 @@
                   <svg viewBox="0 0 24 24" fill="none"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 9.8 12 7.8l3.5 2-3.5 2-3.5-2Z" stroke="currentColor" stroke-width="1.8"/></svg>
                   专家模式
                 </button>
+                <button class="quick-prompt tool-chip" type="button" @click="enterToSend = !enterToSend" :class="{ active: enterToSend }" :title="enterToSend ? '当前：Enter 发送，点击切换为 Ctrl+Enter' : '当前：Ctrl+Enter 发送，点击切换为 Enter'">
+                  <svg viewBox="0 0 24 24" fill="none" width="12" height="12"><path d="M20 6H4M4 12h10M4 18h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="m16 15 3 3-3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  {{ enterToSend ? 'Enter 发送' : 'Ctrl+Enter' }}
+                </button>
               </div>
               <div class="composer-actions">
-                <button class="attach-btn" type="button" title="上传附件">
+                <button class="attach-btn" :class="{ active: currentKbId }" type="button" title="关联知识库" @click="handleAttachKb">
                   <svg viewBox="0 0 24 24" fill="none"><path d="m20 11.5-7.7 7.7a5.2 5.2 0 0 1-7.4-7.4l8.4-8.4a3.6 3.6 0 0 1 5.1 5.1l-8.4 8.4a2 2 0 0 1-2.8-2.8l7.6-7.6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
                 <button v-if="currentSessionSending" class="stop-btn" type="button" title="停止生成" @click="stopGeneration">
@@ -174,7 +191,12 @@
             </div>
           </div>
           <div class="input-hints">
-            <span class="hint-text">Ctrl+Enter 发送 · Enter 换行</span>
+            <span v-if="currentKbId" class="kb-active-badge">
+              <svg viewBox="0 0 24 24" fill="none" width="11" height="11"><path d="M4 19V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7M4 19h16M4 19a2 2 0 0 1-2-2v-1h20v1a2 2 0 0 1-2 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              {{ currentKbName }}
+              <button class="kb-active-clear" type="button" title="取消关联知识库" @click.stop="currentKbId = null">×</button>
+            </span>
+            <span class="hint-text">{{ enterToSend ? 'Enter 发送 · Shift+Enter 换行' : 'Ctrl+Enter 发送 · Enter 换行' }}</span>
           </div>
         </div>
       </section>
@@ -297,7 +319,31 @@
               </button>
             </div>
             <div class="kb-members-add">
-              <input v-model.trim="kbMemberUserId" type="text" placeholder="输入用户 ID" class="kb-member-input">
+              <div class="kb-member-search-wrap">
+                <input
+                  v-model.trim="kbMemberUsername"
+                  type="text"
+                  placeholder="输入用户名搜索..."
+                  class="kb-member-input"
+                  autocomplete="off"
+                  @input="onKbMemberSearchInput"
+                  @blur="hideKbMemberSuggestions"
+                  @focus="onKbMemberSearchInput"
+                >
+                <div v-if="kbMemberSuggestions.length > 0 && kbMemberSuggestionsVisible"
+                     class="kb-member-suggestions">
+                  <button
+                    v-for="u in kbMemberSuggestions"
+                    :key="u.userId"
+                    class="kb-member-suggestion-item"
+                    type="button"
+                    @mousedown.prevent="selectKbMemberSuggestion(u)"
+                  >
+                    <span class="kb-member-sug-name">{{ u.username }}</span>
+                    <span class="kb-member-sug-id">{{ u.userId }}</span>
+                  </button>
+                </div>
+              </div>
               <select v-model="kbMemberRole" class="kb-member-role-select">
                 <option value="VIEWER">只读（VIEWER）</option>
                 <option value="EDITOR">编辑（EDITOR）</option>
@@ -307,7 +353,10 @@
             <div class="kb-members-list">
               <div v-if="kbMembers.length === 0" class="empty-hint">暂无成员</div>
               <div v-for="member in kbMembers" :key="member.userId" class="kb-member-item">
-                <span class="kb-member-id">{{ member.userId }}</span>
+                <span class="kb-member-id">
+                  {{ member.username || member.userId }}
+                  <small v-if="member.username" class="kb-member-sub-id">{{ member.userId }}</small>
+                </span>
                 <span class="kb-member-role">{{ kbRoleLabel(member.role) }}</span>
               </div>
             </div>
@@ -643,10 +692,26 @@ const tabs = [
 { key: 'monitor', label: '监控' }
 ];
 const quickPrompts = [
-  { label: '查询订单状态', message: '帮我查一下订单 #12345 的状态' },
-  { label: '查询天气', message: '北京今天天气怎么样？' },
-  { label: '了解功能', message: '帮我介绍一下你能做什么' },
-  { label: '查询账户', message: '查询用户 U001 的账户余额' }
+  {
+    label: '查询订单状态',
+    message: '帮我查一下订单 #12345 的状态',
+    icon: '<svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
+  },
+  {
+    label: '查询今日天气',
+    message: '北京今天天气怎么样？',
+    icon: '<svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+  },
+  {
+    label: '了解我的功能',
+    message: '帮我介绍一下你能做什么',
+    icon: '<svg viewBox="0 0 24 24" fill="none" width="14" height="14"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
+  },
+  {
+    label: '查询账户余额',
+    message: '查询用户 U001 的账户余额',
+    icon: '<svg viewBox="0 0 24 24" fill="none" width="14" height="14"><rect x="2" y="5" width="20" height="14" rx="2" stroke="currentColor" stroke-width="2"/><path d="M2 10h20" stroke="currentColor" stroke-width="2"/></svg>'
+  }
 ];
 
 const user = ref(api.getUser());
@@ -729,6 +794,7 @@ const messages = ref([]);
 const messageInput = ref('');
 const streamEnabled = ref(true);
 const reactEnabled = ref(false);
+const enterToSend = ref(false); // 默认 Ctrl+Enter 发送，可切换为 Enter 发送
 const sessionRuntime = reactive({});
 const chatMessagesEl = ref(null);
 const messageInputEl = ref(null);
@@ -743,8 +809,12 @@ const dragOver = ref(false);
 const uploadQueue = ref([]);
 const kbMembersVisible = ref(false);
 const kbMembers = ref([]);
-const kbMemberUserId = ref('');
+const kbMemberUserId = ref('');      // 最终选定的 userId
+const kbMemberUsername = ref('');    // 搜索输入框的文字
 const kbMemberRole = ref('VIEWER');
+const kbMemberSuggestions = ref([]);
+const kbMemberSuggestionsVisible = ref(false);
+let _kbSearchTimer = null;
 
 const organizations = ref([]);
 const currentOrgId = ref(null);
@@ -819,6 +889,10 @@ const modelOptions = [
 ];
 const currentModelLabel = computed(() => modelOptions.find(option => option.value === model.value)?.label || '选择模型');
 const currentSessionSending = computed(() => ensureSessionRuntime(sessionId.value).sending);
+const currentKbName = computed(() => {
+  if (!currentKbId.value) return '';
+  return knowledgeBases.value.find(kb => kb.id === currentKbId.value)?.name || '知识库';
+});
 const filteredSessions = computed(() => {
   const keyword = searchQuery.value.trim().toLowerCase();
   if (!keyword) return sessions.value;
@@ -835,19 +909,29 @@ onMounted(async () => {
     location.replace('/login.html');
     return;
   }
-  // 尝试从 localStorage 恢复历史会话，恢复失败则创建新会话
-  const restored = loadSessions();
-  if (!restored) {
-    addSession(sessionId.value, '新对话');
+
+  // ── 加载历史会话：优先从服务端，降级到 localStorage ──
+  let serverLoaded = false;
+  try {
+    serverLoaded = await loadSessionsFromServer();
+  } catch (e) {
+    console.warn('服务端历史加载失败，降级 localStorage:', e.message);
+  }
+  if (!serverLoaded) {
+    const localRestored = loadSessions();
+    if (!localRestored) {
+      addSession(sessionId.value, '新对话');
+    } else {
+      // 将 localStorage 数据异步同步到服务端（静默，不影响用户）
+      try { await syncLocalToServer(); } catch { /* 忽略 */ }
+    }
   }
 
-  // 监听会话列表和 sessionId 变化，自动持久化
-  // 注意：sessionMessages 的深层变化（消息 push）由 pushMessage 直接调用 scheduleSave
+  // 监听会话列表和 sessionId 变化，自动持久化到 localStorage（作为离线备份）
   watch(sessions, scheduleSave, { deep: true });
   watch(sessionId, scheduleSave);
 
   // 必须先加载组织（确保 currentOrgId 赋值完毕），再加载知识库
-  // 否则 loadKnowledgeBases 里 currentOrgId 仍是 null，导致 tenantId 不匹配
   await loadOrganizations();
   await loadKnowledgeBases();
 
@@ -857,6 +941,74 @@ onMounted(async () => {
 
 function generateId() {
   return 'session-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+}
+
+/**
+ * 从服务端加载会话列表和最近会话的消息
+ * @returns {boolean} 是否成功加载到数据
+ */
+async function loadSessionsFromServer() {
+  const serverSessions = await api.listChatSessions();
+  if (!serverSessions?.length) return false;
+
+  // 恢复会话列表
+  sessions.value = serverSessions.map(s => ({
+    id: s.sessionId,
+    title: s.title || '新对话',
+    createdAt: s.createdAt ? new Date(s.createdAt).getTime() : Date.now()
+  }));
+
+  // 加载最近一个会话的消息（其余会话点击时懒加载）
+  const firstSession = sessions.value[0];
+  if (firstSession) {
+    try {
+      const msgs = await api.getChatMessages(firstSession.id);
+      sessionMessages[firstSession.id] = msgs.map(m => ({
+        id: generateId(),
+        role: m.role,
+        html: m.role === 'user' ? formatMarkdown(m.content) : formatMarkdown(m.content)
+      }));
+    } catch { /* 忽略单条加载失败 */ }
+  }
+
+  // 恢复激活的会话（取最近一个）
+  sessionId.value = firstSession?.id || generateId();
+  messages.value = sessionMessages[sessionId.value] || [];
+  if (!sessionMessages[sessionId.value]) {
+    sessionMessages[sessionId.value] = [];
+    messages.value = sessionMessages[sessionId.value];
+  }
+  return true;
+}
+
+/**
+ * 切换会话时懒加载该会话的历史消息（如果还没有缓存）
+ */
+async function lazyLoadSessionMessages(id) {
+  if (sessionMessages[id]?.length) return; // 已有缓存，跳过
+  try {
+    const msgs = await api.getChatMessages(id);
+    sessionMessages[id] = msgs.map(m => ({
+      id: generateId(),
+      role: m.role,
+      html: formatMarkdown(m.content)
+    }));
+  } catch { sessionMessages[id] = []; }
+}
+
+/**
+ * 将 localStorage 中的历史数据同步到服务端（静默迁移）
+ */
+async function syncLocalToServer() {
+  const toSync = sessions.value.map(s => ({
+    id: s.id,
+    title: s.title,
+    messages: (sessionMessages[s.id] || []).map(m => ({
+      role: m.role,
+      content: stripHtml(m.html)
+    }))
+  })).filter(s => s.messages.length > 0);
+  if (toSync.length) await api.syncChatSessions(toSync);
 }
 
 async function handleLogout() {
@@ -1052,11 +1204,14 @@ function addSession(id, title) {
   if (!sessionMessages[id]) sessionMessages[id] = [];
 }
 
-function switchSession(id) {
+async function switchSession(id) {
   if (!sessionMessages[id]) sessionMessages[id] = [];
   sessionId.value = id;
   setCurrentMessages(sessionMessages[id]);
   activeTab.value = 'chat';
+  // 懒加载历史消息（若本地无缓存则从服务端拉取）
+  await lazyLoadSessionMessages(id);
+  setCurrentMessages(sessionMessages[id]);
 }
 
 async function removeSession(id) {
@@ -1074,6 +1229,8 @@ async function removeSession(id) {
   stopSessionGeneration(id, false);
   delete sessionMessages[id];
   delete sessionRuntime[id];
+  // 同步删除服务端记录（静默，不影响 UI）
+  api.deleteChatSession(id).catch(() => {});
   showToast('info', `已删除会话：${removed.title}`);
   if (sessionId.value === id) {
     if (sessions.value.length) switchSession(sessions.value[0].id);
@@ -1096,6 +1253,40 @@ function setCurrentMessages(items) {
 function setChatMode(mode) {
   reactEnabled.value = mode === 'expert';
   streamEnabled.value = true;
+}
+
+/** 点击附件按钮 → 弹出知识库选择对话框，关联后消息将基于该知识库回答 */
+async function handleAttachKb() {
+  if (knowledgeBases.value.length === 0) {
+    showToast('warning', '暂无知识库，请先在「知识库」Tab 上传文档');
+    return;
+  }
+  // 构造选项列表（最多展示 4 个，超出提示切换到知识库 Tab）
+  const choices = knowledgeBases.value.slice(0, 4).map(kb => ({
+    value: String(kb.id),
+    label: kb.name,
+    desc: `${kb.docCount || 0} 篇文档`
+  }));
+  // 若当前已关联，增加"取消关联"选项
+  if (currentKbId.value) {
+    choices.unshift({ value: '', label: '取消关联知识库', desc: '恢复为普通对话模式' });
+  }
+  const chosen = await showChoice({
+    title: '关联知识库',
+    message: '选择知识库后，本次对话将基于其内容生成答案（RAG 模式）',
+    confirmText: '确认',
+    choices,
+    defaultValue: currentKbId.value ? String(currentKbId.value) : choices[0]?.value
+  });
+  if (chosen === false || chosen === undefined) return; // 取消
+  if (chosen === '') {
+    currentKbId.value = null;
+    showToast('info', '已取消关联知识库');
+  } else {
+    currentKbId.value = Number(chosen);
+    const kb = knowledgeBases.value.find(k => k.id === currentKbId.value);
+    showToast('success', `已关联知识库「${kb?.name || chosen}」，发送消息将基于知识库内容回答`);
+  }
 }
 
 async function sendQuick(text) {
@@ -1126,7 +1317,7 @@ async function doSyncChat(requestSessionId, text) {
   const bubble = pushMessage(requestSessionId, 'ai', '<span class="typing-dots">●●●</span>');
   runtime.bubble = bubble;
   try {
-    const data = await api.chatSync(requestSessionId, text);
+    const data = await api.chatSync(requestSessionId, text, currentKbId.value);
     if (runtime.requestId !== requestId || runtime.cancelled) return;
     bubble.html = formatMarkdown(data.reply);
   } catch (error) {
@@ -1152,7 +1343,7 @@ async function doStreamChat(requestSessionId, text) {
   const bubble = pushMessage(requestSessionId, 'ai', '<span class="typing-dots">●●●</span>');
   let fullText = '';
   let firstToken = true;
-  const eventSource = api.chatStream(requestSessionId, text);
+  const eventSource = api.chatStream(requestSessionId, text, currentKbId.value);
   runtime.eventSource = eventSource;
   runtime.bubble = bubble;
   runtime.text = '';
@@ -1240,7 +1431,7 @@ async function doReactChat(requestSessionId, text) {
   runtime.reactAnswer = null;
   runtime.reactStartMs = Date.now();
 
-  const eventSource = api.chatReactStream(requestSessionId, text);
+  const eventSource = api.chatReactStream(requestSessionId, text, currentKbId.value);
   runtime.eventSource = eventSource;
 
   // 收到每个推理步骤后实时更新气泡
@@ -1417,6 +1608,29 @@ async function handleClearMemory() {
 function toggleReact() {
   reactEnabled.value = !reactEnabled.value;
   if (reactEnabled.value) showToast('info', '深度推理已开启，适合复杂多步任务');
+}
+
+/**
+ * 输入框键盘事件
+ * - enterToSend=true：Enter 发送，Shift+Enter 换行
+ * - enterToSend=false：Ctrl+Enter 发送，Enter 换行（默认）
+ */
+function handleInputKeydown(event) {
+  if (event.key === 'Enter') {
+    if (enterToSend.value) {
+      // Enter 发送模式：Shift+Enter 换行，单独 Enter 发送
+      if (event.shiftKey) return; // 让默认行为换行
+      event.preventDefault();
+      sendMessage();
+    } else {
+      // Ctrl+Enter 发送模式：Ctrl+Enter 发送，其他 Enter 换行
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        sendMessage();
+      }
+      // 其他 Enter 走默认行为（换行）
+    }
+  }
 }
 
 function autoResize() {
@@ -1646,15 +1860,22 @@ async function handleUpload(file) {
     task.pct = 100;
     task.barWidth = 100;
 
+    // 异步解析：服务端立即返回 documentId，状态为 PROCESSING
     docs.value.push({
       id: data.documentId ?? Date.now().toString(),
       filename: file.name,
       chunks: data.chunkCount ?? 0,
       size: file.size,
-      status: 'DONE',
+      status: data.status === 'PROCESSING' ? 'PROCESSING' : 'DONE',
       uploadedAt: new Date().toLocaleString()
     });
-    showToast('success', `${file.name} 导入成功`);
+    if (data.status === 'PROCESSING') {
+      showToast('info', `${file.name} 已上传，正在后台解析...`);
+      // 开始轮询该文档的解析状态
+      pollDocumentStatus(data.documentId);
+    } else {
+      showToast('success', `${file.name} 导入成功`);
+    }
     await loadKnowledgeBases();
 
     // 全部完成后 3 秒清空队列
@@ -1676,6 +1897,46 @@ function fmtEta(seconds) {
   const m = Math.floor(seconds / 60);
   const s = Math.round(seconds % 60);
   return `${m}m${s}s`;
+}
+
+/**
+ * 轮询文档解析状态，直到 DONE 或 FAILED
+ * @param {string|number} documentId 要轮询的文档 ID
+ */
+function pollDocumentStatus(documentId) {
+  if (!documentId || !currentKbId.value) return;
+  const MAX_POLLS = 60; // 最多轮询 60 次（约 2 分钟）
+  let count = 0;
+  const timer = setInterval(async () => {
+    count++;
+    if (count > MAX_POLLS) {
+      clearInterval(timer);
+      return;
+    }
+    try {
+      const data = await api.listDocuments(currentKbId.value, currentOrgId.value || undefined);
+      const docItem = data.find(d => String(d.id) === String(documentId));
+      if (!docItem) { clearInterval(timer); return; }
+
+      const status = docItem.parseStatus ?? 'UNKNOWN';
+      // 同步更新本地列表
+      const localDoc = docs.value.find(d => String(d.id) === String(documentId));
+      if (localDoc) {
+        localDoc.status = status;
+        localDoc.chunks = docItem.chunkCount ?? localDoc.chunks;
+      }
+
+      if (status === 'DONE') {
+        clearInterval(timer);
+        const name = localDoc?.filename || docItem.name || '文档';
+        showToast('success', `「${name}」解析完成，共 ${docItem.chunkCount ?? 0} 个切片`);
+        await loadKnowledgeBases();
+      } else if (status === 'FAILED') {
+        clearInterval(timer);
+        showToast('error', `文档解析失败：${docItem.parseError || '未知错误'}`);
+      }
+    } catch { /* 轮询静默忽略错误 */ }
+  }, 2000); // 每 2 秒轮询一次
 }
 
 async function handleDeleteDoc(doc) {
@@ -1705,12 +1966,57 @@ async function openKbMembers() {
   }
 }
 
+function onKbMemberSearchInput() {
+  clearTimeout(_kbSearchTimer);
+  const keyword = kbMemberUsername.value;
+  if (!keyword || keyword.length < 1) {
+    kbMemberSuggestions.value = [];
+    kbMemberSuggestionsVisible.value = false;
+    kbMemberUserId.value = '';
+    return;
+  }
+  _kbSearchTimer = setTimeout(async () => {
+    try {
+      kbMemberSuggestions.value = await api.searchUsers(keyword);
+      kbMemberSuggestionsVisible.value = kbMemberSuggestions.value.length > 0;
+    } catch { kbMemberSuggestions.value = []; }
+  }, 300);
+}
+
+function selectKbMemberSuggestion(user) {
+  kbMemberUserId.value = user.userId;
+  kbMemberUsername.value = `${user.username}（${user.userId}）`;
+  kbMemberSuggestions.value = [];
+  kbMemberSuggestionsVisible.value = false;
+}
+
+function hideKbMemberSuggestions() {
+  // 短暂延迟，让 mousedown 事件先触发
+  setTimeout(() => { kbMemberSuggestionsVisible.value = false; }, 150);
+}
+
 async function addMemberToCurrentKb() {
-  if (!kbMemberUserId.value) return showToast('warning', '请输入用户 ID');
+  if (!kbMemberUserId.value) {
+    // 若用户直接输入了用户名但没有从下拉选择，尝试精确匹配
+    if (kbMemberUsername.value) {
+      const results = await api.searchUsers(kbMemberUsername.value).catch(() => []);
+      if (results.length === 1) {
+        kbMemberUserId.value = results[0].userId;
+      } else if (results.length > 1) {
+        return showToast('warning', '匹配到多个用户，请从下拉列表中选择');
+      } else {
+        return showToast('warning', '未找到该用户，请确认用户名是否正确');
+      }
+    } else {
+      return showToast('warning', '请输入用户名搜索并选择');
+    }
+  }
   try {
     await api.addKbMember(currentKbId.value, kbMemberUserId.value, kbMemberRole.value, currentOrgId.value || undefined);
-    showToast('success', `已添加成员：${kbMemberUserId.value}`);
+    showToast('success', `已添加成员：${kbMemberUsername.value || kbMemberUserId.value}`);
     kbMemberUserId.value = '';
+    kbMemberUsername.value = '';
+    kbMemberSuggestions.value = [];
     await openKbMembers();
   } catch (error) {
     showToast('error', `添加成员失败：${error.message}`);

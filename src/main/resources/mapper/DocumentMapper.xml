@@ -99,6 +99,14 @@
         WHERE id = #{id}
     </update>
 
+    <!-- 更新文档切片数 -->
+    <update id="updateChunkCount">
+        UPDATE kb_document
+        SET chunk_count = #{chunkCount},
+            updated_at  = NOW()
+        WHERE id = #{id}
+    </update>
+
     <!-- 删除文档 -->
     <delete id="deleteById">
         DELETE FROM kb_document WHERE id = #{id}

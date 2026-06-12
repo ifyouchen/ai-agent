@@ -7,6 +7,7 @@
         <id property="id" column="id"/>
         <result property="kbId" column="kb_id"/>
         <result property="userId" column="user_id"/>
+        <result property="username" column="username"/>
         <result property="role" column="role"/>
         <result property="grantedBy" column="granted_by"/>
         <result property="grantedAt" column="granted_at"/>
@@ -19,10 +20,11 @@
     </select>
 
     <select id="findByKbId" resultMap="kbMemberResultMap">
-        SELECT id, kb_id, user_id, role, granted_by, granted_at
-        FROM kb_member
-        WHERE kb_id = #{kbId}
-        ORDER BY granted_at
+        SELECT m.id, m.kb_id, m.user_id, u.username, m.role, m.granted_by, m.granted_at
+        FROM kb_member m
+        LEFT JOIN biz_user_account u ON u.user_id = m.user_id
+        WHERE m.kb_id = #{kbId}
+        ORDER BY m.granted_at
     </select>
 
     <select id="findKbIdsByUserId" resultType="java.lang.Long">

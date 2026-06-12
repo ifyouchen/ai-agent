@@ -1,6 +1,8 @@
 package com.example.aiagent.controller;
 
 import com.example.aiagent.agent.AgentFactory.StreamingChatAssistant;
+import com.example.aiagent.chat.service.ChatHistoryService;
+import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
 import com.example.aiagent.security.filter.PromptInjectionFilter;
 import com.example.aiagent.security.service.AuditLogService;
@@ -44,6 +46,7 @@ public class StreamingChatController {
     private final RateLimitService rateLimitService;
     private final OutputContentFilter outputContentFilter;
     private final AuditLogService auditLogService;
+    private final ChatHistoryService chatHistoryService;
 
     /**
      * 流式对话（SSE 推送，字符逐步出现）
@@ -63,6 +66,7 @@ public class StreamingChatController {
     public SseEmitter streamChat(
             @RequestParam String sessionId,
             @RequestParam String message,
+            @RequestParam(required = false) Long kbId,
             @AuthenticationPrincipal String userId,
             HttpServletRequest httpRequest) {
 
@@ -115,8 +119,14 @@ public class StreamingChatController {
         }
 
         // ── Step 4：LLM 流式调用 ──────────────────────────
-        log.info("开始流式对话 userId={} sessionId={}", userId, sessionId);
+        log.info("开始流式对话 userId={} sessionId={} kbId={}", userId, sessionId, kbId);
         String sanitizedMessage = promptInjectionFilter.check(message).sanitizedInput();
+
+        // 设置 RAG 检索上下文（指定知识库时生效）
+        if (kbId != null) {
+            HybridRagContentRetriever.setContext(
+                    new HybridRagContentRetriever.RetrievalContext(userId, kbId));
+        }
 
         // 用 AtomicReference 累积全部 token，供 onComplete 时统一脱敏
         AtomicReference<StringBuilder> fullTextRef = new AtomicReference<>(new StringBuilder());
@@ -153,7 +163,14 @@ public class StreamingChatController {
                             log.info("[SECURITY] 流式输出已脱敏，类型：{}", outputCheck.detectedTypes());
                         }
 
-                        // ── Step 6：审计日志（对话完成）──────────
+                        // ── Step 6：异步持久化聊天记录 ──────────
+                        String finalText = outputCheck.filteredContent();
+                        chatHistoryService.saveSession(sessionId, userId,
+                                sanitizedMessage.substring(0, Math.min(sanitizedMessage.length(), 20)), kbId);
+                        chatHistoryService.saveMessage(sessionId, userId, "user", sanitizedMessage);
+                        chatHistoryService.saveMessage(sessionId, userId, "ai", finalText);
+
+                        // ── Step 7：审计日志（对话完成）──────────
                         long duration = System.currentTimeMillis() - startMs;
                         // 从 LangChain4j Response 中提取 Token 用量（streaming 模式下由 onComplete 返回）
                         int inputTokens  = 0;
@@ -174,6 +191,9 @@ public class StreamingChatController {
                         // 发送完成事件失败（客户端断开），直接关闭，不触发 Spring 错误页
                         log.debug("SSE 发送 done 事件失败，客户端可能已断开: {}", e.getMessage());
                         emitter.complete();
+                    } finally {
+                        // 清除 RAG ThreadLocal 上下文，防止内存泄漏
+                        HybridRagContentRetriever.clearContext();
                     }
                 })
                 .onError(error -> {
@@ -189,6 +209,8 @@ public class StreamingChatController {
                                 error.getMessage() != null ? error.getMessage() : "LLM 调用失败，请重试"));
                     } catch (IOException ignore) {
                         // 客户端已断开，忽略
+                    } finally {
+                        HybridRagContentRetriever.clearContext();
                     }
                     emitter.complete();
                 })

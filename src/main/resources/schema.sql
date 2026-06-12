@@ -218,6 +218,35 @@ CREATE INDEX IF NOT EXISTS idx_kb_member_kb_id   ON kb_member(kb_id);
 CREATE INDEX IF NOT EXISTS idx_kb_member_user_id ON kb_member(user_id);
 
 -- ============================================================
+-- 12. 聊天会话表（对话历史持久化）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS chat_session (
+    id          BIGSERIAL    PRIMARY KEY,
+    session_id  VARCHAR(128) NOT NULL UNIQUE,
+    user_id     VARCHAR(64)  NOT NULL,
+    title       VARCHAR(256) NOT NULL DEFAULT '新对话',
+    kb_id       BIGINT,                           -- 关联知识库（可选）
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_chat_session_user_id    ON chat_session(user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_session_session_id ON chat_session(session_id);
+
+-- ============================================================
+-- 13. 聊天消息表（对话历史持久化）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS chat_message (
+    id          BIGSERIAL    PRIMARY KEY,
+    session_id  VARCHAR(128) NOT NULL,
+    user_id     VARCHAR(64)  NOT NULL,
+    role        VARCHAR(16)  NOT NULL,             -- 'user' | 'ai'
+    content     TEXT         NOT NULL,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_chat_message_session_id ON chat_message(session_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_chat_message_user_id    ON chat_message(user_id);
+
+-- ============================================================
 -- 向量表维度修正（由 PgVectorEmbeddingStore 自动创建）
 -- bge-large-zh 维度为 1024；若之前曾用 OpenAI（1536 维）建过表，
 -- 需执行此语句将列改为正确维度。DO $$ 块保证幂等：

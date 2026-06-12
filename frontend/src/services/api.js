@@ -73,19 +73,38 @@ export async function register(payload) {
   return data;
 }
 
-export async function chatSync(sessionId, message) {
-  const { data } = await http.post('/api/v1/chat', { sessionId, message });
+/**
+ * 同步对话
+ * @param {string} sessionId 会话 ID
+ * @param {string} message 消息
+ * @param {number|null} kbId 知识库 ID（可选，指定后基于该知识库内容回答）
+ */
+export async function chatSync(sessionId, message, kbId) {
+  const { data } = await http.post('/api/v1/chat', { sessionId, message, kbId: kbId || null });
   return data;
 }
 
-export function chatStream(sessionId, message) {
+/**
+ * 流式对话（SSE）
+ * @param {string} sessionId 会话 ID
+ * @param {string} message 消息
+ * @param {number|null} kbId 知识库 ID（可选）
+ */
+export function chatStream(sessionId, message, kbId) {
   const token = getToken();
   const params = new URLSearchParams({ sessionId, message, ...(token ? { token } : {}) });
+  if (kbId) params.set('kbId', String(kbId));
   return new EventSource(`${BASE}/api/v1/chat/stream?${params.toString()}`);
 }
 
-export async function chatReact(sessionId, message) {
-  const { data } = await http.post('/api/v1/chat/react', { sessionId, message });
+/**
+ * ReAct 同步推理
+ * @param {string} sessionId 会话 ID
+ * @param {string} message 消息
+ * @param {number|null} kbId 知识库 ID（可选）
+ */
+export async function chatReact(sessionId, message, kbId) {
+  const { data } = await http.post('/api/v1/chat/react', { sessionId, message, kbId: kbId ? String(kbId) : null });
   return data;
 }
 
@@ -99,15 +118,52 @@ export async function chatReact(sessionId, message) {
  *   replace-answer - 脱敏替换 JSON: {answer}
  *   error        - 错误文本
  *   done         - 结束标识
+ *
+ * @param {string} sessionId 会话 ID
+ * @param {string} message 消息
+ * @param {number|null} kbId 知识库 ID（可选）
  */
-export function chatReactStream(sessionId, message) {
+export function chatReactStream(sessionId, message, kbId) {
   const token = getToken();
   const params = new URLSearchParams({ sessionId, message, ...(token ? { token } : {}) });
+  if (kbId) params.set('kbId', String(kbId));
   return new EventSource(`${BASE}/api/v1/chat/react/stream?${params.toString()}`);
 }
 
 export async function clearMemory(sessionId) {
   await http.delete(`/api/v1/chat/memory/${sessionId}`);
+}
+
+// ── 聊天历史（服务端持久化） ─────────────────────────────────
+
+/**
+ * 查询当前用户的会话列表（从服务端，最近 50 个）
+ */
+export async function listChatSessions() {
+  const { data } = await http.get('/api/v1/chat/sessions');
+  return data;
+}
+
+/**
+ * 查询某会话的历史消息
+ */
+export async function getChatMessages(sessionId) {
+  const { data } = await http.get(`/api/v1/chat/sessions/${sessionId}/messages`);
+  return data;
+}
+
+/**
+ * 删除会话（同时删除服务端记录）
+ */
+export async function deleteChatSession(sessionId) {
+  await http.delete(`/api/v1/chat/sessions/${sessionId}`);
+}
+
+/**
+ * 将前端 localStorage 历史同步到服务端（首次加载时调用）
+ */
+export async function syncChatSessions(sessions) {
+  await http.post('/api/v1/chat/sessions/sync', sessions);
 }
 
 // ── 知识库 API（所有接口支持可选 orgId 参数，不传则使用默认个人组织） ──────────────
@@ -205,6 +261,17 @@ export async function inviteOrgMember(orgId, userId, role) {
 
 export async function removeOrgMember(orgId, userId) {
   const { data } = await http.delete(`/api/v1/org/${orgId}/members/${userId}`);
+  return data;
+}
+
+// ── 用户搜索（用于成员添加） ────────────────────────────────────
+
+/**
+ * 用户名模糊搜索，返回 [{userId, username}] 列表（最多 10 条）
+ */
+export async function searchUsers(keyword) {
+  if (!keyword?.trim()) return [];
+  const { data } = await http.get('/api/v1/auth/users/search', { params: { keyword: keyword.trim() } });
   return data;
 }
 

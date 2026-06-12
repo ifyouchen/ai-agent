@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -104,6 +105,83 @@ public class DocumentIngestService {
                     file.getSize(), file.getContentType());
         } finally {
             Files.deleteIfExists(tempFile);
+        }
+    }
+
+    /**
+     * 异步导入文档：先创建 Document 记录并返回 documentId，后台异步完成解析和向量化
+     *
+     * <p>适用于大文件上传场景：HTTP 请求立即返回，用户无需等待解析完成。
+     * 前端可通过轮询 {@code GET /api/v1/kb/{kbId}/documents} 接口的 parseStatus 字段获取进度。
+     *
+     * @param file     上传的文件
+     * @param tenantId 租户 ID
+     * @param kbId     知识库 ID
+     * @return documentId（可用于前端轮询状态）
+     */
+    public Long ingestFileAsync(MultipartFile file, String tenantId, Long kbId) throws IOException {
+        validateKnowledgeBase(tenantId, kbId);
+
+        // 1. 保存文件到持久化临时目录（不能用系统临时文件，异步线程运行时文件还需存在）
+        Path asyncDir = Files.createTempDirectory("ingest-async-");
+        Path savedFile = asyncDir.resolve(file.getOriginalFilename() != null
+                ? file.getOriginalFilename() : "upload");
+        Files.copy(file.getInputStream(), savedFile, StandardCopyOption.REPLACE_EXISTING);
+
+        // 2. 立即创建 Document 记录（状态 PENDING），获取 documentId
+        String fileHash = computeFileHash(savedFile);
+        Document docEntity = createDocumentEntity(tenantId, kbId,
+                file.getOriginalFilename(), file.getSize(), fileHash, file.getContentType());
+
+        // 3. 后台异步执行解析（不阻塞当前 HTTP 线程）
+        doIngestAsync(savedFile, tenantId, kbId, file.getOriginalFilename(),
+                file.getSize(), file.getContentType(), docEntity.getId(), asyncDir);
+
+        log.info("文档已提交异步解析 documentId={} tenantId={} kbId={} file={}",
+                docEntity.getId(), tenantId, kbId, file.getOriginalFilename());
+        return docEntity.getId();
+    }
+
+    /**
+     * 异步执行文档解析和向量化（内部方法，由 ingestFileAsync 触发）
+     */
+    @Async("documentIngestExecutor")
+    public void doIngestAsync(Path filePath, String tenantId, Long kbId,
+                              String fileName, Long fileSize, String contentType,
+                              Long docEntityId, Path asyncDir) {
+        try {
+            log.info("[ASYNC] 开始后台解析文档 docId={} file={}", docEntityId, fileName);
+
+            // 更新状态 → PARSING
+            documentMapper.updateParseStatus(docEntityId, "PARSING");
+
+            // 解析文档
+            dev.langchain4j.data.document.Document document =
+                    dev.langchain4j.data.document.loader.FileSystemDocumentLoader.loadDocument(
+                            filePath,
+                            new dev.langchain4j.data.document.parser.apache.tika.ApacheTikaDocumentParser()
+                    );
+
+            // 更新状态 → CHUNKING
+            documentMapper.updateParseStatus(docEntityId, "CHUNKING");
+
+            // 切片 + 向量化 + 写入 PgVector / Lucene
+            int chunkCount = ingestSingleDocument(document, tenantId, kbId,
+                    fileName, fileSize, docEntityId);
+
+            // 完成
+            documentMapper.updateParseStatus(docEntityId, "DONE");
+            documentMapper.updateChunkCount(docEntityId, chunkCount);
+            updateKbDocCount(kbId);
+
+            log.info("[ASYNC] 文档解析完成 docId={} chunks={}", docEntityId, chunkCount);
+        } catch (Exception e) {
+            log.error("[ASYNC] 文档解析失败 docId={} file={}: {}", docEntityId, fileName, e.getMessage(), e);
+            documentMapper.updateParseStatusWithError(docEntityId, "FAILED", e.getMessage());
+        } finally {
+            // 清理临时文件目录
+            try { Files.deleteIfExists(filePath); } catch (IOException ignore) {}
+            try { Files.deleteIfExists(asyncDir); } catch (IOException ignore) {}
         }
     }
 

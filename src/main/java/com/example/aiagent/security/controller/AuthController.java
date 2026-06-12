@@ -3,6 +3,7 @@ package com.example.aiagent.security.controller;
 import com.example.aiagent.security.dto.AuthResponse;
 import com.example.aiagent.security.dto.LoginRequest;
 import com.example.aiagent.security.dto.RegisterRequest;
+import com.example.aiagent.security.mapper.SysUserMapper;
 import com.example.aiagent.security.service.AuditLogService;
 import com.example.aiagent.security.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,8 +19,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -38,6 +41,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final AuditLogService auditLogService;
+    private final SysUserMapper sysUserMapper;
 
     /**
      * 用户登录
@@ -125,6 +129,25 @@ public class AuthController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         }
+    }
+
+    /**
+     * 用户名模糊搜索（供知识库/组织成员添加时使用）
+     *
+     * GET /api/v1/auth/users/search?keyword=alice
+     * 需要 JWT 认证，返回匹配的用户列表（最多 10 条），字段：userId、username
+     */
+    @GetMapping("/users/search")
+    public ResponseEntity<List<Map<String, String>>> searchUsers(
+            @RequestParam(defaultValue = "") String keyword) {
+        if (keyword.isBlank()) {
+            return ResponseEntity.ok(List.of());
+        }
+        var users = sysUserMapper.searchByUsername(keyword.trim(), 10);
+        var result = users.stream()
+                .map(u -> Map.of("userId", u.getUserId(), "username", u.getUsername()))
+                .toList();
+        return ResponseEntity.ok(result);
     }
 
     /** 提取客户端真实 IP（兼容 Nginx 反向代理） */

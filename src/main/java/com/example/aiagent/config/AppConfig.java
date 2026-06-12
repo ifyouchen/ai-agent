@@ -60,4 +60,35 @@ public class AppConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * 文档解析专属线程池（documentIngestExecutor）
+     *
+     * <p>大文件解析（PDF/Word）耗时长（秒级到分钟级），Embedding API 也有网络延迟，
+     * 必须与告警线程池和 Web 线程池隔离，避免相互阻塞。
+     *
+     * 容量规划：
+     * ┌──────────────┬──────────────────────────────────────────────┐
+     * │  核心线程数   │  2（同时支持 2 份文档并发解析）                │
+     * │  最大线程数   │  5（并发上传高峰时扩展，避免 Embedding 限速）  │
+     * │  队列容量     │  50（最多排队 50 个文档解析任务）              │
+     * │  空闲存活     │  120s                                        │
+     * └──────────────┴──────────────────────────────────────────────┘
+     */
+    @Bean(name = "documentIngestExecutor")
+    public Executor documentIngestExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(5);
+        executor.setQueueCapacity(50);
+        executor.setKeepAliveSeconds(120);
+        executor.setThreadNamePrefix("doc-ingest-");
+        executor.setThreadGroupName("doc-ingest-group");
+        // 队列满时拒绝并抛出异常，由 Controller 返回 503
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(120);
+        executor.initialize();
+        return executor;
+    }
 }

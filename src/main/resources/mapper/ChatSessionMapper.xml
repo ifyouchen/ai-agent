@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.aiagent.chat.mapper.ChatSessionMapper">
+
+    <resultMap id="sessionRM" type="com.example.aiagent.chat.entity.ChatSession">
+        <id     property="id"        column="id"/>
+        <result property="sessionId" column="session_id"/>
+        <result property="userId"    column="user_id"/>
+        <result property="title"     column="title"/>
+        <result property="kbId"      column="kb_id"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <!-- 存在则更新标题和时间，否则插入 -->
+    <insert id="upsert" parameterType="com.example.aiagent.chat.entity.ChatSession">
+        INSERT INTO chat_session (session_id, user_id, title, kb_id, created_at, updated_at)
+        VALUES (#{sessionId}, #{userId}, #{title}, #{kbId}, NOW(), NOW())
+        ON CONFLICT (session_id) DO UPDATE
+            SET title      = EXCLUDED.title,
+                kb_id      = EXCLUDED.kb_id,
+                updated_at = NOW()
+    </insert>
+
+    <select id="listByUserId" resultMap="sessionRM">
+        SELECT id, session_id, user_id, title, kb_id, created_at, updated_at
+        FROM chat_session
+        WHERE user_id = #{userId}
+        ORDER BY updated_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="findBySessionId" resultMap="sessionRM">
+        SELECT id, session_id, user_id, title, kb_id, created_at, updated_at
+        FROM chat_session
+        WHERE session_id = #{sessionId}
+        LIMIT 1
+    </select>
+
+    <update id="updateTitle">
+        UPDATE chat_session
+        SET title = COALESCE(#{title}, title), updated_at = NOW()
+        WHERE session_id = #{sessionId}
+    </update>
+
+    <delete id="deleteBySessionId">
+        DELETE FROM chat_session WHERE session_id = #{sessionId}
+    </delete>
+
+</mapper>

@@ -1,9 +1,11 @@
 package com.example.aiagent.controller;
 
 import com.example.aiagent.agent.AgentFactory.ChatAssistant;
+import com.example.aiagent.chat.service.ChatHistoryService;
 import com.example.aiagent.dto.ChatRequest;
 import com.example.aiagent.dto.ChatResponse;
 import com.example.aiagent.memory.RedisChatMemoryStore;
+import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
 import com.example.aiagent.security.filter.PromptInjectionFilter;
 import com.example.aiagent.security.service.AuditLogService;
@@ -47,6 +49,7 @@ public class ChatController {
     private final RateLimitService rateLimitService;
     private final OutputContentFilter outputContentFilter;
     private final AuditLogService auditLogService;
+    private final ChatHistoryService chatHistoryService;
 
     /**
      * 发送消息（普通同步模式）
@@ -97,10 +100,22 @@ public class ChatController {
                     userId, request.getSessionId(), clientIp, true,
                     Map.of("messageLength", injectionCheck.sanitizedInput().length()));
 
-            // ── Step 4：LLM 调用 ──────────────────────────
+            // ── Step 4：LLM 调用（设置 RAG 上下文后执行）──────────
+            // 若请求中指定了 kbId，则将当前用户的 tenantId 和 kbId 注入 ThreadLocal，
+            // HybridRagContentRetriever 会据此过滤只检索指定知识库的内容
+            if (request.getKbId() != null) {
+                HybridRagContentRetriever.setContext(
+                        new HybridRagContentRetriever.RetrievalContext(userId, request.getKbId()));
+            }
             long start = System.currentTimeMillis();
-            String rawReply = chatAssistant.chat(
-                    request.getSessionId(), injectionCheck.sanitizedInput());
+            String rawReply;
+            try {
+                rawReply = chatAssistant.chat(
+                        request.getSessionId(), injectionCheck.sanitizedInput());
+            } finally {
+                // 无论成功或异常，必须清除 ThreadLocal 防止内存泄漏
+                HybridRagContentRetriever.clearContext();
+            }
             long duration = System.currentTimeMillis() - start;
 
             // ── Step 5：输出内容脱敏 ──────────────────────
@@ -114,12 +129,20 @@ public class ChatController {
             // ── Step 6：审计日志（对话完成）──────────────
             auditLogService.logAiChat(userId, request.getSessionId(), clientIp, 0, 0);
 
+            // ── Step 7：异步持久化聊天记录 ──────────────
+            String userText = injectionCheck.sanitizedInput();
+            String aiText   = outputCheck.filteredContent();
+            chatHistoryService.saveSession(request.getSessionId(), userId,
+                    userText.substring(0, Math.min(userText.length(), 20)), request.getKbId());
+            chatHistoryService.saveMessage(request.getSessionId(), userId, "user", userText);
+            chatHistoryService.saveMessage(request.getSessionId(), userId, "ai",   aiText);
+
             log.info("对话完成 userId={} sessionId={} 耗时={}ms",
                     userId, request.getSessionId(), duration);
 
             return ResponseEntity.ok(ChatResponse.builder()
                     .sessionId(request.getSessionId())
-                    .reply(outputCheck.filteredContent())
+                    .reply(aiText)
                     .durationMs(duration)
                     .build());
 

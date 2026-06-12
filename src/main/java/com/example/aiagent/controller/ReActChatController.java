@@ -1,6 +1,7 @@
 package com.example.aiagent.controller;
 
 import com.example.aiagent.agent.ReActAgent;
+import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
 import com.example.aiagent.security.filter.PromptInjectionFilter;
 import com.example.aiagent.security.service.AuditLogService;
@@ -120,9 +121,22 @@ public class ReActChatController {
                     userId, sessionId, clientIp, true,
                     Map.of("messageLength", injectionCheck.sanitizedInput().length(), "mode", "react"));
 
-            // ── Step 4：ReAct 多步推理 ────────────────────
-            ReActAgent.ReActResult result = reActAgent.execute(
-                    injectionCheck.sanitizedInput(), sessionId);
+            // ── Step 4：ReAct 多步推理（设置 RAG 上下文后执行）──
+            String kbIdStr = request.get("kbId");
+            Long kbId = null;
+            if (kbIdStr != null && !kbIdStr.isBlank()) {
+                try { kbId = Long.parseLong(kbIdStr); } catch (NumberFormatException ignore) {}
+            }
+            if (kbId != null) {
+                HybridRagContentRetriever.setContext(
+                        new HybridRagContentRetriever.RetrievalContext(userId, kbId));
+            }
+            ReActAgent.ReActResult result;
+            try {
+                result = reActAgent.execute(injectionCheck.sanitizedInput(), sessionId);
+            } finally {
+                HybridRagContentRetriever.clearContext();
+            }
 
             // ── Step 5：输出内容脱敏 ──────────────────────
             OutputContentFilter.FilterResult outputCheck = outputContentFilter.filter(result.answer());
@@ -182,6 +196,7 @@ public class ReActChatController {
     public SseEmitter reactStream(
             @RequestParam String sessionId,
             @RequestParam String message,
+            @RequestParam(required = false) Long kbId,
             @AuthenticationPrincipal String userId,
             HttpServletRequest httpRequest) {
 
@@ -223,10 +238,16 @@ public class ReActChatController {
 
         // ── Step 4：异步线程执行 ReAct 推理 ──────────
         final String sanitizedMessage = injectionCheck.sanitizedInput();
+        final Long finalKbId = kbId;
         SSE_EXECUTOR.execute(() -> {
             MDC.put("scenario", "react_stream");
             MDC.put("userId", userId);
             long startMs = System.currentTimeMillis();
+            // 异步线程中设置 RAG 上下文（ThreadLocal 是线程级别的）
+            if (finalKbId != null) {
+                HybridRagContentRetriever.setContext(
+                        new HybridRagContentRetriever.RetrievalContext(userId, finalKbId));
+            }
             try {
                 ReActAgent.ReActResult result = reActAgent.executeWithCallback(
                         sanitizedMessage, sessionId,
@@ -290,6 +311,7 @@ public class ReActChatController {
                 } catch (IOException ignore) {}
                 emitter.complete();
             } finally {
+                HybridRagContentRetriever.clearContext();
                 MDC.remove("scenario");
                 MDC.remove("userId");
             }

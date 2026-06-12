@@ -33,5 +33,8 @@ public interface SysUserMapper {
 
     /** 用户总数 */
     long countAll();
+
+    /** 用户名模糊搜索（知识库成员添加时使用，返回前 10 条） */
+    List<SysUser> searchByUsername(@Param("keyword") String keyword, @Param("limit") int limit);
 }
 

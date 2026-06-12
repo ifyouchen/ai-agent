@@ -69,5 +69,15 @@
         SELECT COUNT(*) FROM biz_user_account
     </select>
 
+    <!-- 用户名模糊搜索（最多返回 limit 条，结果按用户名升序） -->
+    <select id="searchByUsername" resultMap="SysUserResultMap">
+        SELECT id, user_id, username, password_hash, roles, enabled, default_org_id, created_at, updated_at
+        FROM biz_user_account
+        WHERE username ILIKE '%' || #{keyword} || '%'
+          AND enabled = 1
+        ORDER BY username ASC
+        LIMIT #{limit}
+    </select>
+
 </mapper>
 

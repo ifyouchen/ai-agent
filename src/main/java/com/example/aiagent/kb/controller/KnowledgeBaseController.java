@@ -200,13 +200,16 @@ public class KnowledgeBaseController {
                 return ResponseEntity.badRequest().body(Map.of("error", "文件不能为空"));
             }
 
-            int chunkCount = ingestService.ingestFile(file, tenantId, kbId);
-            log.info("文档上传完成 userId={} tenantId={} kbId={} file={} chunks={}",
-                    userId, tenantId, kbId, file.getOriginalFilename(), chunkCount);
+            // 异步解析：立即返回 documentId，后台完成解析和向量化
+            // 前端可通过 GET /api/v1/kb/{kbId}/documents 轮询 parseStatus 获取进度
+            Long documentId = ingestService.ingestFileAsync(file, tenantId, kbId);
+            log.info("文档已提交异步解析 userId={} tenantId={} kbId={} file={} documentId={}",
+                    userId, tenantId, kbId, file.getOriginalFilename(), documentId);
             return ResponseEntity.ok(Map.of(
-                    "message",    "文档上传成功",
+                    "message",    "文档上传成功，正在后台解析...",
                     "filename",   file.getOriginalFilename(),
-                    "chunkCount", chunkCount,
+                    "documentId", documentId,
+                    "status",     "PROCESSING",
                     "kbId",       kbId));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
