@@ -46,5 +46,28 @@
         )
     </insert>
 
+    <update id="updatePassword">
+        UPDATE biz_user_account
+        SET password_hash = #{passwordHash}, updated_at = NOW()
+        WHERE user_id = #{userId}
+    </update>
+
+    <update id="updateEnabled">
+        UPDATE biz_user_account
+        SET enabled = #{enabled}, updated_at = NOW()
+        WHERE user_id = #{userId}
+    </update>
+
+    <select id="findAll" resultMap="SysUserResultMap">
+        SELECT id, user_id, username, password_hash, roles, enabled, default_org_id, created_at, updated_at
+        FROM biz_user_account
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAll" resultType="long">
+        SELECT COUNT(*) FROM biz_user_account
+    </select>
+
 </mapper>
 

@@ -188,3 +188,59 @@ export async function removeOrgMember(orgId, userId) {
   const { data } = await http.delete(`/api/v1/org/${orgId}/members/${userId}`);
   return data;
 }
+
+// ── 用户个人资料 ──────────────────────────────────────────────────
+
+export async function getProfile() {
+  const { data } = await http.get('/api/v1/auth/profile');
+  return data;
+}
+
+export async function changePassword(oldPassword, newPassword) {
+  const { data } = await http.put('/api/v1/auth/profile/password', { oldPassword, newPassword });
+  return data;
+}
+
+// ── 管理员：用户管理 ──────────────────────────────────────────────
+
+export async function adminListUsers(page = 0, size = 20) {
+  const { data } = await http.get('/api/v1/admin/users', { params: { page, size } });
+  return data;
+}
+
+export async function adminEnableUser(userId) {
+  const { data } = await http.put(`/api/v1/admin/users/${userId}/enable`);
+  return data;
+}
+
+export async function adminDisableUser(userId) {
+  const { data } = await http.put(`/api/v1/admin/users/${userId}/disable`);
+  return data;
+}
+
+// ── 可观测性：Token 用量 ────────────────────────────────────────
+
+export async function getMyTodayCost() {
+  const { data } = await http.get('/api/v1/token-usage/my/today');
+  return data;
+}
+
+export async function adminGetTodayCost() {
+  const { data } = await http.get('/api/v1/admin/token-usage/today');
+  return data;
+}
+
+export async function adminGetModelReport(days = 7) {
+  const { data } = await http.get('/api/v1/admin/token-usage/report/model', { params: { days } });
+  return data;
+}
+
+export async function adminGetUserReport(days = 7) {
+  const { data } = await http.get('/api/v1/admin/token-usage/report/user', { params: { days } });
+  return data;
+}
+
+export async function adminGetErrorRate(minutes = 5) {
+  const { data } = await http.get('/api/v1/admin/token-usage/error-rate', { params: { minutes } });
+  return data;
+}

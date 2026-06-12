@@ -12,7 +12,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -83,6 +86,44 @@ public class AuthController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 获取当前用户个人资料
+     * GET /api/v1/auth/profile
+     */
+    @GetMapping("/profile")
+    public ResponseEntity<?> getProfile(@AuthenticationPrincipal String userId) {
+        try {
+            return ResponseEntity.ok(authService.getProfile(userId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 修改密码
+     * PUT /api/v1/auth/profile/password
+     * Body: {"oldPassword": "...", "newPassword": "..."}
+     */
+    @PutMapping("/profile/password")
+    public ResponseEntity<?> changePassword(
+            @AuthenticationPrincipal String userId,
+            @RequestBody Map<String, String> request) {
+
+        String oldPwd = request.get("oldPassword");
+        String newPwd = request.get("newPassword");
+
+        if (oldPwd == null || newPwd == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "旧密码和新密码不能为空"));
+        }
+
+        try {
+            authService.changePassword(userId, oldPwd, newPwd);
+            return ResponseEntity.ok(Map.of("message", "密码修改成功，请重新登录"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         }
     }
 

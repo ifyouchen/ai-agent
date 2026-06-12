@@ -43,13 +43,27 @@
     </div>
 
     <div class="sidebar-bottom">
-      <div v-if="user" class="user-info">
+      <div v-if="user" class="user-info" @click.stop="userMenuOpen = !userMenuOpen" style="cursor:pointer;position:relative;">
         <div class="user-avatar">{{ (user.username || 'U')[0].toUpperCase() }}</div>
         <div class="user-text">
           <div class="user-name">{{ user.username || user.userId }}</div>
           <div class="user-state">已登录</div>
         </div>
-        <button class="logout-btn" type="button" title="退出登录" @click="handleLogout">⎋</button>
+        <svg class="user-menu-arrow" viewBox="0 0 24 24" fill="none" width="14" height="14"
+             :style="{ transform: userMenuOpen ? 'rotate(180deg)' : '', transition: 'transform .2s' }">
+          <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <!-- 用户下拉菜单 -->
+        <div v-if="userMenuOpen" class="user-dropdown" @click.stop>
+          <button class="user-dropdown-item" type="button" @click="handleChangePassword">
+            <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" stroke="currentColor" stroke-width="1.8"/><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            修改密码
+          </button>
+          <button class="user-dropdown-item danger" type="button" @click="handleLogout">
+            <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            退出登录
+          </button>
+        </div>
       </div>
       <div class="sidebar-section-title model-title">当前模型</div>
       <div class="model-select" :class="{ open: modelMenuOpen }">
@@ -89,11 +103,11 @@
       </div>
     </div>
 
-    <div class="tabs">
-      <button v-for="tab in tabs" :key="tab.key" class="tab" :class="{ active: activeTab === tab.key }" type="button" @click="activeTab = tab.key">
-        {{ tab.label }}
-      </button>
-    </div>
+<div class="tabs">
+<button v-for="tab in tabs" :key="tab.key" class="tab" :class="{ active: activeTab === tab.key }" type="button" @click="switchTab(tab.key)">
+{{ tab.label }}
+</button>
+</div>
 
     <div class="content">
       <section class="tab-panel" :class="{ active: activeTab === 'chat' }">
@@ -299,6 +313,123 @@
           </div>
         </div>
       </section>
+
+      <!-- ===== 监控 Tab ===== -->
+      <section class="tab-panel" :class="{ active: activeTab === 'monitor' }">
+        <div class="kb-panel monitor-panel">
+
+          <!-- 个人今日用量卡片 -->
+          <div class="monitor-section">
+            <div class="monitor-section-title">
+              <span>我的今日用量</span>
+              <button class="monitor-refresh-btn" type="button" @click="loadMyUsage" :disabled="monitorLoading.my">
+                <svg viewBox="0 0 24 24" fill="none" width="13" height="13" :class="{ spinning: monitorLoading.my }">
+                  <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  <path d="M21 3v5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  <path d="M8 16H3v5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                刷新
+              </button>
+            </div>
+            <div class="monitor-cards">
+              <div class="monitor-card">
+                <div class="monitor-card-value">${{ monitorData.myCost ?? '—' }}</div>
+                <div class="monitor-card-label">今日消费（USD）</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 管理员区：全局总览 -->
+          <div v-if="isAdmin" class="monitor-section">
+            <div class="monitor-section-title">
+              <span>全局总览（管理员）</span>
+              <div class="monitor-period-btns">
+                <button v-for="d in [7, 14, 30]" :key="d" class="monitor-period-btn"
+                  :class="{ active: monitorDays === d }" type="button" @click="monitorDays = d; loadAdminStats()">
+                  近{{ d }}天
+                </button>
+              </div>
+              <button class="monitor-refresh-btn" type="button" @click="loadAdminStats" :disabled="monitorLoading.admin">
+                <svg viewBox="0 0 24 24" fill="none" width="13" height="13" :class="{ spinning: monitorLoading.admin }">
+                  <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  <path d="M21 3v5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  <path d="M8 16H3v5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                刷新
+              </button>
+            </div>
+            <div class="monitor-cards">
+              <div class="monitor-card">
+                <div class="monitor-card-value">${{ monitorData.todayCost ?? '—' }}</div>
+                <div class="monitor-card-label">今日总消费（USD）</div>
+              </div>
+              <div class="monitor-card" :class="{ 'monitor-card-warn': monitorData.errorRate > 0.05 }">
+                <div class="monitor-card-value">{{ monitorData.errorPct ?? '—' }}</div>
+                <div class="monitor-card-label">近5分钟错误率</div>
+              </div>
+            </div>
+
+            <!-- 按模型统计 -->
+            <div class="monitor-table-title">按模型统计（近 {{ monitorDays }} 天）</div>
+            <div v-if="!monitorData.modelReport?.length" class="empty-hint">暂无数据</div>
+            <table v-else class="monitor-table">
+              <thead><tr><th>模型</th><th>输入 Token</th><th>输出 Token</th><th>费用（USD）</th></tr></thead>
+              <tbody>
+                <tr v-for="row in monitorData.modelReport" :key="row.modelName">
+                  <td>{{ row.modelName }}</td>
+                  <td>{{ fmtNum(row.inputTokens) }}</td>
+                  <td>{{ fmtNum(row.outputTokens) }}</td>
+                  <td>${{ fmtCost(row.costUsd) }}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- 按用户 TopN -->
+            <div class="monitor-table-title">用户消费排行（近 {{ monitorDays }} 天）</div>
+            <div v-if="!monitorData.userReport?.length" class="empty-hint">暂无数据</div>
+            <table v-else class="monitor-table">
+              <thead><tr><th>用户 ID</th><th>总 Token</th><th>费用（USD）</th></tr></thead>
+              <tbody>
+                <tr v-for="row in monitorData.userReport" :key="row.userId">
+                  <td class="user-id-cell">{{ row.userId }}</td>
+                  <td>{{ fmtNum(row.totalTokens) }}</td>
+                  <td>${{ fmtCost(row.costUsd) }}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- 管理员用户管理 -->
+            <div class="monitor-section-title" style="margin-top:20px;">
+              <span>用户管理</span>
+              <button class="monitor-refresh-btn" type="button" @click="loadAdminUsers">刷新</button>
+            </div>
+            <div v-if="!adminUsers.items?.length" class="empty-hint">暂无数据</div>
+            <table v-else class="monitor-table">
+              <thead><tr><th>用户名</th><th>用户 ID</th><th>角色</th><th>状态</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr v-for="u in adminUsers.items" :key="u.userId">
+                  <td>{{ u.username }}</td>
+                  <td class="user-id-cell">{{ u.userId }}</td>
+                  <td>{{ u.roles?.join(', ') }}</td>
+                  <td><span :class="u.enabled ? 'status-enabled' : 'status-disabled'">{{ u.enabled ? '正常' : '禁用' }}</span></td>
+                  <td>
+                    <button v-if="u.enabled" class="admin-user-btn danger" type="button" @click="handleDisableUser(u.userId)">禁用</button>
+                    <button v-else class="admin-user-btn" type="button" @click="handleEnableUser(u.userId)">启用</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-if="adminUsers.totalPages > 1" class="monitor-pagination">
+              <button :disabled="adminUserPage === 0" class="monitor-page-btn" type="button" @click="adminUserPage--; loadAdminUsers()">上一页</button>
+              <span>第 {{ adminUserPage + 1 }} / {{ adminUsers.totalPages }} 页</span>
+              <button :disabled="adminUserPage >= adminUsers.totalPages - 1" class="monitor-page-btn" type="button" @click="adminUserPage++; loadAdminUsers()">下一页</button>
+            </div>
+          </div>
+
+        </div>
+      </section>
     </div>
   </main>
 
@@ -415,7 +546,7 @@
               v-else
               v-model.trim="dialog.formValues[field.key]"
               class="dialog-input"
-              type="text"
+              :type="field.type || 'text'"
               :placeholder="field.placeholder"
               @keydown.enter.prevent="resolveDialog(true)"
               @keydown.esc.prevent="resolveDialog(false)"
@@ -460,9 +591,10 @@ const LogoMark = defineComponent({
 });
 
 const tabs = [
-  { key: 'chat', label: '对话' },
-  { key: 'kb', label: '知识库' },
-  { key: 'org', label: '组织' }
+{ key: 'chat', label: '对话' },
+{ key: 'kb', label: '知识库' },
+{ key: 'org', label: '组织' },
+{ key: 'monitor', label: '监控' }
 ];
 const quickPrompts = [
   { label: '查询订单状态', message: '帮我查一下订单 #12345 的状态' },
@@ -504,6 +636,24 @@ const kbMemberRole = ref('VIEWER');
 const organizations = ref([]);
 const currentOrgId = ref(null);
 const orgModal = reactive({ visible: false, title: '', orgId: '', members: [] });
+
+// 用户下拉菜单
+const userMenuOpen = ref(false);
+
+// 监控面板
+const monitorDays = ref(7);
+const monitorLoading = reactive({ my: false, admin: false });
+const monitorData = reactive({
+  myCost: null,
+  todayCost: null,
+  errorRate: null,
+  errorPct: null,
+  modelReport: [],
+  userReport: []
+});
+const adminUsers = reactive({ items: [], total: 0, page: 0, size: 20, totalPages: 0 });
+const adminUserPage = ref(0);
+
 const toasts = ref([]);
 const dialog = reactive({
   visible: false,
@@ -524,6 +674,7 @@ const dialog = reactive({
   resolver: null
 });
 
+const isAdmin = computed(() => user.value?.roles?.includes('ROLE_ADMIN') ?? false);
 const currentSessionTitle = computed(() => sessions.value.find(s => s.id === sessionId.value)?.title || '新对话');
 const modelOptions = [
   { value: 'deepseek', label: 'DeepSeek（默认）', desc: '快速、稳定，适合日常对话' },
@@ -549,6 +700,9 @@ onMounted(async () => {
   }
   addSession(sessionId.value, '新对话');
   await Promise.all([loadKnowledgeBases(), loadOrganizations()]);
+
+  // 点击页面其他地方时关闭用户下拉菜单
+  document.addEventListener('click', () => { userMenuOpen.value = false; });
 });
 
 function generateId() {
@@ -556,6 +710,7 @@ function generateId() {
 }
 
 async function handleLogout() {
+  userMenuOpen.value = false;
   const confirmed = await showConfirm({
     title: '退出登录',
     message: '确认退出当前账号吗？',
@@ -563,6 +718,127 @@ async function handleLogout() {
     variant: 'danger'
   });
   if (confirmed) api.logout();
+}
+
+async function handleChangePassword() {
+  userMenuOpen.value = false;
+  const form = await showForm({
+    title: '修改密码',
+    confirmText: '确认修改',
+    fields: [
+      { key: 'oldPassword', label: '当前密码', placeholder: '请输入当前密码', type: 'password' },
+      { key: 'newPassword', label: '新密码', placeholder: '至少 6 位', type: 'password' },
+      { key: 'confirmPassword', label: '确认新密码', placeholder: '再次输入新密码', type: 'password' }
+    ]
+  });
+  if (!form) return;
+  if (!form.oldPassword || !form.newPassword) return showToast('warning', '密码不能为空');
+  if (form.newPassword !== form.confirmPassword) return showToast('error', '两次密码不一致');
+  try {
+    await api.changePassword(form.oldPassword, form.newPassword);
+    showToast('success', '密码修改成功，请重新登录');
+    setTimeout(() => api.logout(), 1500);
+  } catch (error) {
+    showToast('error', `修改失败：${error.message}`);
+  }
+}
+
+// ── 监控数据加载 ─────────────────────────────────────────────────
+
+async function loadMyUsage() {
+  monitorLoading.my = true;
+  try {
+    const data = await api.getMyTodayCost();
+    monitorData.myCost = Number(data.costUsd ?? 0).toFixed(6);
+  } catch {
+    monitorData.myCost = 'N/A';
+  } finally {
+    monitorLoading.my = false;
+  }
+}
+
+async function loadAdminStats() {
+  if (!isAdmin.value) return;
+  monitorLoading.admin = true;
+  try {
+    const [costData, errorData, modelReport, userReport] = await Promise.all([
+      api.adminGetTodayCost(),
+      api.adminGetErrorRate(5),
+      api.adminGetModelReport(monitorDays.value),
+      api.adminGetUserReport(monitorDays.value)
+    ]);
+    monitorData.todayCost = Number(costData.costUsd ?? 0).toFixed(6);
+    monitorData.errorRate = errorData.errorRate;
+    monitorData.errorPct = errorData.errorPct;
+    monitorData.modelReport = modelReport;
+    monitorData.userReport = userReport;
+  } catch (e) {
+    showToast('error', `加载监控数据失败：${e.message}`);
+  } finally {
+    monitorLoading.admin = false;
+  }
+}
+
+async function loadAdminUsers() {
+  if (!isAdmin.value) return;
+  try {
+    const data = await api.adminListUsers(adminUserPage.value, 20);
+    Object.assign(adminUsers, data);
+  } catch (e) {
+    showToast('error', `加载用户列表失败：${e.message}`);
+  }
+}
+
+async function handleDisableUser(userId) {
+  const confirmed = await showConfirm({
+    title: '禁用用户',
+    message: `确认禁用用户 ${userId}？禁用后该用户无法登录。`,
+    confirmText: '禁用',
+    variant: 'danger'
+  });
+  if (!confirmed) return;
+  try {
+    await api.adminDisableUser(userId);
+    showToast('success', `已禁用 ${userId}`);
+    await loadAdminUsers();
+  } catch (e) {
+    showToast('error', `操作失败：${e.message}`);
+  }
+}
+
+async function handleEnableUser(userId) {
+  try {
+    await api.adminEnableUser(userId);
+    showToast('success', `已启用 ${userId}`);
+    await loadAdminUsers();
+  } catch (e) {
+    showToast('error', `操作失败：${e.message}`);
+  }
+}
+
+// 监控 Tab 激活时自动加载数据
+function onMonitorTabActivate() {
+  loadMyUsage();
+  if (isAdmin.value) {
+    loadAdminStats();
+    loadAdminUsers();
+  }
+}
+
+function fmtNum(val) {
+  if (val == null) return '—';
+  return Number(val).toLocaleString();
+}
+
+function fmtCost(val) {
+  if (val == null) return '—';
+  return Number(val).toFixed(6);
+}
+
+function switchTab(key) {
+  activeTab.value = key;
+  userMenuOpen.value = false;
+  if (key === 'monitor') onMonitorTabActivate();
 }
 
 function selectModel(value) {

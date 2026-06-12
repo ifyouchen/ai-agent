@@ -94,5 +94,44 @@ public class AuthService {
         return AuthResponse.of(token, jwtService.getExpirationSeconds(),
                 userId, request.username(), roles);
     }
+
+    /**
+     * 修改密码
+     *
+     * @param userId      当前用户 ID
+     * @param oldPassword 旧密码（用于校验）
+     * @param newPassword 新密码（明文，将被 BCrypt 加密）
+     * @throws IllegalArgumentException 旧密码错误或新密码不符合规则
+     */
+    public void changePassword(String userId, String oldPassword, String newPassword) {
+        SysUser user = sysUserMapper.findByUserId(userId)
+                .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
+
+        if (!passwordEncoder.matches(oldPassword, user.getPasswordHash())) {
+            throw new IllegalArgumentException("旧密码不正确");
+        }
+
+        if (newPassword == null || newPassword.length() < 6) {
+            throw new IllegalArgumentException("新密码长度不能少于 6 位");
+        }
+
+        String newHash = passwordEncoder.encode(newPassword);
+        sysUserMapper.updatePassword(userId, newHash);
+        log.info("用户修改密码成功 userId={}", userId);
+    }
+
+    /**
+     * 获取当前用户个人资料
+     */
+    public java.util.Map<String, Object> getProfile(String userId) {
+        SysUser user = sysUserMapper.findByUserId(userId)
+                .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
+        return java.util.Map.of(
+                "userId",    user.getUserId(),
+                "username",  user.getUsername(),
+                "roles",     user.getRoleList(),
+                "enabled",   user.getEnabled()
+        );
+    }
 }
 

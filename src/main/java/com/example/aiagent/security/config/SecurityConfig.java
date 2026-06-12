@@ -66,7 +66,8 @@ public class SecurityConfig {
                 // 公开接口：认证、健康检查、跨域预检
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers(
-                    "/api/v1/auth/**",
+                    "/api/v1/auth/login",
+                    "/api/v1/auth/register",
                     "/actuator/health",
                     "/actuator/prometheus"
                 ).permitAll()
