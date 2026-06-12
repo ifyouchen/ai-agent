@@ -22,6 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.charset.MalformedInputException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -166,7 +168,12 @@ public class DocumentIngestService {
             dev.langchain4j.data.document.Document document;
             String fileNameLower = fileName.toLowerCase();
             if (fileNameLower.endsWith(".txt") || fileNameLower.endsWith(".md")) {
-                String text = Files.readString(filePath);
+                String text;
+                try {
+                    text = Files.readString(filePath);
+                } catch (MalformedInputException e) {
+                    text = Files.readString(filePath, Charset.forName("GBK"));
+                }
                 document = dev.langchain4j.data.document.Document.from(text);
                 document.metadata();
             } else {
