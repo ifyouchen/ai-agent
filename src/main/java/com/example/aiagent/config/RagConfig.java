@@ -5,10 +5,15 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.pgvector.PgVectorEmbeddingStore;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import javax.sql.DataSource;
+import java.sql.Connection;
+
+@Slf4j
 @Configuration
 public class RagConfig {
 
@@ -37,12 +42,13 @@ public class RagConfig {
      */
     @Bean
     public EmbeddingStore<TextSegment> embeddingStore(
+            DataSource dataSource,
             @Value("${spring.datasource.url}") String jdbcUrl,
             @Value("${spring.datasource.username}") String user,
             @Value("${spring.datasource.password}") String password) {
 
-        // 从 jdbc url 中解析 host/port/db（简化处理）
-        // 实际项目可注入 DataSource 更优雅
+        ensureVectorDimension1024(dataSource);
+
         return PgVectorEmbeddingStore.builder()
                 .host(parseHost(jdbcUrl))
                 .port(parsePort(jdbcUrl))
@@ -50,9 +56,29 @@ public class RagConfig {
                 .user(user)
                 .password(password)
                 .table("knowledge_base")
-                .dimension(1024)         // bge-large-zh 向量维度
+                .dimension(1024)
                 .createTable(true)
                 .build();
+    }
+
+    private void ensureVectorDimension1024(DataSource dataSource) {
+        try (Connection conn = dataSource.getConnection();
+             var stmt = conn.createStatement();
+             var rs = stmt.executeQuery(
+                     "SELECT format_type(a.atttypid, a.atttypmod) " +
+                     "FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid " +
+                     "WHERE c.relname = 'knowledge_base' AND a.attname = 'embedding'")) {
+            if (rs.next()) {
+                String type = rs.getString(1);
+                if (!"vector(1024)".equals(type)) {
+                    log.info("knowledge_base.embedding 当前类型为 {}，修正为 vector(1024)", type);
+                    stmt.execute("ALTER TABLE knowledge_base ALTER COLUMN embedding TYPE vector(1024) USING NULL::vector(1024)");
+                    log.info("knowledge_base.embedding 维度修正完成");
+                }
+            }
+        } catch (Exception e) {
+            log.debug("knowledge_base 表尚未创建，跳过维度修正: {}", e.getMessage());
+        }
     }
 
     // ---- 简单的 JDBC URL 解析工具方法 ----

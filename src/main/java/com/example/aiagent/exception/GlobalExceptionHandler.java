@@ -1,38 +1,49 @@
 package com.example.aiagent.exception;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import java.io.IOException;
 import java.util.Map;
 
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    /**
-     * 通用兜底处理器。
-     *
-     * <p><b>注意：</b>Spring Security 的 {@link AccessDeniedException} 和
-     * {@link AuthenticationException} 必须重新抛出，
-     * 让 {@code ExceptionTranslationFilter} 完成正确的 403/401 响应。
-     * 如果在这里直接返回 500，Response 会被提前 commit，
-     * 导致 "Unable to handle the Spring Security Exception because the response is already committed"。
-     */
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, String>> handleException(Exception e)
-            throws AccessDeniedException, AuthenticationException {
+    private boolean isSseRequest(HttpServletRequest request) {
+        String accept = request.getHeader("Accept");
+        return accept != null && accept.contains(MediaType.TEXT_EVENT_STREAM_VALUE);
+    }
 
-        // 必须将 Spring Security 异常重新抛出，不能在此处消费
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, String>> handleException(Exception e, HttpServletRequest request,
+                                                               HttpServletResponse response)
+            throws AccessDeniedException, AuthenticationException, IOException {
+
         if (e instanceof AccessDeniedException ade) {
             throw ade;
         }
         if (e instanceof AuthenticationException ae) {
             throw ae;
+        }
+
+        if (isSseRequest(request)) {
+            log.error("SSE 请求未处理的异常: {}", e.getMessage(), e);
+            if (!response.isCommitted()) {
+                response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
+                response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                response.getWriter().write("{\"error\":\"服务内部错误\",\"message\":\"" +
+                        (e.getMessage() != null ? e.getMessage().replace("\"", "'") : "未知错误") + "\"}");
+            }
+            return null;
         }
 
         log.error("未处理的异常: {}", e.getMessage(), e);

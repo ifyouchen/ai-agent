@@ -246,21 +246,7 @@ CREATE TABLE IF NOT EXISTS chat_message (
 CREATE INDEX IF NOT EXISTS idx_chat_message_session_id ON chat_message(session_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_message_user_id    ON chat_message(user_id);
 
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM pg_attribute a
-                 JOIN pg_class c ON c.oid = a.attrelid
-        WHERE c.relname = 'knowledge_base'
-          AND a.attname = 'embedding'
-          AND format_type(a.atttypid, a.atttypmod) != 'vector(1024)'
-    ) THEN
-        ALTER TABLE knowledge_base
-            ALTER COLUMN embedding TYPE vector(1024) USING NULL::vector(1024);
-        RAISE NOTICE 'knowledge_base.embedding 修正为 vector(1024)';
-    END IF;
-END $$;
+
 
 -- ============================================================
 -- 用户 Profile 扩展字段（nickname / email）
