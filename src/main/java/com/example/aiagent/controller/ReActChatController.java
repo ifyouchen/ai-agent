@@ -1,6 +1,7 @@
 package com.example.aiagent.controller;
 
 import com.example.aiagent.agent.ReActAgent;
+import com.example.aiagent.chat.service.ChatHistoryService;
 import com.example.aiagent.kb.service.ChatRagContextService;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
@@ -55,6 +56,7 @@ public class ReActChatController {
     private final OutputContentFilter outputContentFilter;
     private final AuditLogService auditLogService;
     private final ChatRagContextService chatRagContextService;
+    private final ChatHistoryService chatHistoryService;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -73,6 +75,7 @@ public class ReActChatController {
             OutputContentFilter outputContentFilter,
             AuditLogService auditLogService,
             ChatRagContextService chatRagContextService,
+            ChatHistoryService chatHistoryService,
             @Qualifier("sseTaskExecutor") Executor sseExecutor) {
         this.reActAgent = reActAgent;
         this.promptInjectionFilter = promptInjectionFilter;
@@ -80,6 +83,7 @@ public class ReActChatController {
         this.outputContentFilter = outputContentFilter;
         this.auditLogService = auditLogService;
         this.chatRagContextService = chatRagContextService;
+        this.chatHistoryService = chatHistoryService;
         this.sseExecutor = sseExecutor;
     }
 
@@ -175,6 +179,13 @@ public class ReActChatController {
                         userId, clientIp,
                         "ReAct 输出脱敏，检测到：" + outputCheck.detectedTypes());
             }
+            String userText = injectionCheck.sanitizedInput();
+            String aiText = outputCheck.filteredContent();
+            reActAgent.rememberExchange(sessionId, userText, aiText);
+            chatHistoryService.saveSession(sessionId, userId,
+                    userText.substring(0, Math.min(userText.length(), 20)), kbId);
+            chatHistoryService.saveMessage(sessionId, userId, "user", userText);
+            chatHistoryService.saveMessage(sessionId, userId, "ai", aiText);
 
             // ── Step 6：审计日志（完成）──────────────────
             auditLogService.logAiChat(userId, sessionId, clientIp, 0, 0);
@@ -194,7 +205,7 @@ public class ReActChatController {
 
             return ResponseEntity.ok(Map.of(
                     "sessionId",  sessionId,
-                    "answer",     outputCheck.filteredContent(),
+                    "answer",     aiText,
                     "iterations", result.iterations(),
                     "durationMs", result.durationMs(),
                     "steps",      stepList
@@ -340,6 +351,12 @@ public class ReActChatController {
                     emitter.send(SseEmitter.event().name("replace-answer")
                             .data(MAPPER.writeValueAsString(Map.of("answer", outputCheck.filteredContent()))));
                 }
+                String aiText = outputCheck.filteredContent();
+                reActAgent.rememberExchange(sessionId, sanitizedMessage, aiText);
+                chatHistoryService.saveSession(sessionId, userId,
+                        sanitizedMessage.substring(0, Math.min(sanitizedMessage.length(), 20)), kbId);
+                chatHistoryService.saveMessage(sessionId, userId, "user", sanitizedMessage);
+                chatHistoryService.saveMessage(sessionId, userId, "ai", aiText);
 
                 // ── Step 6：审计日志 ──────────────────
                 long duration = System.currentTimeMillis() - startMs;

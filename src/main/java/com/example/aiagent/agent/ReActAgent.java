@@ -1,6 +1,7 @@
 package com.example.aiagent.agent;
 
 import com.example.aiagent.config.DeepSeekModelFactory;
+import com.example.aiagent.memory.RedisChatMemoryStore;
 import com.example.aiagent.rag.model.RetrievedChunk;
 import com.example.aiagent.rag.pipeline.HybridRagPipeline;
 import com.example.aiagent.tool.BusinessTools;
@@ -19,6 +20,7 @@ import dev.langchain4j.model.output.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -62,9 +64,13 @@ public class ReActAgent {
     private final BusinessTools businessTools;
     private final HybridRagPipeline hybridRagPipeline;
     private final ObjectProvider<DeepSeekModelFactory> deepSeekModelFactory;
+    private final RedisChatMemoryStore redisChatMemoryStore;
 
     /** 最大推理迭代次数（防止工具调用死循环） */
     private static final int MAX_ITERATIONS = 8;
+
+    @Value("${agent.memory.max-messages:20}")
+    private int maxMessages;
 
     /** 工具规格列表（懒加载，启动后不再变化） */
     private volatile List<ToolSpecification> cachedToolSpecs;
@@ -91,6 +97,10 @@ public class ReActAgent {
 
             ## 输出格式
             在 Final Answer 中，给出清晰、完整、友好的中文答案。
+
+            ## 会话上下文
+            如果用户使用"再详细点"、"你再好好回复下"、"它/这个/上面"等承接表达，
+            必须结合当前会话历史理解指代，不要声称自己没有上一轮对话记忆。
             """;
 
     /**
@@ -115,9 +125,7 @@ public class ReActAgent {
                 sessionId, modelName, tenantId, kbId, userQuery);
         long startMs = System.currentTimeMillis();
 
-        List<ChatMessage> messages = new ArrayList<>();
-        messages.add(SystemMessage.from(SYSTEM_PROMPT));
-        messages.add(UserMessage.from(buildKnowledgeAwareUserMessage(userQuery, tenantId, kbId)));
+        List<ChatMessage> messages = buildInitialMessages(sessionId, userQuery, tenantId, kbId);
 
         List<ToolSpecification> toolSpecs = getToolSpecs();
         List<ReActStep> steps = new ArrayList<>();
@@ -278,9 +286,7 @@ public class ReActAgent {
                 sessionId, modelName, tenantId, kbId, userQuery);
         long startMs = System.currentTimeMillis();
 
-        List<ChatMessage> messages = new ArrayList<>();
-        messages.add(SystemMessage.from(SYSTEM_PROMPT));
-        messages.add(UserMessage.from(buildKnowledgeAwareUserMessage(userQuery, tenantId, kbId)));
+        List<ChatMessage> messages = buildInitialMessages(sessionId, userQuery, tenantId, kbId);
 
         List<ToolSpecification> toolSpecs = getToolSpecs();
         List<ReActStep> steps = new ArrayList<>();
@@ -348,6 +354,62 @@ public class ReActAgent {
     private ChatLanguageModel chatModel(String modelName) {
         DeepSeekModelFactory factory = deepSeekModelFactory.getIfAvailable();
         return factory != null ? factory.chatModel(modelName) : chatModel;
+    }
+
+    private List<ChatMessage> buildInitialMessages(String sessionId, String userQuery,
+                                                   String tenantId, Long kbId) {
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(SystemMessage.from(SYSTEM_PROMPT));
+        messages.addAll(loadConversationMemory(sessionId));
+        messages.add(UserMessage.from(buildKnowledgeAwareUserMessage(userQuery, tenantId, kbId)));
+        return messages;
+    }
+
+    private List<ChatMessage> loadConversationMemory(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<ChatMessage> storedMessages = redisChatMemoryStore.getMessages(sessionId);
+            if (storedMessages == null || storedMessages.isEmpty()) {
+                return List.of();
+            }
+            List<ChatMessage> conversationMessages = storedMessages.stream()
+                    .filter(this::isConversationMemoryMessage)
+                    .toList();
+            return trimMemory(conversationMessages);
+        } catch (Exception e) {
+            log.warn("[ReAct] 读取会话记忆失败 sessionId={}，将按无历史执行: {}", sessionId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    private boolean isConversationMemoryMessage(ChatMessage message) {
+        if (message instanceof UserMessage) {
+            return true;
+        }
+        if (message instanceof AiMessage aiMessage) {
+            return aiMessage.text() != null && !aiMessage.text().isBlank();
+        }
+        return false;
+    }
+
+    public void rememberExchange(String sessionId, String userQuery, String answer) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return;
+        }
+        List<ChatMessage> updatedMemory = new ArrayList<>(loadConversationMemory(sessionId));
+        updatedMemory.add(UserMessage.from(userQuery != null ? userQuery : ""));
+        updatedMemory.add(AiMessage.from(answer != null ? answer : ""));
+        redisChatMemoryStore.updateMessages(sessionId, trimMemory(updatedMemory));
+    }
+
+    private List<ChatMessage> trimMemory(List<ChatMessage> messages) {
+        int limit = maxMessages > 0 ? maxMessages : 20;
+        if (messages.size() <= limit) {
+            return new ArrayList<>(messages);
+        }
+        return new ArrayList<>(messages.subList(messages.size() - limit, messages.size()));
     }
 
     private String buildKnowledgeAwareUserMessage(String userQuery, String tenantId, Long kbId) {
