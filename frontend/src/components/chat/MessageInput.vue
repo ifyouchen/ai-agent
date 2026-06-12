@@ -172,7 +172,7 @@ const mentionDocs = computed(() => {
 const mentionVisible = computed(() => mentionOpen.value);
 
 const enterToSendHint = computed(() =>
-  '给 DeepSeek 发送消息'
+  '给 AI Agent 发送消息'
 );
 
 function autoResize() {

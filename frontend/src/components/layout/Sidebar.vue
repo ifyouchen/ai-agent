@@ -2,7 +2,7 @@
   <aside class="sidebar" :class="{ collapsed: collapsed }">
     <!-- Logo + 工具栏 -->
     <div class="sidebar-logo">
-      <h1><span class="logo-icon"><LogoMark /></span>deepseek</h1>
+      <h1><span class="logo-icon"><LogoMark /></span>AI Agent</h1>
       <div class="sidebar-tools">
         <button class="icon-btn" type="button" title="搜索" @click="openSearch">
           <svg viewBox="0 0 24 24" fill="none"><path d="m21 21-4.2-4.2m2.2-5.3a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>

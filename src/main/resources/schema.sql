@@ -246,33 +246,19 @@ CREATE TABLE IF NOT EXISTS chat_message (
 CREATE INDEX IF NOT EXISTS idx_chat_message_session_id ON chat_message(session_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_chat_message_user_id    ON chat_message(user_id);
 
--- ============================================================
--- 向量表维度修正（由 PgVectorEmbeddingStore 自动创建）
--- bge-large-zh 维度为 1024；若之前曾用 OpenAI（1536 维）建过表，
--- 需执行此语句将列改为正确维度。DO $$ 块保证幂等：
---   仅当列仍为 1536 维时才执行 ALTER，不影响已正确的环境。
--- ============================================================
 DO $$
 BEGIN
     IF EXISTS (
         SELECT 1
-        FROM information_schema.columns
-        WHERE table_name = 'knowledge_base'
-          AND column_name = 'embedding'
-          AND udt_name = 'vector'
-          AND character_maximum_length IS NULL   -- vector 类型不走 char_max_length
-          -- 用 pg_attribute 精确判断维度
-          AND (
-              SELECT atttypmod
-              FROM pg_attribute
-                       JOIN pg_class ON pg_class.oid = pg_attribute.attrelid
-              WHERE pg_class.relname = 'knowledge_base'
-                AND pg_attribute.attname = 'embedding'
-          ) = 1536
+        FROM pg_attribute a
+                 JOIN pg_class c ON c.oid = a.attrelid
+        WHERE c.relname = 'knowledge_base'
+          AND a.attname = 'embedding'
+          AND format_type(a.atttypid, a.atttypmod) != 'vector(1024)'
     ) THEN
         ALTER TABLE knowledge_base
             ALTER COLUMN embedding TYPE vector(1024) USING NULL::vector(1024);
-        RAISE NOTICE 'knowledge_base.embedding 已从 vector(1536) 修正为 vector(1024)';
+        RAISE NOTICE 'knowledge_base.embedding 修正为 vector(1024)';
     END IF;
 END $$;
 
