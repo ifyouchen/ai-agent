@@ -9,7 +9,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -192,6 +195,26 @@ public class OrganizationService {
      */
     public List<OrgMember> getUserOrganizations(String userId) {
         return orgMemberMapper.findByUserId(userId);
+    }
+
+    /**
+     * 获取用户可用的所有组织（含组织名称和类型，供前端展示）
+     */
+    public List<Map<String, Object>> getUserOrganizationsWithDetail(String userId) {
+        List<OrgMember> memberships = orgMemberMapper.findByUserId(userId);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (OrgMember member : memberships) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("orgId", member.getOrgId());
+            item.put("role", member.getRole());
+            // 查询组织详情获取名称和类型
+            organizationMapper.findByOrgId(member.getOrgId()).ifPresent(org -> {
+                item.put("name", org.getName());
+                item.put("orgType", org.getOrgType());
+            });
+            result.add(item);
+        }
+        return result;
     }
 
     /**

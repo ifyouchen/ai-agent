@@ -57,11 +57,21 @@ public class KbMemberService {
             return explicitRole.get();
         }
 
-        // 2. 无显式授权 → 如果知识库属于该组织，组织成员隐式获得 VIEWER
-        //    注意：orgId 由 Controller 层传入（从用户的组织信息中获取）
         var kb = knowledgeBaseMapper.findById(kbId);
-        if (kb.isPresent() && kb.get().getTenantId().equals(orgId)) {
-            return "VIEWER";  // 组织成员默认只读
+
+        // 2. 无显式授权 → 检查是否为知识库创建者（创建者自动视为 OWNER）
+        if (kb.isPresent() && userId.equals(kb.get().getCreatedBy())) {
+            return "OWNER";
+        }
+
+        // 3. 非创建者 → 检查组织成员权限
+        if (kb.isPresent() && orgId != null && kb.get().getTenantId().equals(orgId)) {
+            // 个人组织：唯一成员拥有完整权限（OWNER）
+            // 企业组织：普通成员默认只读（VIEWER）
+            if (orgId.startsWith("org_")) {
+                return "OWNER";
+            }
+            return "VIEWER";  // 企业组织成员默认只读
         }
 
         return null;  // 无权访问

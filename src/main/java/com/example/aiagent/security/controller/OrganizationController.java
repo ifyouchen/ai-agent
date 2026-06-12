@@ -73,14 +73,14 @@ public class OrganizationController {
     }
 
     /**
-     * 列出我加入的所有组织
+     * 列出我加入的所有组织（含组织名称和类型）
      * GET /api/v1/org
      */
     @GetMapping
     public ResponseEntity<?> listMyOrganizations(
             @AuthenticationPrincipal String userId) {
-        List<OrgMember> memberships = orgService.getUserOrganizations(userId);
-        return ResponseEntity.ok(memberships);
+        List<Map<String, Object>> result = orgService.getUserOrganizationsWithDetail(userId);
+        return ResponseEntity.ok(result);
     }
 
     /**

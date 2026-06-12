@@ -284,9 +284,9 @@
                 :class="{ active: org.orgId === currentOrgId }"
                 @click="selectOrg(org.orgId)"
               >
-                <div class="org-item-icon">{{ org.orgId?.startsWith('org_') ? '个人' : '企业' }}</div>
+                <div class="org-item-icon">{{ org.orgType === 'PERSONAL' ? '个人' : '企业' }}</div>
                 <div class="org-item-info">
-                  <div class="org-item-name">{{ org.orgId?.startsWith('org_') ? '个人空间' : (org.name || org.orgId) }}</div>
+                  <div class="org-item-name">{{ org.orgType === 'PERSONAL' ? '个人空间' : (org.name || org.orgId) }}</div>
                   <div class="org-item-meta">{{ orgRoleLabel(org.role) }}</div>
                 </div>
               </div>
@@ -1096,11 +1096,12 @@ function hideUploadProgress() {
 async function loadOrganizations() {
   try {
     const memberships = await api.listOrganizations();
-    organizations.value = memberships.map(item => ({
-      orgId: item.orgId,
-      role: item.role,
-      name: item.name || item.orgId
-    }));
+organizations.value = memberships.map(item => ({
+                orgId: item.orgId,
+                role: item.role,
+                name: item.name,
+                orgType: item.orgType
+            }));
     if (organizations.value.length && !currentOrgId.value) currentOrgId.value = organizations.value[0].orgId;
   } catch {
     organizations.value = [];

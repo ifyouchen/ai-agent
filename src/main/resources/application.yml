@@ -1,6 +1,10 @@
 spring:
   profiles:
     active: deepseek   # 切换为 claude 即可换模型
+  servlet:
+    multipart:
+      max-file-size: 50MB        # 单个文件最大大小
+      max-request-size: 100MB    # 整个请求最大大小（支持多文件上传）
   mail:
     host:
     port: 587
