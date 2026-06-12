@@ -230,12 +230,39 @@
               <input ref="fileInputEl" id="fileInput" type="file" multiple accept=".pdf,.doc,.docx,.txt,.md" @change="handleFileChange">
             </div>
 
-            <div v-show="uploadProgress.show" class="upload-progress">
-              <div class="progress-info">
-                <span class="progress-filename">{{ uploadProgress.filename || '上传中...' }}</span>
-                <span class="progress-pct">{{ Math.round(uploadProgress.pct) }}%</span>
+            <!-- ===== 上传进度区 ===== -->
+            <div v-if="uploadQueue.length > 0" class="upload-queue">
+              <div class="upload-queue-header">
+                <span>{{ uploadQueueSummary }}</span>
+                <span class="upload-queue-done" v-if="uploadQueueFinished">
+                  <svg viewBox="0 0 24 24" fill="none" width="13" height="13"><path d="m5 12 4 4L19 6" stroke="#00A96E" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  全部完成
+                </span>
               </div>
-              <div class="progress-bar"><div class="progress-fill" :style="{ width: uploadProgress.pct + '%' }"></div></div>
+              <div v-for="task in uploadQueue" :key="task.id" class="upload-task">
+                <div class="upload-task-top">
+                  <span class="upload-task-name" :title="task.filename">{{ task.filename }}</span>
+                  <span class="upload-task-status" :class="`status-${task.status}`">
+                    <template v-if="task.status === 'uploading'">{{ task.pct }}%</template>
+                    <template v-else-if="task.status === 'processing'">解析中…</template>
+                    <template v-else-if="task.status === 'done'">✓ 完成</template>
+                    <template v-else-if="task.status === 'error'">✗ 失败</template>
+                    <template v-else>等待</template>
+                  </span>
+                </div>
+                <div class="upload-task-bar">
+                  <div class="upload-task-fill"
+                    :class="`fill-${task.status}`"
+                    :style="{ width: task.barWidth + '%' }">
+                  </div>
+                </div>
+                <div v-if="task.status === 'uploading'" class="upload-task-meta">
+                  <span>{{ task.speedText }}</span>
+                  <span v-if="task.etaText">剩余 {{ task.etaText }}</span>
+                  <span>{{ task.loadedText }} / {{ task.totalText }}</span>
+                </div>
+                <div v-if="task.status === 'error'" class="upload-task-error">{{ task.error }}</div>
+              </div>
             </div>
 
             <div class="kb-docs-title">已导入文档</div>
@@ -627,7 +654,8 @@ const currentKbId = ref(null);
 const docs = ref([]);
 const fileInputEl = ref(null);
 const dragOver = ref(false);
-const uploadProgress = reactive({ show: false, filename: '', pct: 0, timer: null });
+// 多文件上传队列
+const uploadQueue = ref([]);
 const kbMembersVisible = ref(false);
 const kbMembers = ref([]);
 const kbMemberUserId = ref('');
@@ -675,6 +703,21 @@ const dialog = reactive({
 });
 
 const isAdmin = computed(() => user.value?.roles?.includes('ROLE_ADMIN') ?? false);
+
+const uploadQueueFinished = computed(() =>
+  uploadQueue.value.length > 0 &&
+  uploadQueue.value.every(t => t.status === 'done' || t.status === 'error')
+);
+const uploadQueueSummary = computed(() => {
+  const q = uploadQueue.value;
+  if (!q.length) return '';
+  const done = q.filter(t => t.status === 'done').length;
+  const err  = q.filter(t => t.status === 'error').length;
+  const active = q.filter(t => t.status === 'uploading' || t.status === 'processing').length;
+  if (active) return `正在上传 ${q.length} 个文件（${done} 完成）`;
+  if (err) return `已完成 ${done}，失败 ${err}`;
+  return `${done} 个文件上传完成`;
+});
 const currentSessionTitle = computed(() => sessions.value.find(s => s.id === sessionId.value)?.title || '新对话');
 const modelOptions = [
   { value: 'deepseek', label: 'DeepSeek（默认）', desc: '快速、稳定，适合日常对话' },
@@ -1410,10 +1453,50 @@ async function handleUpload(file) {
   if (!allowed.includes(ext)) return showToast('error', `不支持的文件类型：.${ext}`);
   if (file.size > 50 * 1024 * 1024) return showToast('error', `文件过大（最大 50MB）：${file.name}`);
 
-  showUploadProgress(file.name);
+  // 创建任务条目
+  const task = reactive({
+    id: Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+    filename: file.name,
+    status: 'uploading',  // uploading | processing | done | error | pending
+    pct: 0,
+    barWidth: 0,
+    loaded: 0,
+    total: file.size,
+    startMs: Date.now(),
+    speedText: '',
+    etaText: '',
+    loadedText: formatFileSize(file.size),
+    totalText: formatFileSize(file.size),
+    error: ''
+  });
+  uploadQueue.value.push(task);
+
   try {
-    const data = await api.uploadDocument(currentKbId.value, file);
-    finishUploadProgress();
+    const data = await api.uploadDocument(currentKbId.value, file, ({ loaded, total, pct }) => {
+      const elapsed = (Date.now() - task.startMs) / 1000;
+      const speed = elapsed > 0 ? loaded / elapsed : 0;
+      const remaining = speed > 0 && total ? (total - loaded) / speed : 0;
+
+      task.loaded = loaded;
+      task.total = total || file.size;
+      task.pct = pct;
+      task.barWidth = pct;
+      task.loadedText = formatFileSize(loaded);
+      task.totalText = formatFileSize(task.total);
+      task.speedText = speed > 0 ? `${formatFileSize(speed)}/s` : '';
+      task.etaText = remaining > 1 ? fmtEta(remaining) : '';
+
+      // 接近 100% 后进入"解析中"状态
+      if (pct >= 100) {
+        task.status = 'processing';
+        task.barWidth = 100;
+      }
+    });
+
+    task.status = 'done';
+    task.pct = 100;
+    task.barWidth = 100;
+
     docs.value.push({
       id: data.documentId ?? Date.now().toString(),
       filename: file.name,
@@ -1424,10 +1507,26 @@ async function handleUpload(file) {
     });
     showToast('success', `${file.name} 导入成功`);
     await loadKnowledgeBases();
+
+    // 全部完成后 3 秒清空队列
+    if (uploadQueueFinished.value) {
+      setTimeout(() => {
+        if (uploadQueueFinished.value) uploadQueue.value = [];
+      }, 3000);
+    }
   } catch (error) {
-    hideUploadProgress();
-    showToast('error', `上传失败：${error.message}`);
+    task.status = 'error';
+    task.barWidth = task.pct;
+    task.error = error.message || '上传失败';
+    showToast('error', `上传失败：${file.name}`);
   }
+}
+
+function fmtEta(seconds) {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return `${m}m${s}s`;
 }
 
 async function handleDeleteDoc(doc) {
@@ -1469,28 +1568,6 @@ async function addMemberToCurrentKb() {
   }
 }
 
-function showUploadProgress(filename) {
-  clearInterval(uploadProgress.timer);
-  uploadProgress.show = true;
-  uploadProgress.filename = filename;
-  uploadProgress.pct = 0;
-  uploadProgress.timer = setInterval(() => {
-    uploadProgress.pct = Math.min(uploadProgress.pct + Math.random() * 12, 88);
-  }, 200);
-}
-
-function finishUploadProgress() {
-  clearInterval(uploadProgress.timer);
-  uploadProgress.pct = 100;
-  setTimeout(hideUploadProgress, 800);
-}
-
-function hideUploadProgress() {
-  clearInterval(uploadProgress.timer);
-  uploadProgress.show = false;
-  uploadProgress.pct = 0;
-  uploadProgress.filename = '';
-}
 
 async function loadOrganizations() {
   try {

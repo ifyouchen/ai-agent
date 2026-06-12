@@ -125,11 +125,17 @@ export async function deleteKnowledgeBase(kbId) {
   return data;
 }
 
-export async function uploadDocument(kbId, file) {
+export async function uploadDocument(kbId, file, onProgress) {
   const formData = new FormData();
   formData.append('file', file);
   const { data } = await http.post(`/api/v1/kb/${kbId}/documents`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: onProgress
+      ? (evt) => {
+          const pct = evt.total ? Math.round((evt.loaded / evt.total) * 100) : 0;
+          onProgress({ loaded: evt.loaded, total: evt.total, pct });
+        }
+      : undefined
   });
   return data;
 }

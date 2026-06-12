@@ -729,6 +729,116 @@ body {
     width: 0%;
 }
 
+/* ===== 新版上传队列 ===== */
+.upload-queue {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.upload-queue-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: .4px;
+}
+
+.upload-queue-done {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: #00A96E;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.upload-task {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.upload-task-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+}
+
+.upload-task-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+    font-weight: 500;
+    padding-right: 12px;
+}
+
+.upload-task-status {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.upload-task-status.status-uploading  { color: var(--primary); }
+.upload-task-status.status-processing { color: #F59E0B; }
+.upload-task-status.status-done       { color: #00A96E; }
+.upload-task-status.status-error      { color: var(--danger, #EF4444); }
+.upload-task-status.status-pending    { color: var(--text-muted); }
+
+.upload-task-bar {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.upload-task-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width .25s ease;
+}
+.upload-task-fill.fill-uploading  { background: var(--primary); }
+.upload-task-fill.fill-processing {
+    background: linear-gradient(90deg, #F59E0B 0%, #FBBF24 50%, #F59E0B 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.2s linear infinite;
+}
+.upload-task-fill.fill-done  { background: #00A96E; }
+.upload-task-fill.fill-error { background: var(--danger, #EF4444); }
+
+@keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.upload-task-meta {
+    display: flex;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.upload-task-error {
+    font-size: 11px;
+    color: var(--danger, #EF4444);
+    margin-top: 2px;
+}
+
+/* ===== / 新版上传队列 ===== */
+
 .kb-docs-title {
     font-size: 13px;
     font-weight: 600;
