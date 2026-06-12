@@ -105,7 +105,10 @@ public class StreamingChatController {
                     Map.of("messageLength", injectionCheck.sanitizedInput().length(), "mode", "stream"));
 
         } catch (IOException e) {
-            emitter.completeWithError(e);
+            // SSE 响应可能已开始，不能用 completeWithError（会触发 Spring 错误页渲染）
+            // 直接 complete，客户端会通过 onerror 感知连接关闭
+            log.warn("流式对话预检阶段 IO 失败 userId={}: {}", userId, e.getMessage());
+            emitter.complete();
             return emitter;
         } finally {
             MDC.remove("scenario");
@@ -126,8 +129,9 @@ public class StreamingChatController {
                         fullTextRef.get().append(token);
                         emitter.send(SseEmitter.event().data(token));
                     } catch (IOException e) {
-                        log.warn("SSE 推送失败，客户端可能已断开: {}", e.getMessage());
-                        emitter.completeWithError(e);
+                        // 客户端已断开，静默关闭，不用 completeWithError（避免触发 Spring 错误页）
+                        log.debug("SSE 推送失败，客户端可能已断开: {}", e.getMessage());
+                        emitter.complete();
                     }
                 })
                 .onComplete(response -> {
@@ -167,7 +171,9 @@ public class StreamingChatController {
                         emitter.send(SseEmitter.event().name("done").data("[DONE]"));
                         emitter.complete();
                     } catch (IOException e) {
-                        emitter.completeWithError(e);
+                        // 发送完成事件失败（客户端断开），直接关闭，不触发 Spring 错误页
+                        log.debug("SSE 发送 done 事件失败，客户端可能已断开: {}", e.getMessage());
+                        emitter.complete();
                     }
                 })
                 .onError(error -> {
@@ -175,7 +181,16 @@ public class StreamingChatController {
                     auditLogService.log(AuditLogService.EventType.AI_CHAT_BLOCKED,
                             userId, sessionId, clientIp, false,
                             Map.of("error", error.getMessage(), "mode", "stream"));
-                    emitter.completeWithError(error);
+                    // 不能用 completeWithError：SSE 响应已 committed，异步线程中 request 为 null，
+                    // 会触发 "Cannot render error page for request [null]" 警告
+                    // 改为通过 SSE error 事件通知前端，再正常 complete
+                    try {
+                        emitter.send(SseEmitter.event().name("error").data(
+                                error.getMessage() != null ? error.getMessage() : "LLM 调用失败，请重试"));
+                    } catch (IOException ignore) {
+                        // 客户端已断开，忽略
+                    }
+                    emitter.complete();
                 })
                 .start();
 

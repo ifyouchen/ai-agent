@@ -50,6 +50,13 @@ mybatis:
 
 server:
   port: 8080
+  error:
+    # 关闭 Whitelabel 错误页，使用自定义 JSON 错误处理（SecurityConfig 已配置）
+    # 同时避免 SSE 异步线程中 "Cannot render error page for request [null]" 警告
+    whitelabel:
+      enabled: false
+    # SSE 异步场景：异常发生时不尝试转发到 /error（SSE 响应已 committed 无法转发）
+    path: /error
 
 # 链路追踪（Zipkin）
 # 开发环境未启动 Zipkin 时设为 never，避免连接错误日志
@@ -68,6 +75,9 @@ logging:
   level:
     com.example.aiagent: DEBUG
     dev.langchain4j: DEBUG
+    # 抑制 SSE 场景下 "Cannot render error page for request [null]" 的 ERROR 噪声日志
+    # 根因已通过将 completeWithError 改为 complete 修复，此处仅做降噪
+    org.springframework.boot.autoconfigure.web.servlet.error.ErrorMvcAutoConfiguration: OFF
 
 # Agent 配置
 agent:

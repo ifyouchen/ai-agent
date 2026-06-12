@@ -253,8 +253,9 @@ public class ReActChatController {
                                     emitter.send(SseEmitter.event().name("step").data(stepJson));
                                 }
                             } catch (IOException e) {
-                                log.warn("[ReAct-Stream] SSE 推送失败: {}", e.getMessage());
-                                emitter.completeWithError(e);
+                                // 客户端断开，静默关闭，不用 completeWithError
+                                log.debug("[ReAct-Stream] SSE 推送失败，客户端可能已断开: {}", e.getMessage());
+                                emitter.complete();
                             }
                         });
 
@@ -281,10 +282,13 @@ public class ReActChatController {
 
             } catch (Exception e) {
                 log.error("[ReAct-Stream] 推理出错 userId={}: {}", userId, e.getMessage());
+                // 不用 completeWithError：SSE 响应已 committed，异步线程中 request 为 null，
+                // 会触发 "Cannot render error page for request [null]" 警告
                 try {
-                    emitter.send(SseEmitter.event().name("error").data(e.getMessage()));
+                    emitter.send(SseEmitter.event().name("error").data(
+                            e.getMessage() != null ? e.getMessage() : "ReAct 推理失败，请重试"));
                 } catch (IOException ignore) {}
-                emitter.completeWithError(e);
+                emitter.complete();
             } finally {
                 MDC.remove("scenario");
                 MDC.remove("userId");
