@@ -250,7 +250,7 @@ export const useSessionStore = defineStore('sessions', () => {
     sessionMessages[targetId].push(item);
     if (targetId === sessionId.value) messages.value = sessionMessages[targetId];
     scheduleSave();
-    return item;
+    return sessionMessages[targetId][sessionMessages[targetId].length - 1];
   }
 
   function setFeedback(messageId, fb) {
@@ -354,7 +354,7 @@ export const useSessionStore = defineStore('sessions', () => {
     }
   }
 
-  async function doStreamChat(reqId, text, kbId) {
+async function doStreamChat(reqId, text, kbId) {
     const rt = ensureRuntime(reqId);
     rt.sending = true; rt.cancelled = false;
     const rid = ++rt.requestId;
@@ -369,15 +369,26 @@ export const useSessionStore = defineStore('sessions', () => {
     rt.eventSource = es;
 
     let rafPending = false, rafId = null;
+    const doRender = () => {
+      rafPending = false;
+      if (rt.requestId !== rid || rt.cancelled) return;
+      bubble.html = formatMarkdown(fullText) + '<span class="typing-cursor"></span>';
+      nextTick(() => {
+        const el = document.querySelector('.chat-messages');
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    };
     const schedRender = () => {
       if (rafPending) return;
       rafPending = true;
-      rafId = requestAnimationFrame(() => {
-        rafPending = false;
-        if (rt.requestId !== rid || rt.cancelled) return;
-        bubble.html = formatMarkdown(fullText) + '<span class="typing-cursor"></span>';
-      });
+      rafId = requestAnimationFrame(doRender);
     };
+
+    const onVisible = () => {
+      if (document.hidden || rt.requestId !== rid || rt.cancelled || !fullText) return;
+      if (!rafPending) { rafPending = true; rafId = requestAnimationFrame(doRender); }
+    };
+    document.addEventListener('visibilitychange', onVisible);
 
     es.onmessage = ev => {
       if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
@@ -410,6 +421,7 @@ export const useSessionStore = defineStore('sessions', () => {
     };
 
     function finishStream() {
+      document.removeEventListener('visibilitychange', onVisible);
       if (rt.requestId === rid) {
         rt.sending = false; rt.eventSource = null; rt.bubble = null; rt.text = '';
         scheduleSave();
