@@ -179,7 +179,10 @@
         <div class="kb-panel">
           <div class="kb-selector-area">
             <div class="kb-selector-header">
-              <h3 class="kb-section-title">我的知识库</h3>
+              <div class="kb-section-title-row">
+                <h3 class="kb-section-title">知识库</h3>
+                <span class="kb-org-badge" :title="'当前组织：' + currentOrgName">{{ currentOrgName }}</span>
+              </div>
               <button class="kb-create-btn" type="button" @click="handleCreateKb">+ 新建</button>
             </div>
             <div class="kb-list">
@@ -315,7 +318,7 @@
               <h3 class="org-section-title">组织管理</h3>
               <button class="org-create-btn" type="button" @click="handleCreateOrg">+ 创建企业组织</button>
             </div>
-            <div class="org-desc">组织是多租户的基本单位。个人用户自动拥有「个人空间」，企业可创建组织邀请员工共享知识库。</div>
+            <div class="org-desc">组织是多租户的基本单位。个人用户自动拥有「个人空间」，企业可创建组织邀请员工共享知识库。<br><strong>点击组织可切换，知识库 Tab 将自动显示该组织的知识库。</strong></div>
             <div class="org-list">
               <div v-if="organizations.length === 0" class="org-empty-hint">暂无组织</div>
               <div
@@ -328,14 +331,26 @@
                 <div class="org-item-icon">{{ org.orgType === 'PERSONAL' ? '个人' : '企业' }}</div>
                 <div class="org-item-info">
                   <div class="org-item-name">{{ org.orgType === 'PERSONAL' ? '个人空间' : (org.name || org.orgId) }}</div>
-                  <div class="org-item-meta">{{ orgRoleLabel(org.role) }}</div>
+                  <div class="org-item-meta">
+                    {{ orgRoleLabel(org.role) }}
+                    <template v-if="org.orgId === currentOrgId">
+                      <span class="org-item-kb-count">· 知识库 {{ knowledgeBases.length }} 个</span>
+                    </template>
+                  </div>
                 </div>
+                <span v-if="org.orgId === currentOrgId" class="org-item-active-badge">当前</span>
               </div>
             </div>
             <div v-if="currentOrgId" class="org-actions">
               <h4 class="org-section-title">组织操作</h4>
-              <button class="org-action-btn" type="button" @click="handleInviteMember">邀请成员</button>
-              <button class="org-action-btn" type="button" @click="showOrgMembers(currentOrgId)">查看成员</button>
+              <!-- 个人空间不支持邀请，仅企业组织显示邀请/查看成员 -->
+              <template v-if="currentOrg?.orgType === 'ENTERPRISE'">
+                <button class="org-action-btn" type="button" @click="handleInviteMember">邀请成员</button>
+                <button class="org-action-btn" type="button" @click="showOrgMembers(currentOrgId)">查看成员</button>
+              </template>
+              <template v-else>
+                <p class="org-personal-hint">个人空间为私有隔离空间，不支持邀请成员。<br>如需多人协作，请创建企业组织。</p>
+              </template>
             </div>
           </div>
         </div>
@@ -703,6 +718,15 @@ const dialog = reactive({
 });
 
 const isAdmin = computed(() => user.value?.roles?.includes('ROLE_ADMIN') ?? false);
+
+// 当前选中的组织对象
+const currentOrg = computed(() => organizations.value.find(o => o.orgId === currentOrgId.value) ?? null);
+// 当前组织的展示名称
+const currentOrgName = computed(() => {
+  const org = currentOrg.value;
+  if (!org) return '个人空间';
+  return org.orgType === 'PERSONAL' ? '个人空间' : (org.name || org.orgId);
+});
 
 const uploadQueueFinished = computed(() =>
   uploadQueue.value.length > 0 &&
@@ -1354,7 +1378,13 @@ function scrollToBottom() {
 
 async function loadKnowledgeBases() {
   try {
-    knowledgeBases.value = await api.listKnowledgeBases();
+    // 传当前组织 ID，切换组织后知识库列表会随之变化
+    knowledgeBases.value = await api.listKnowledgeBases(currentOrgId.value || undefined);
+    // 如果当前选中的知识库不在新列表中，清空选择
+    if (currentKbId.value && !knowledgeBases.value.find(kb => kb.id === currentKbId.value)) {
+      currentKbId.value = null;
+      docs.value = [];
+    }
     if (knowledgeBases.value.length && !currentKbId.value) selectKb(knowledgeBases.value[0].id);
   } catch {
     knowledgeBases.value = [];
@@ -1376,8 +1406,8 @@ async function handleCreateKb() {
   });
   if (!name?.trim()) return;
   try {
-    await api.createKnowledgeBase(name.trim(), '');
-    showToast('success', `知识库「${name.trim()}」创建成功`);
+    await api.createKnowledgeBase(name.trim(), '', currentOrgId.value || undefined);
+    showToast('success', `知识库「${name.trim()}」已创建到「${currentOrgName.value}」`);
     await loadKnowledgeBases();
   } catch (error) {
     showToast('error', `创建失败：${error.message}`);
@@ -1395,7 +1425,7 @@ async function handleDeleteKb(kbId) {
   });
   if (!confirmed) return;
   try {
-    await api.deleteKnowledgeBase(kbId);
+    await api.deleteKnowledgeBase(kbId, currentOrgId.value || undefined);
     showToast('success', `已删除：${kb.name}`);
     if (currentKbId.value === kbId) currentKbId.value = null;
     docs.value = [];
@@ -1411,7 +1441,7 @@ async function loadDocumentList() {
     return;
   }
   try {
-    const data = await api.listDocuments(currentKbId.value);
+    const data = await api.listDocuments(currentKbId.value, currentOrgId.value || undefined);
     docs.value = data.map(doc => ({
       id: doc.id,
       filename: doc.name ?? doc.filename,
@@ -1491,7 +1521,7 @@ async function handleUpload(file) {
         task.status = 'processing';
         task.barWidth = 100;
       }
-    });
+    }, currentOrgId.value || undefined);
 
     task.status = 'done';
     task.pct = 100;
@@ -1538,7 +1568,7 @@ async function handleDeleteDoc(doc) {
   });
   if (!confirmed) return;
   try {
-    await api.deleteDocument(currentKbId.value, doc.id);
+    await api.deleteDocument(currentKbId.value, doc.id, currentOrgId.value || undefined);
     docs.value = docs.value.filter(item => item.id !== doc.id);
     showToast('success', `已删除：${doc.filename}`);
     await loadKnowledgeBases();
@@ -1550,7 +1580,7 @@ async function handleDeleteDoc(doc) {
 async function openKbMembers() {
   kbMembersVisible.value = true;
   try {
-    kbMembers.value = await api.listKbMembers(currentKbId.value);
+    kbMembers.value = await api.listKbMembers(currentKbId.value, currentOrgId.value || undefined);
   } catch {
     kbMembers.value = [];
   }
@@ -1559,7 +1589,7 @@ async function openKbMembers() {
 async function addMemberToCurrentKb() {
   if (!kbMemberUserId.value) return showToast('warning', '请输入用户 ID');
   try {
-    await api.addKbMember(currentKbId.value, kbMemberUserId.value, kbMemberRole.value);
+    await api.addKbMember(currentKbId.value, kbMemberUserId.value, kbMemberRole.value, currentOrgId.value || undefined);
     showToast('success', `已添加成员：${kbMemberUserId.value}`);
     kbMemberUserId.value = '';
     await openKbMembers();
@@ -1584,9 +1614,14 @@ organizations.value = memberships.map(item => ({
   }
 }
 
-function selectOrg(orgId) {
+async function selectOrg(orgId) {
+  if (currentOrgId.value === orgId) return;
   currentOrgId.value = orgId;
-  showToast('info', '已切换组织');
+  // 切换组织后立即刷新知识库列表
+  await loadKnowledgeBases();
+  const org = organizations.value.find(o => o.orgId === orgId);
+  const orgLabel = org?.orgType === 'PERSONAL' ? '个人空间' : (org?.name || orgId);
+  showToast('info', `已切换到「${orgLabel}」`);
 }
 
 async function handleCreateOrg() {

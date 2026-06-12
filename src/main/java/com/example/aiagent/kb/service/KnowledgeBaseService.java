@@ -85,6 +85,17 @@ public class KnowledgeBaseService {
     }
 
     /**
+     * 按 kbId 查询知识库（不校验 tenantId）。
+     *
+     * <p>专供"通过 kb_member 显式授权、跨组织追加列表"场景使用。
+     * 常规业务逻辑请使用 {@link #getKnowledgeBase(String, Long)}（带租户校验）。
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<KnowledgeBase> findById(Long kbId) {
+        return kbMapper.findById(kbId);
+    }
+
+    /**
      * 获取单个知识库（多租户校验）
      *
      * @throws IllegalArgumentException 若知识库不存在或不属于该租户

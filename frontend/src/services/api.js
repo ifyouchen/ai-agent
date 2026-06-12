@@ -110,26 +110,33 @@ export async function clearMemory(sessionId) {
   await http.delete(`/api/v1/chat/memory/${sessionId}`);
 }
 
-export async function listKnowledgeBases() {
-  const { data } = await http.get('/api/v1/kb');
+// ── 知识库 API（所有接口支持可选 orgId 参数，不传则使用默认个人组织） ──────────────
+
+export async function listKnowledgeBases(orgId) {
+  const params = orgId ? { params: { orgId } } : {};
+  const { data } = await http.get('/api/v1/kb', params);
   return data;
 }
 
-export async function createKnowledgeBase(name, description) {
-  const { data } = await http.post('/api/v1/kb', { name, description });
+export async function createKnowledgeBase(name, description, orgId) {
+  const params = orgId ? { params: { orgId } } : {};
+  const { data } = await http.post('/api/v1/kb', { name, description }, params);
   return data;
 }
 
-export async function deleteKnowledgeBase(kbId) {
-  const { data } = await http.delete(`/api/v1/kb/${kbId}`);
+export async function deleteKnowledgeBase(kbId, orgId) {
+  const params = orgId ? { params: { orgId } } : {};
+  const { data } = await http.delete(`/api/v1/kb/${kbId}`, params);
   return data;
 }
 
-export async function uploadDocument(kbId, file, onProgress) {
+export async function uploadDocument(kbId, file, onProgress, orgId) {
   const formData = new FormData();
   formData.append('file', file);
+  const params = orgId ? { orgId } : {};
   const { data } = await http.post(`/api/v1/kb/${kbId}/documents`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    params,
     onUploadProgress: onProgress
       ? (evt) => {
           const pct = evt.total ? Math.round((evt.loaded / evt.total) * 100) : 0;
@@ -140,33 +147,39 @@ export async function uploadDocument(kbId, file, onProgress) {
   return data;
 }
 
-export async function listDocuments(kbId) {
-  const { data } = await http.get(`/api/v1/kb/${kbId}/documents`);
+export async function listDocuments(kbId, orgId) {
+  const params = orgId ? { params: { orgId } } : {};
+  const { data } = await http.get(`/api/v1/kb/${kbId}/documents`, params);
   return data;
 }
 
-export async function deleteDocument(kbId, docId) {
-  const { data } = await http.delete(`/api/v1/kb/${kbId}/documents/${docId}`);
+export async function deleteDocument(kbId, docId, orgId) {
+  const params = orgId ? { params: { orgId } } : {};
+  const { data } = await http.delete(`/api/v1/kb/${kbId}/documents/${docId}`, params);
   return data;
 }
 
-export async function queryKnowledgeBase(kbId, question) {
-  const { data } = await http.post(`/api/v1/kb/${kbId}/query`, { question });
+export async function queryKnowledgeBase(kbId, question, orgId) {
+  const params = orgId ? { params: { orgId } } : {};
+  const { data } = await http.post(`/api/v1/kb/${kbId}/query`, { question }, params);
   return data;
 }
 
-export async function listKbMembers(kbId) {
-  const { data } = await http.get(`/api/v1/kb/${kbId}/members`);
+export async function listKbMembers(kbId, orgId) {
+  const params = orgId ? { params: { orgId } } : {};
+  const { data } = await http.get(`/api/v1/kb/${kbId}/members`, params);
   return data;
 }
 
-export async function addKbMember(kbId, userId, role) {
-  const { data } = await http.post(`/api/v1/kb/${kbId}/members`, { userId, role });
+export async function addKbMember(kbId, userId, role, orgId) {
+  const params = orgId ? { params: { orgId } } : {};
+  const { data } = await http.post(`/api/v1/kb/${kbId}/members`, { userId, role }, params);
   return data;
 }
 
-export async function removeKbMember(kbId, userId) {
-  const { data } = await http.delete(`/api/v1/kb/${kbId}/members/${userId}`);
+export async function removeKbMember(kbId, userId, orgId) {
+  const params = orgId ? { params: { orgId } } : {};
+  const { data } = await http.delete(`/api/v1/kb/${kbId}/members/${userId}`, params);
   return data;
 }
 

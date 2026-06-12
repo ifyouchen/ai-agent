@@ -191,6 +191,39 @@ public class OrganizationService {
     }
 
     /**
+     * 解析并校验用户请求的组织 ID。
+     *
+     * <p>规则：
+     * <ul>
+     *   <li>requestedOrgId 为 null/空 → 返回默认个人组织（向后兼容）</li>
+     *   <li>requestedOrgId 不为空 → 校验用户是否为该组织成员，通过则返回，否则抛异常</li>
+     * </ul>
+     *
+     * @param userId          当前登录用户
+     * @param requestedOrgId  前端传入的目标组织 ID（可为 null）
+     * @return 最终使用的 orgId（同时作为 tenantId）
+     * @throws IllegalArgumentException 组织不存在或用户不是成员
+     */
+    public String resolveOrgId(String userId, String requestedOrgId) {
+        if (requestedOrgId == null || requestedOrgId.isBlank()) {
+            return getDefaultOrgId(userId);
+        }
+
+        // 校验组织是否存在
+        if (!organizationMapper.existsByOrgId(requestedOrgId)) {
+            throw new IllegalArgumentException("组织不存在：" + requestedOrgId);
+        }
+
+        // 校验用户是否为该组织成员
+        boolean isMember = orgMemberMapper.findByOrgIdAndUserId(requestedOrgId, userId).isPresent();
+        if (!isMember) {
+            throw new IllegalArgumentException("您不是该组织的成员：" + requestedOrgId);
+        }
+
+        return requestedOrgId;
+    }
+
+    /**
      * 获取用户可用的所有组织
      */
     public List<OrgMember> getUserOrganizations(String userId) {

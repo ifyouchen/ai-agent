@@ -75,7 +75,10 @@ public class SecurityConfig {
                     "/api/v1/auth/login",
                     "/api/v1/auth/register",
                     "/actuator/health",
-                    "/actuator/prometheus"
+                    "/actuator/prometheus",
+                    // Spring Boot 内部错误转发端点必须放行，否则异常处理时会触发二次
+                    // Security 拦截，导致 "response is already committed" 循环
+                    "/error"
                 ).permitAll()
                 // 管理接口：需要 ADMIN 角色
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")

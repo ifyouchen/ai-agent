@@ -1114,6 +1114,31 @@ body {
     margin: 0;
 }
 
+/* 知识库标题行：标题 + 当前组织 badge */
+.kb-section-title-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+/* 当前组织 badge：显示在知识库标题旁边 */
+.kb-org-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
+    border-radius: 10px;
+    white-space: nowrap;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: default;
+}
+
 .kb-create-btn {
     background: var(--primary);
     color: #fff;
@@ -1382,6 +1407,25 @@ body {
     color: var(--text-muted);
 }
 
+/* 当前组织的知识库数量展示 */
+.org-item-kb-count {
+    color: var(--primary);
+    font-weight: 500;
+}
+
+/* "当前" 选中标记 badge */
+.org-item-active-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 8px;
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
 .org-empty-hint {
     color: var(--text-muted);
     font-size: 13px;
@@ -1418,6 +1462,15 @@ body {
     background: var(--primary-light);
     border-color: var(--primary);
     color: var(--primary);
+}
+
+/* 个人空间不支持邀请时的提示文字 */
+.org-personal-hint {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.7;
+    padding: 6px 0;
 }
 
 /* ===== 模态框 ===== */

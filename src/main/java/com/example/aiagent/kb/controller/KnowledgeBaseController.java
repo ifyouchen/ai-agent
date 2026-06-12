@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -39,18 +40,24 @@ import java.util.Map;
  *   <li>知识库访问通过 kb_member 表细粒度控制（OWNER/EDITOR/VIEWER）</li>
  * </ul>
  *
+ * <p>【组织联动】所有接口支持可选的 {@code ?orgId=} 请求参数：
+ * <ul>
+ *   <li>不传 → 使用用户个人默认组织（向后兼容）</li>
+ *   <li>传入 → 校验用户是否为该组织成员，通过后使用该组织的 tenantId</li>
+ * </ul>
+ *
  * <p>接口列表：
- *   POST   /api/v1/kb                          → 创建知识库
- *   GET    /api/v1/kb                          → 列出我可访问的知识库
- *   DELETE /api/v1/kb/{kbId}                   → 删除知识库
- *   POST   /api/v1/kb/{kbId}/documents         → 上传文档
- *   GET    /api/v1/kb/{kbId}/documents         → 列出文档
- *   DELETE /api/v1/kb/{kbId}/documents/{docId} → 删除文档
- *   POST   /api/v1/kb/{kbId}/query             → 知识库问答
- *   GET    /api/v1/kb/{kbId}/stats             → 统计信息
- *   POST   /api/v1/kb/{kbId}/members           → 添加知识库成员
- *   GET    /api/v1/kb/{kbId}/members           → 列出知识库成员
- *   DELETE /api/v1/kb/{kbId}/members/{userId}   → 移除知识库成员
+ *   POST   /api/v1/kb                              → 创建知识库（归属 orgId 指定的组织）
+ *   GET    /api/v1/kb?orgId=xxx                    → 列出指定组织下的知识库
+ *   DELETE /api/v1/kb/{kbId}                       → 删除知识库
+ *   POST   /api/v1/kb/{kbId}/documents             → 上传文档
+ *   GET    /api/v1/kb/{kbId}/documents             → 列出文档
+ *   DELETE /api/v1/kb/{kbId}/documents/{docId}     → 删除文档
+ *   POST   /api/v1/kb/{kbId}/query                 → 知识库问答
+ *   GET    /api/v1/kb/{kbId}/stats                 → 统计信息
+ *   POST   /api/v1/kb/{kbId}/members               → 添加知识库成员
+ *   GET    /api/v1/kb/{kbId}/members               → 列出知识库成员
+ *   DELETE /api/v1/kb/{kbId}/members/{userId}       → 移除知识库成员
  */
 @Slf4j
 @RestController
@@ -68,19 +75,22 @@ public class KnowledgeBaseController {
 
     /**
      * 创建知识库
-     * POST /api/v1/kb
+     * POST /api/v1/kb?orgId=xxx
      * Body: {"name": "产品手册", "description": "公司产品相关文档"}
      *
-     * <p>知识库创建在用户当前默认组织下。个人用户的默认组织就是个人组织，
-     * 企业用户可以通过切换默认组织来选择知识库归属。
+     * <p>知识库归属由 orgId 参数决定：
+     * <ul>
+     *   <li>不传 orgId → 在个人默认组织下创建</li>
+     *   <li>传 orgId   → 在指定组织下创建（需是该组织成员）</li>
+     * </ul>
      */
     @PostMapping
     public ResponseEntity<?> createKnowledgeBase(
             @RequestBody Map<String, String> body,
+            @RequestParam(required = false) String orgId,
             @AuthenticationPrincipal String userId) {
         try {
-            // ★ 关键变更：tenantId 从组织获取，而非直接用 userId
-            String tenantId = orgService.getDefaultOrgId(userId);
+            String tenantId = orgService.resolveOrgId(userId, orgId);
 
             KnowledgeBase kb = kbService.createKnowledgeBase(
                     tenantId,
@@ -100,30 +110,36 @@ public class KnowledgeBaseController {
 
     /**
      * 列出当前用户可访问的知识库
-     * GET /api/v1/kb
+     * GET /api/v1/kb?orgId=xxx
      *
-     * <p>包括：
-     * 1. 用户所属组织下的知识库（组织成员可访问）
-     * 2. 通过 kb_member 显式授权的知识库
+     * <p>列出逻辑：
+     * <ol>
+     *   <li>列出指定组织（orgId）下的所有知识库</li>
+     *   <li>同时追加通过 kb_member 显式授权、但不在该组织下的知识库</li>
+     * </ol>
+     * <p>不传 orgId 则使用默认个人组织（向后兼容）。
      */
     @GetMapping
     public ResponseEntity<?> listKnowledgeBases(
+            @RequestParam(required = false) String orgId,
             @AuthenticationPrincipal String userId) {
-        // ★ 变更：列出用户可访问的所有知识库（跨组织）
-        String tenantId = orgService.getDefaultOrgId(userId);
-        List<KnowledgeBase> kbs = kbService.listKnowledgeBases(tenantId);
+        try {
+            String tenantId = orgService.resolveOrgId(userId, orgId);
+            List<KnowledgeBase> kbs = new ArrayList<>(kbService.listKnowledgeBases(tenantId));
 
-        // 同时获取通过 kb_member 授权的知识库
-        List<Long> memberKbIds = kbMemberService.getAccessibleKbIds(userId);
-        for (Long kbId : memberKbIds) {
-            if (kbs.stream().noneMatch(kb -> kb.getId().equals(kbId))) {
-                kbService.getKnowledgeBase(tenantId, kbId);  // 会校验权限
-                // 如果不在列表中，追加
-                kbs.add(kbService.getKnowledgeBase(tenantId, kbId));
+            // 追加通过 kb_member 显式授权（但不属于当前组织）的知识库
+            List<Long> memberKbIds = kbMemberService.getAccessibleKbIds(userId);
+            for (Long kbId : memberKbIds) {
+                if (kbs.stream().noneMatch(kb -> kb.getId().equals(kbId))) {
+                    kbService.findById(kbId).ifPresent(kbs::add);
+                }
             }
-        }
 
-        return ResponseEntity.ok(kbs);
+            return ResponseEntity.ok(kbs);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", e.getMessage()));
+        }
     }
 
     /**
@@ -135,11 +151,11 @@ public class KnowledgeBaseController {
     @DeleteMapping("/{kbId}")
     public ResponseEntity<?> deleteKnowledgeBase(
             @PathVariable Long kbId,
+            @RequestParam(required = false) String orgId,
             @AuthenticationPrincipal String userId) {
         try {
-            String tenantId = orgService.getDefaultOrgId(userId);
+            String tenantId = orgService.resolveOrgId(userId, orgId);
 
-            // ★ 变更：权限检查通过 kb_member
             String role = kbMemberService.checkAccess(kbId, userId, tenantId);
             if (!"OWNER".equals(role)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
@@ -169,21 +185,21 @@ public class KnowledgeBaseController {
     public ResponseEntity<?> uploadDocument(
             @PathVariable Long kbId,
             @RequestParam("file") MultipartFile file,
+            @RequestParam(required = false) String orgId,
             @AuthenticationPrincipal String userId) {
 
-        String tenantId = orgService.getDefaultOrgId(userId);
-
-        // ★ 变更：权限检查
-        if (!kbMemberService.canEdit(kbId, userId, tenantId)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("error", "您没有编辑权限，需要 EDITOR 或 OWNER 角色"));
-        }
-
-        if (file.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "文件不能为空"));
-        }
-
         try {
+            String tenantId = orgService.resolveOrgId(userId, orgId);
+
+            if (!kbMemberService.canEdit(kbId, userId, tenantId)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "您没有编辑权限，需要 EDITOR 或 OWNER 角色"));
+            }
+
+            if (file.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "文件不能为空"));
+            }
+
             int chunkCount = ingestService.ingestFile(file, tenantId, kbId);
             log.info("文档上传完成 userId={} tenantId={} kbId={} file={} chunks={}",
                     userId, tenantId, kbId, file.getOriginalFilename(), chunkCount);
@@ -192,6 +208,9 @@ public class KnowledgeBaseController {
                     "filename",   file.getOriginalFilename(),
                     "chunkCount", chunkCount,
                     "kbId",       kbId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", e.getMessage()));
         } catch (IOException e) {
             log.error("文档上传失败 kbId={} file={}: {}", kbId, file.getOriginalFilename(), e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -208,11 +227,11 @@ public class KnowledgeBaseController {
     @GetMapping("/{kbId}/documents")
     public ResponseEntity<?> listDocuments(
             @PathVariable Long kbId,
+            @RequestParam(required = false) String orgId,
             @AuthenticationPrincipal String userId) {
         try {
-            String tenantId = orgService.getDefaultOrgId(userId);
+            String tenantId = orgService.resolveOrgId(userId, orgId);
 
-            // ★ 变更：权限检查
             String role = kbMemberService.checkAccess(kbId, userId, tenantId);
             if (role == null) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
@@ -237,11 +256,11 @@ public class KnowledgeBaseController {
     public ResponseEntity<?> deleteDocument(
             @PathVariable Long kbId,
             @PathVariable Long docId,
+            @RequestParam(required = false) String orgId,
             @AuthenticationPrincipal String userId) {
         try {
-            String tenantId = orgService.getDefaultOrgId(userId);
+            String tenantId = orgService.resolveOrgId(userId, orgId);
 
-            // ★ 变更：权限检查
             if (!kbMemberService.canEdit(kbId, userId, tenantId)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(Map.of("error", "您没有编辑权限，需要 EDITOR 或 OWNER 角色"));
@@ -268,6 +287,7 @@ public class KnowledgeBaseController {
     public ResponseEntity<?> query(
             @PathVariable Long kbId,
             @RequestBody Map<String, String> body,
+            @RequestParam(required = false) String orgId,
             @AuthenticationPrincipal String userId) {
 
         String question = body.get("question");
@@ -276,16 +296,14 @@ public class KnowledgeBaseController {
         }
 
         try {
-            String tenantId = orgService.getDefaultOrgId(userId);
+            String tenantId = orgService.resolveOrgId(userId, orgId);
 
-            // ★ 变更：权限检查
             String role = kbMemberService.checkAccess(kbId, userId, tenantId);
             if (role == null) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(Map.of("error", "您没有访问该知识库的权限"));
             }
 
-            // ★ 变更：tenantId 用组织 ID（而非 userId）
             KnowledgeBaseQueryService.QueryResult result =
                     kbQueryService.query(tenantId, kbId, userId, question);
 
@@ -322,9 +340,11 @@ public class KnowledgeBaseController {
     public ResponseEntity<?> addMember(
             @PathVariable Long kbId,
             @RequestBody Map<String, String> body,
+            @RequestParam(required = false) String orgId,
             @AuthenticationPrincipal String userId) {
         try {
-            if (!kbMemberService.canManageMembers(kbId, userId, orgService.getDefaultOrgId(userId))) {
+            String tenantId = orgService.resolveOrgId(userId, orgId);
+            if (!kbMemberService.canManageMembers(kbId, userId, tenantId)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(Map.of("error", "只有知识库拥有者才能管理成员"));
             }
@@ -348,9 +368,10 @@ public class KnowledgeBaseController {
     @GetMapping("/{kbId}/members")
     public ResponseEntity<?> listMembers(
             @PathVariable Long kbId,
+            @RequestParam(required = false) String orgId,
             @AuthenticationPrincipal String userId) {
         try {
-            String tenantId = orgService.getDefaultOrgId(userId);
+            String tenantId = orgService.resolveOrgId(userId, orgId);
             String role = kbMemberService.checkAccess(kbId, userId, tenantId);
             if (role == null) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
@@ -372,9 +393,11 @@ public class KnowledgeBaseController {
     public ResponseEntity<?> removeMember(
             @PathVariable Long kbId,
             @PathVariable String memberUserId,
+            @RequestParam(required = false) String orgId,
             @AuthenticationPrincipal String userId) {
         try {
-            if (!kbMemberService.canManageMembers(kbId, userId, orgService.getDefaultOrgId(userId))) {
+            String tenantId = orgService.resolveOrgId(userId, orgId);
+            if (!kbMemberService.canManageMembers(kbId, userId, tenantId)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(Map.of("error", "只有知识库拥有者才能移除成员"));
             }
@@ -397,9 +420,10 @@ public class KnowledgeBaseController {
     @GetMapping("/{kbId}/stats")
     public ResponseEntity<?> getStats(
             @PathVariable Long kbId,
+            @RequestParam(required = false) String orgId,
             @AuthenticationPrincipal String userId) {
         try {
-            String tenantId = orgService.getDefaultOrgId(userId);
+            String tenantId = orgService.resolveOrgId(userId, orgId);
 
             String role = kbMemberService.checkAccess(kbId, userId, tenantId);
             if (role == null) {
