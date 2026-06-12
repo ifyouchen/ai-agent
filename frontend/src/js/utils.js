@@ -38,7 +38,7 @@ markdownRenderer.codespan = ({ text }) =>
 
 markdownRenderer.code = ({ text, lang, escaped }) => {
     const rawCode = text || '';
-    const langName = (lang || '').match(/^\S+/)?.[0] || '';
+    const langName = ((lang || '').match(/^[A-Za-z0-9_-]+/)?.[0] || '').toLowerCase();
     const safeLang = escapeHtml(langName);
     const langLabel = safeLang ? `<span class="code-lang">${safeLang}</span>` : '';
     const copyBtn = `<button type="button" class="copy-code-btn" data-code="${encodeURIComponent(rawCode)}">复制</button>`;
@@ -71,12 +71,33 @@ export function formatMarkdown(text) {
 }
 
 function normalizeMarkdownText(text) {
-    return String(text)
+    const normalized = String(text)
         .replace(/\r\n?/g, '\n')
-        .replace(/[ \t]+\n/g, '\n')
+        .replace(/[ \t]+\n/g, '\n');
+
+    return normalizeMarkdownSyntaxOutsideCode(normalized)
         .replace(/^\s*[-*+]\s*-{2,}\s*$/gm, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
+}
+
+function normalizeMarkdownSyntaxOutsideCode(text) {
+    return text
+        .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g)
+        .map((part) => {
+            if (part.startsWith('```') || part.startsWith('~~~')) {
+                return part;
+            }
+            return normalizeMarkdownBlock(part);
+        })
+        .join('');
+}
+
+function normalizeMarkdownBlock(text) {
+    return text
+        .replace(/^(#{1,6})(?=\S)/gm, '$1 ')
+        .replace(/^(\s{0,3})([-*+])(?=[^\s-*+])/gm, '$1$2 ')
+        .replace(/^(\s{0,3})(\d+[.)])(?=\S)/gm, '$1$2 ');
 }
 
 function escapeHtml(value) {
