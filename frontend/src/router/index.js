@@ -1,0 +1,67 @@
+/**
+ * Vue Router 路由配置
+ *
+ * 路由结构：
+ *   /           → 重定向到 /chat
+ *   /chat       → 对话页
+ *   /kb         → 知识库页
+ *   /org        → 组织管理页
+ *   /monitor    → 监控页（仅 Admin 可见）
+ *   /profile    → 用户资料页
+ *
+ * 路由守卫：
+ *   - 未登录 → 跳转 /login.html
+ *   - 非 Admin 访问 /monitor → 重定向到 /chat
+ */
+import { createRouter, createWebHashHistory } from 'vue-router';
+import { getToken, getUser } from '../services/api.js';
+
+// 懒加载各视图组件
+const ChatView         = () => import('../views/ChatView.vue');
+const KnowledgeBaseView = () => import('../views/KnowledgeBaseView.vue');
+const OrgView          = () => import('../views/OrgView.vue');
+const MonitorView      = () => import('../views/MonitorView.vue');
+const ProfileView      = () => import('../views/ProfileView.vue');
+const MainLayout       = () => import('../components/layout/MainLayout.vue');
+
+const routes = [
+  {
+    path: '/',
+    component: MainLayout,
+    children: [
+      { path: '',      redirect: '/chat' },
+      { path: 'chat',  component: ChatView,          meta: { title: '对话' } },
+      { path: 'kb',    component: KnowledgeBaseView, meta: { title: '知识库' } },
+      { path: 'org',   component: OrgView,           meta: { title: '组织管理' } },
+      { path: 'monitor', component: MonitorView,     meta: { title: '监控', requiresAdmin: true } },
+      { path: 'profile', component: ProfileView,     meta: { title: '个人资料' } },
+    ],
+  },
+];
+
+const router = createRouter({
+  history: createWebHashHistory(),
+  routes,
+});
+
+// 全局前置守卫
+router.beforeEach((to) => {
+  // 未登录 → 跳转登录页
+  if (!getToken()) {
+    location.replace('/login.html');
+    return false;
+  }
+
+  // 非 Admin 访问 /monitor → 重定向到 /chat
+  if (to.meta.requiresAdmin) {
+    const user  = getUser();
+    const roles = user?.roles || [];
+    if (!roles.includes('ROLE_ADMIN')) {
+      return { path: '/chat' };
+    }
+  }
+
+  return true;
+});
+
+export default router;

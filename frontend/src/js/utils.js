@@ -11,8 +11,8 @@ import DOMPurify from 'dompurify';
  */
 const PURIFY_CONFIG = {
     ALLOWED_TAGS: ['pre', 'code', 'strong', 'em', 'h2', 'h3', 'li', 'br',
-                   'div', 'span', 'details', 'summary'],
-    ALLOWED_ATTR: ['class'],
+                   'div', 'span', 'details', 'summary', 'button'],
+    ALLOWED_ATTR: ['class', 'type', 'data-code'],
 };
 
 /**
@@ -29,8 +29,12 @@ export function formatMarkdown(text) {
     if (!text) return '';
     const html = text
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/```(\w*)\n?([\s\S]*?)```/g,
-            '<pre class="code-block"><code>$2</code></pre>')
+        // 代码块：添加语言标签 + 复制按钮
+        .replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+            const langLabel = lang ? `<span class="code-lang">${lang}</span>` : '';
+            const copyBtn   = `<button type="button" class="copy-code-btn" data-code="${encodeURIComponent(code)}">复制</button>`;
+            return `<div class="code-block-wrap">${langLabel}${copyBtn}<pre class="code-block"><code>${code}</code></pre></div>`;
+        })
         .replace(/`([^`]+)`/g,
             '<code class="inline-code">$1</code>')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
@@ -40,6 +44,24 @@ export function formatMarkdown(text) {
         .replace(/^- (.+)$/gm, '<li>$1</li>')
         .replace(/\n/g, '<br>');
     return DOMPurify.sanitize(html, PURIFY_CONFIG);
+}
+
+/**
+ * 代码块复制：事件委托处理器（挂载到 document 上）
+ * 在 App.vue 的 onMounted 中调用 setupCopyCodeHandler() 一次即可
+ */
+export function setupCopyCodeHandler() {
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.copy-code-btn');
+        if (!btn) return;
+        const code = decodeURIComponent(btn.dataset.code || '');
+        navigator.clipboard.writeText(code).then(() => {
+            const orig = btn.textContent;
+            btn.textContent = '已复制!';
+            btn.classList.add('copied');
+            setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1800);
+        }).catch(() => {});
+    });
 }
 
 /**

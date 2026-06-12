@@ -2,6 +2,7 @@ package com.example.aiagent.security.service;
 
 import com.example.aiagent.security.entity.OrgMember;
 import com.example.aiagent.security.entity.Organization;
+import com.example.aiagent.security.entity.SysUser;
 import com.example.aiagent.security.mapper.OrgMemberMapper;
 import com.example.aiagent.security.mapper.OrganizationMapper;
 import com.example.aiagent.security.mapper.SysUserMapper;
@@ -15,6 +16,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * 组织管理服务
@@ -276,19 +278,30 @@ public class OrganizationService {
     /**
      * 获取组织的所有成员（含 username）
      *
-     * <p>通过 SysUserMapper 逐条查询 username（N+1），组织成员数通常 &lt; 50，性能可接受。
+     * <p>使用 IN 批量查询替代逐条 N+1 查询：
+     * <ol>
+     *   <li>查出所有 OrgMember（1 次 SQL）</li>
+     *   <li>收集 userId 列表，一次性批量查 SysUser（1 次 SQL）</li>
+     *   <li>在内存中按 userId 关联 username</li>
+     * </ol>
      */
     public List<Map<String, Object>> getOrgMembersWithUsername(String orgId) {
         List<OrgMember> members = orgMemberMapper.findByOrgId(orgId);
+        if (members.isEmpty()) return new ArrayList<>();
+
+        // 批量查 username（1 次 SQL，替代 N 次单条查询）
+        List<String> userIds = members.stream().map(OrgMember::getUserId).toList();
+        Map<String, String> userIdToName = sysUserMapper.findByUserIds(userIds)
+                .stream()
+                .collect(Collectors.toMap(SysUser::getUserId, SysUser::getUsername));
+
         List<Map<String, Object>> result = new ArrayList<>();
         for (OrgMember member : members) {
             Map<String, Object> item = new HashMap<>();
-            item.put("userId", member.getUserId());
-            item.put("role", member.getRole());
+            item.put("userId",   member.getUserId());
+            item.put("username", userIdToName.getOrDefault(member.getUserId(), member.getUserId()));
+            item.put("role",     member.getRole());
             item.put("joinedAt", member.getJoinedAt());
-            // 查询用户名
-            sysUserMapper.findByUserId(member.getUserId())
-                    .ifPresent(u -> item.put("username", u.getUsername()));
             result.add(item);
         }
         return result;

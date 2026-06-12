@@ -107,6 +107,23 @@ public class AuthController {
     }
 
     /**
+     * 更新用户 Profile（昵称、邮箱）
+     * PUT /api/v1/auth/profile
+     * Body: {"nickname": "...", "email": "..."}
+     */
+    @PutMapping("/profile")
+    public ResponseEntity<?> updateProfile(
+            @AuthenticationPrincipal String userId,
+            @RequestBody Map<String, String> request) {
+        try {
+            authService.updateProfile(userId, request.get("nickname"), request.get("email"));
+            return ResponseEntity.ok(authService.getProfile(userId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
      * 修改密码
      * PUT /api/v1/auth/profile/password
      * Body: {"oldPassword": "...", "newPassword": "..."}

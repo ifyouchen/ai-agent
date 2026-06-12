@@ -206,13 +206,21 @@
           <div class="kb-selector-area">
             <div class="kb-selector-header">
               <div class="kb-section-title-row">
-                <h3 class="kb-section-title">知识库</h3>
+                <h3 class="kb-section-title">
+                  知识库
+                  <svg v-if="kbLoading" class="inline-spinner" viewBox="0 0 24 24" fill="none" width="14" height="14">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
+                  </svg>
+                </h3>
                 <span class="kb-org-badge" :title="'当前组织：' + currentOrgName">{{ currentOrgName }}</span>
               </div>
               <button class="kb-create-btn" type="button" @click="handleCreateKb">+ 新建</button>
             </div>
             <div class="kb-list">
-              <div v-if="knowledgeBases.length === 0" class="kb-empty-hint">暂无知识库，点击上方按钮创建</div>
+              <div v-if="kbLoading && knowledgeBases.length === 0" class="kb-loading-placeholder">
+                <div class="loading-item-skeleton" v-for="i in 3" :key="i"></div>
+              </div>
+              <div v-else-if="!kbLoading && knowledgeBases.length === 0" class="kb-empty-hint">暂无知识库，点击上方按钮创建</div>
               <div
                 v-for="kb in knowledgeBases"
                 :key="kb.id"
@@ -235,8 +243,18 @@
 
           <div class="kb-current-area">
             <div class="kb-current-header">
-              <h3 class="kb-section-title">文档管理</h3>
-              <button v-if="currentKbId" class="kb-manage-members-btn" type="button" title="管理知识库成员" @click="openKbMembers">成员</button>
+              <h3 class="kb-section-title">
+                文档管理
+                <svg v-if="docsLoading" class="inline-spinner" viewBox="0 0 24 24" fill="none" width="14" height="14">
+                  <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
+                </svg>
+              </h3>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <button v-if="currentKbId" class="kb-manage-members-btn" type="button"
+                  title="刷新文档列表" @click="loadDocumentList"
+                  style="padding:4px 8px;">↻</button>
+                <button v-if="currentKbId" class="kb-manage-members-btn" type="button" title="管理知识库成员" @click="openKbMembers">成员</button>
+              </div>
             </div>
 
             <div
@@ -301,11 +319,21 @@
             <div>
               <div v-if="!currentKbId" class="empty-docs">请先选择一个知识库</div>
               <div v-else-if="docs.length === 0" class="empty-docs">暂无文档，上传后 AI 可基于文档内容回答</div>
-              <div v-for="doc in docs" :key="doc.id" class="doc-item">
+              <div v-for="doc in docs" :key="doc.id" class="doc-item"
+                :class="{ 'doc-item-processing': doc.status === 'PROCESSING' }">
                 <div class="doc-icon" :class="getFileIcon(doc.filename).cls" v-html="getFileIcon(doc.filename).icon"></div>
                 <div class="doc-info">
-                  <div class="doc-name" :title="doc.filename">{{ doc.filename }}</div>
-                  <div class="doc-meta">{{ statusLabel(doc.status) }} {{ doc.chunks }} 个切片{{ doc.size ? ` · ${formatFileSize(doc.size)}` : '' }} · {{ doc.uploadedAt }}</div>
+                  <div class="doc-name" :title="doc.filename">
+                    {{ doc.filename }}
+                    <span v-if="doc.status === 'PROCESSING'" class="doc-parsing-badge">
+                      <svg class="inline-spinner" viewBox="0 0 24 24" fill="none" width="10" height="10">
+                        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" stroke-dasharray="14 50" stroke-linecap="round"/>
+                      </svg>
+                      解析中
+                    </span>
+                    <span v-else-if="doc.status === 'FAILED'" class="doc-failed-badge">解析失败</span>
+                  </div>
+                  <div class="doc-meta">{{ doc.chunks > 0 ? doc.chunks + ' 个切片' : '待切片' }}{{ doc.size ? ` · ${formatFileSize(doc.size)}` : '' }} · {{ doc.uploadedAt }}</div>
                 </div>
                 <div class="doc-actions">
                   <button class="doc-delete" type="button" title="从知识库删除此文档" @click="handleDeleteDoc(doc)"></button>
@@ -388,12 +416,23 @@
         <div class="kb-panel">
           <div class="org-panel">
             <div class="org-header">
-              <h3 class="org-section-title">组织管理</h3>
+              <h3 class="org-section-title">
+                组织管理
+                <svg v-if="orgLoading" class="inline-spinner" viewBox="0 0 24 24" fill="none" width="14" height="14">
+                  <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
+                </svg>
+              </h3>
               <button class="org-create-btn" type="button" @click="handleCreateOrg">+ 创建企业组织</button>
             </div>
             <div class="org-desc">组织是多租户的基本单位。个人用户自动拥有「个人空间」，企业可创建组织邀请员工共享知识库。<br><strong>点击组织可切换，知识库 Tab 将自动显示该组织的知识库。</strong></div>
             <div class="org-list">
-              <div v-if="organizations.length === 0" class="org-empty-hint">暂无组织</div>
+              <div v-if="orgLoading && organizations.length === 0" class="org-empty-hint">
+                <svg class="inline-spinner" viewBox="0 0 24 24" fill="none" width="16" height="16">
+                  <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
+                </svg>
+                加载中…
+              </div>
+              <div v-else-if="!orgLoading && organizations.length === 0" class="org-empty-hint">暂无组织</div>
               <div
                 v-for="org in organizations"
                 :key="org.orgId"
@@ -916,6 +955,11 @@ let _kbSearchTimer = null;
 const organizations = ref([]);
 const currentOrgId = ref(null);
 const orgModal = reactive({ visible: false, title: '', orgId: '', members: [] });
+
+// ── 全局加载状态 ─────────────────────────────────────────────────
+const kbLoading   = ref(false);  // 知识库列表加载中
+const docsLoading = ref(false);  // 文档列表加载中
+const orgLoading  = ref(false);  // 组织列表加载中
 
 // 组织邀请成员搜索
 const orgInviteUserId = ref('');       // 选定后的 userId
@@ -1529,8 +1573,11 @@ async function doStreamChat(requestSessionId, text) {
   runtime.sending = true;
   runtime.cancelled = false;
   const requestId = ++runtime.requestId;
-  // 初始显示“思考中” loading，等待 RAG 检索 + LLM 首个 token
-  const bubble = pushMessage(requestSessionId, 'ai', '<span class="typing-dots">●●●</span>');
+  // 根据是否关联知识库，给出不同的初始提示（RAG 检索通常比纯 LLM 慢 2-5s）
+  const initHtml = currentKbId.value
+    ? '<div class=”stream-hint”><span class=”typing-dots”>●●●</span><span class=”stream-hint-label”>知识库检索中…</span></div>'
+    : '<span class=”typing-dots”>●●●</span>';
+  const bubble = pushMessage(requestSessionId, 'ai', initHtml);
   let fullText = '';
   let firstToken = true;
   const eventSource = api.chatStream(requestSessionId, text, currentKbId.value);
@@ -1896,6 +1943,7 @@ function scrollToBottom() {
 }
 
 async function loadKnowledgeBases() {
+  kbLoading.value = true;
   try {
     // 传当前组织 ID，切换组织后知识库列表会随之变化
     knowledgeBases.value = await api.listKnowledgeBases(currentOrgId.value || undefined);
@@ -1905,8 +1953,11 @@ async function loadKnowledgeBases() {
       docs.value = [];
     }
     if (knowledgeBases.value.length && !currentKbId.value) selectKb(knowledgeBases.value[0].id);
-  } catch {
+  } catch (err) {
     knowledgeBases.value = [];
+    showToast('error', friendlyError(err));
+  } finally {
+    kbLoading.value = false;
   }
 }
 
@@ -1959,6 +2010,7 @@ async function loadDocumentList() {
     docs.value = [];
     return;
   }
+  docsLoading.value = true;
   try {
     const data = await api.listDocuments(currentKbId.value, currentOrgId.value || undefined);
     docs.value = data.map(doc => ({
@@ -1971,10 +2023,11 @@ async function loadDocumentList() {
     }));
   } catch (err) {
     docs.value = [];
-    // 仅在非首次加载时提示错误，避免启动时误报
     if (currentKbId.value) {
-      showToast('error', `加载文档列表失败：${err?.message || '未知错误'}`);
+      showToast('error', friendlyError(err));
     }
+  } finally {
+    docsLoading.value = false;
   }
 }
 
@@ -2215,17 +2268,21 @@ async function addMemberToCurrentKb() {
 
 
 async function loadOrganizations() {
+  orgLoading.value = true;
   try {
     const memberships = await api.listOrganizations();
-organizations.value = memberships.map(item => ({
-                orgId: item.orgId,
-                role: item.role,
-                name: item.name,
-                orgType: item.orgType
-            }));
+    organizations.value = memberships.map(item => ({
+      orgId:   item.orgId,
+      role:    item.role,
+      name:    item.name,
+      orgType: item.orgType
+    }));
     if (organizations.value.length && !currentOrgId.value) currentOrgId.value = organizations.value[0].orgId;
-  } catch {
+  } catch (err) {
     organizations.value = [];
+    showToast('error', friendlyError(err));
+  } finally {
+    orgLoading.value = false;
   }
 }
 
@@ -2517,9 +2574,32 @@ async function doInviteOrgMember() {
 }
 
 function statusLabel(status) {
-  if (status === 'DONE') return '完成';
-  if (status === 'FAILED') return '失败';
-  return '处理中';
+  if (status === 'DONE')       return '完成';
+  if (status === 'PROCESSING') return '解析中';
+  if (status === 'FAILED')     return '失败';
+  return '待处理';
+}
+
+/**
+ * 将技术错误映射为用户友好提示
+ * 适用于 loadKnowledgeBases / loadDocumentList / loadOrganizations 等数据加载失败场景
+ */
+function friendlyError(err) {
+  const msg = err?.message || '';
+  if (!msg) return '操作失败，请重试';
+  if (msg.includes('连接') || /network|fetch/i.test(msg))
+    return '网络连接失败，请检查网络后重试';
+  if (msg.includes('401') || msg.includes('登录已过期') || msg.includes('Unauthorized'))
+    return '登录已过期，请重新登录';
+  if (msg.includes('403') || msg.includes('权限') || msg.includes('Forbidden'))
+    return '您没有权限执行此操作';
+  if (msg.includes('429') || msg.includes('限流') || msg.includes('频繁'))
+    return '请求过于频繁，请稍候再试';
+  if (msg.includes('500') || msg.includes('服务器') || /server error/i.test(msg))
+    return '服务暂时不可用，请稍后重试';
+  if (msg.includes('超时') || /timeout/i.test(msg))
+    return '请求超时，请检查网络或稍后重试';
+  return msg;
 }
 
 function kbRoleLabel(role) {

@@ -121,17 +121,38 @@ public class AuthService {
     }
 
     /**
-     * 获取当前用户个人资料
+     * 获取当前用户个人资料（含 nickname/email）
      */
     public java.util.Map<String, Object> getProfile(String userId) {
         SysUser user = sysUserMapper.findByUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
-        return java.util.Map.of(
-                "userId",    user.getUserId(),
-                "username",  user.getUsername(),
-                "roles",     user.getRoleList(),
-                "enabled",   user.getEnabled()
-        );
+        var map = new java.util.LinkedHashMap<String, Object>();
+        map.put("userId",    user.getUserId());
+        map.put("username",  user.getUsername());
+        map.put("roles",     user.getRoleList());
+        map.put("enabled",   user.getEnabled());
+        map.put("nickname",  user.getNickname() != null ? user.getNickname() : "");
+        map.put("email",     user.getEmail()    != null ? user.getEmail()    : "");
+        return map;
+    }
+
+    /**
+     * 更新用户 Profile（昵称、邮箱）
+     *
+     * @throws IllegalArgumentException 用户不存在 / 邮箱格式无效
+     */
+    public void updateProfile(String userId, String nickname, String email) {
+        sysUserMapper.findByUserId(userId)
+                .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
+
+        if (email != null && !email.isBlank()
+                && !email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            throw new IllegalArgumentException("邮箱格式不正确");
+        }
+        sysUserMapper.updateProfile(userId,
+                nickname != null ? nickname.strip() : null,
+                email    != null ? email.strip()    : null);
+        log.info("用户更新 Profile userId={}", userId);
     }
 }
 

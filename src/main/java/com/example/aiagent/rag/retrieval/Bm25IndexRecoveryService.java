@@ -48,6 +48,13 @@ public class Bm25IndexRecoveryService {
             return;
         }
 
+        // 磁盘持久化索引已有数据 → 直接跳过重建（避免重启时全量重索引）
+        if (bm25Retriever.hasExistingIndex()) {
+            log.info("[BM25-Recovery] 检测到已有持久化索引（{} 条切片），跳过重建",
+                    bm25Retriever.getIndexedDocCount());
+            return;
+        }
+
         log.info("[BM25-Recovery] 开始从数据库恢复 BM25 索引...");
         long start = System.currentTimeMillis();
 

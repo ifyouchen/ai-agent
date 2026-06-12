@@ -34,5 +34,8 @@ public interface DocumentMapper {
 
     void deleteById(@Param("id") Long id);
 
+    /** 删除知识库下的所有文档（deleteKnowledgeBase 批量删除优化） */
+    int deleteByKbId(@Param("kbId") Long kbId);
+
     Optional<Document> findById(@Param("id") Long id);
 }

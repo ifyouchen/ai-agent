@@ -28,10 +28,13 @@ import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.similarities.BM25Similarity;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
+import org.apache.lucene.store.MMapDirectory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -88,6 +91,16 @@ public class Bm25Retriever {
     @Value("${rag.bm25.b:0.75}")
     private float bm25B;
 
+    /**
+     * BM25 索引存储目录（可选持久化）
+     * <ul>
+     *   <li>留空（默认）→ ByteBuffersDirectory（内存，重启后由 Recovery 服务重建）</li>
+     *   <li>填路径 → MMapDirectory（磁盘持久化，重启后索引直接可用，Recovery 可跳过重建）</li>
+     * </ul>
+     */
+    @Value("${rag.bm25.index-dir:}")
+    private String indexDir;
+
     // ── Lucene 核心组件 ──────────────────────────────────────────
 
     private Directory       directory;
@@ -102,11 +115,23 @@ public class Bm25Retriever {
 
     @PostConstruct
     public void init() throws IOException {
-        analyzer      = new StandardAnalyzer();
-        directory     = new ByteBuffersDirectory();
+        analyzer = new StandardAnalyzer();
+
+        // 根据配置选择存储后端：磁盘持久化（MMapDirectory）或内存（ByteBuffersDirectory）
+        if (indexDir != null && !indexDir.isBlank()) {
+            var idxPath = Paths.get(indexDir.trim());
+            Files.createDirectories(idxPath);
+            directory = MMapDirectory.open(idxPath);
+            log.info("[BM25-Lucene] 使用磁盘索引，路径：{}", idxPath.toAbsolutePath());
+        } else {
+            directory = new ByteBuffersDirectory();
+            log.info("[BM25-Lucene] 使用内存索引（重启后需重建）");
+        }
 
         IndexWriterConfig config = new IndexWriterConfig(analyzer);
         config.setSimilarity(new BM25Similarity(bm25K1, bm25B));
+        // OpenMode.CREATE_OR_APPEND：有已有索引则追加，没有则新建
+        config.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
         indexWriter = new IndexWriter(directory, config);
         indexWriter.commit();  // 确保初始索引存在，能被 DirectoryReader 打开
 
@@ -114,7 +139,8 @@ public class Bm25Retriever {
         indexSearcher   = new IndexSearcher(directoryReader);
         indexSearcher.setSimilarity(new BM25Similarity(bm25K1, bm25B));
 
-        log.info("[BM25-Lucene] 内嵌 BM25 索引初始化完成，k1={}, b={}", bm25K1, bm25B);
+        log.info("[BM25-Lucene] 初始化完成，k1={}, b={}，已有文档数={}",
+                bm25K1, bm25B, directoryReader.numDocs());
     }
 
     @PreDestroy
@@ -137,6 +163,23 @@ public class Bm25Retriever {
      */
     public boolean isAvailable() {
         return directory != null && indexWriter != null;
+    }
+
+    /**
+     * 检查是否已有持久化索引数据（供 Recovery 服务判断是否跳过重建）
+     *
+     * <p>仅磁盘索引（indexDir 非空）且索引非空时才有意义；内存索引始终返回 false。
+     *
+     * @return true 表示索引中已有文档，Recovery 可跳过重建
+     */
+    public boolean hasExistingIndex() {
+        if (indexDir == null || indexDir.isBlank()) return false; // 内存索引，每次都需重建
+        lock.readLock().lock();
+        try {
+            return directoryReader.numDocs() > 0;
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     /**

@@ -36,5 +36,13 @@ public interface SysUserMapper {
 
     /** 用户名模糊搜索（知识库成员添加时使用，返回前 10 条） */
     List<SysUser> searchByUsername(@Param("keyword") String keyword, @Param("limit") int limit);
+
+    /** 按 userId 列表批量查询（组织成员 username 展示时使用，N+1 → 单次 IN 查询） */
+    List<SysUser> findByUserIds(@Param("userIds") List<String> userIds);
+
+    /** 更新用户 Profile（昵称、邮箱） */
+    void updateProfile(@Param("userId") String userId,
+                       @Param("nickname") String nickname,
+                       @Param("email") String email);
 }
 

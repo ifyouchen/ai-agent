@@ -127,6 +127,11 @@ rag:
   bm25:
     k1: 1.2                # BM25 词频饱和参数（推荐 1.2~2.0）
     b:  0.75               # BM25 文档长度归一化参数（推荐 0.5~0.9）
+    # 索引存储目录（可选持久化）：
+    #   留空（默认）→ ByteBuffersDirectory（内存，重启需重建，适合开发/小规模）
+    #   填路径     → MMapDirectory（磁盘持久化，重启直接可用，适合生产）
+    #   生产示例：index-dir: /data/lucene-index
+    index-dir: ""
 
   # Elasticsearch（外部 BM25 检索，可选，需部署 ES 服务才能启用）
   # 启用后 Bm25Retriever 同时使用 Lucene（内嵌）和 ES（外部）双路 BM25，效果更好

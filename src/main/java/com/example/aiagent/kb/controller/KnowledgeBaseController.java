@@ -287,6 +287,38 @@ public class KnowledgeBaseController {
     }
 
     /**
+     * 查询单个文档解析状态（前端轮询用，比拉全量列表更轻量）
+     * GET /api/v1/kb/{kbId}/documents/{docId}/status
+     *
+     * <p>返回 {id, parseStatus, chunkCount, parseError}
+     * <p>需要至少 VIEWER 角色
+     */
+    @GetMapping("/{kbId}/documents/{docId}/status")
+    public ResponseEntity<?> getDocumentStatus(
+            @PathVariable Long kbId,
+            @PathVariable Long docId,
+            @RequestParam(required = false) String orgId,
+            @AuthenticationPrincipal String userId) {
+        try {
+            String tenantId = orgService.resolveOrgId(userId, orgId);
+            if (kbMemberService.checkAccess(kbId, userId, tenantId) == null) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "您没有访问该知识库的权限"));
+            }
+            Document doc = kbService.getDocumentById(docId)
+                    .orElseThrow(() -> new IllegalArgumentException("文档不存在"));
+            return ResponseEntity.ok(Map.of(
+                    "id",          doc.getId(),
+                    "parseStatus", doc.getParseStatus(),
+                    "chunkCount",  doc.getChunkCount(),
+                    "parseError",  doc.getParseError() != null ? doc.getParseError() : ""
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
      * 删除文档
      * DELETE /api/v1/kb/{kbId}/documents/{docId}
      *

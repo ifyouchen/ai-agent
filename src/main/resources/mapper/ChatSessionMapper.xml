@@ -48,4 +48,14 @@
         DELETE FROM chat_session WHERE session_id = #{sessionId}
     </delete>
 
+    <!-- 标题关键词搜索（ILIKE 大小写不敏感） -->
+    <select id="searchByUserId" resultMap="sessionRM">
+        SELECT id, session_id, user_id, title, kb_id, created_at, updated_at
+        FROM chat_session
+        WHERE user_id = #{userId}
+          AND title ILIKE '%' || #{keyword} || '%'
+        ORDER BY updated_at DESC
+        LIMIT #{limit}
+    </select>
+
 </mapper>

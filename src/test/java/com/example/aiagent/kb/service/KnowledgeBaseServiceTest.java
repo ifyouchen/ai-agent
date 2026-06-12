@@ -109,24 +109,26 @@ class KnowledgeBaseServiceTest {
     // ── 删除知识库 ─────────────────────────────────────────
 
     @Test
-    @DisplayName("删除知识库应级联删除文档和切片")
+    @DisplayName("删除知识库应级联批量删除文档和切片（单条 SQL，不再逐条循环）")
     void shouldCascadeDeleteDocumentsAndChunks() {
         KnowledgeBase kb = KnowledgeBase.builder()
                 .id(1L).tenantId("tenant-A").name("要删除的库").build();
         when(kbMapper.findById(1L)).thenReturn(Optional.of(kb));
 
-        com.example.aiagent.kb.entity.Document doc1 =
-                com.example.aiagent.kb.entity.Document.builder().id(10L).kbId(1L).build();
-        com.example.aiagent.kb.entity.Document doc2 =
-                com.example.aiagent.kb.entity.Document.builder().id(11L).kbId(1L).build();
-        when(documentMapper.findByKbId(1L)).thenReturn(List.of(doc1, doc2));
+        // 优化后：通过 countByKbId 获取文档数（仅用于日志），不再 findByKbId 加载列表
+        when(documentMapper.countByKbId(1L)).thenReturn(2L);
+        // 批量删除返回影响行数
+        when(chunkMapper.deleteByKbId(1L)).thenReturn(15);
+        when(documentMapper.deleteByKbId(1L)).thenReturn(2);
 
         kbService.deleteKnowledgeBase("tenant-A", 1L);
 
-        // 切片应被删除（2篇文档 → 2次调用）
-        verify(chunkMapper, times(2)).deleteByDocId(anyLong());
-        // 文档应被删除（2次）
-        verify(documentMapper, times(2)).deleteById(anyLong());
+        // 切片应通过 deleteByKbId 批量删除（单次调用，替代逐文档循环）
+        verify(chunkMapper).deleteByKbId(1L);
+        verify(chunkMapper, never()).deleteByDocId(anyLong());
+        // 文档应通过 deleteByKbId 批量删除（单次调用，替代逐文档循环）
+        verify(documentMapper).deleteByKbId(1L);
+        verify(documentMapper, never()).deleteById(anyLong());
         // 知识库应被删除（1次）
         verify(kbMapper).deleteById(1L);
     }

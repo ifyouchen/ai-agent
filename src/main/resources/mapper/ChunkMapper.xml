@@ -79,4 +79,9 @@
         DELETE FROM kb_chunk WHERE doc_id = #{docId}
     </delete>
 
+    <!-- 批量删除知识库下的所有切片（deleteKnowledgeBase 优化：单条 SQL 替代逐文档循环） -->
+    <delete id="deleteByKbId">
+        DELETE FROM kb_chunk WHERE kb_id = #{kbId}
+    </delete>
+
 </mapper>

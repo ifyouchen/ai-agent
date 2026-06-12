@@ -89,6 +89,17 @@ public class ChatHistoryService {
     }
 
     /**
+     * 按标题关键词搜索用户会话（服务端搜索）
+     *
+     * @param userId  用户 ID
+     * @param keyword 搜索关键词（空时返回空列表）
+     */
+    public List<ChatSession> searchSessions(String userId, String keyword) {
+        if (keyword == null || keyword.isBlank()) return List.of();
+        return chatSessionMapper.searchByUserId(userId, keyword.strip(), MAX_SESSIONS_PER_USER);
+    }
+
+    /**
      * 查询会话的历史消息
      */
     public List<ChatMessage> listMessages(String sessionId, String userId) {
@@ -98,6 +109,18 @@ public class ChatHistoryService {
             return List.of();
         }
         return chatMessageMapper.listBySessionId(sessionId, MAX_MESSAGES_PER_SESSION);
+    }
+
+    /**
+     * 更新会话标题（前端双击标题手动编辑后调用）
+     */
+    public void updateSessionTitle(String sessionId, String userId, String title) {
+        ChatSession session = chatSessionMapper.findBySessionId(sessionId);
+        if (session == null || !session.getUserId().equals(userId)) {
+            log.warn("会话不存在或无权限 sessionId={} userId={}", sessionId, userId);
+            return;
+        }
+        chatSessionMapper.updateTitle(sessionId, truncate(title, 50));
     }
 
     /**

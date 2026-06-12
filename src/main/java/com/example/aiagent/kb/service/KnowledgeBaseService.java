@@ -161,28 +161,24 @@ public class KnowledgeBaseService {
         KnowledgeBase kb = getKnowledgeBase(tenantId, kbId);
         log.info("删除知识库 id={} tenantId={} name={}", kbId, tenantId, kb.getName());
 
-        // 1. 查出该知识库下所有文档
-        List<Document> docs = documentMapper.findByKbId(kbId);
+        // 统计文档数（仅用于日志，无需加载文档列表）
+        long docCount = documentMapper.countByKbId(kbId);
 
-        // 2. 逐文档删除切片（避免单次大批量 DELETE 锁表）
-        for (Document doc : docs) {
-            chunkMapper.deleteByDocId(doc.getId());
-        }
+        // 1. 批量删除该知识库下的所有切片（单条 SQL，替代逐文档循环 N 次）
+        int deletedChunks = chunkMapper.deleteByKbId(kbId);
 
-        // 3. 批量删除文档
-        for (Document doc : docs) {
-            documentMapper.deleteById(doc.getId());
-        }
+        // 2. 批量删除该知识库下的所有文档（单条 SQL，替代逐文档循环 N 次）
+        int deletedDocs = documentMapper.deleteByKbId(kbId);
 
-        // 4. 删除知识库
+        // 3. 删除知识库元数据
         kbMapper.deleteById(kbId);
 
-        // 5. 清理 Lucene BM25 索引（按 kbId 删除该知识库下的所有切片索引）
+        // 4. 清理 Lucene BM25 索引（按 kbId 删除该知识库下的所有切片索引）
         if (bm25Retriever != null && bm25Retriever.isAvailable()) {
             bm25Retriever.deleteByKbId(String.valueOf(kbId));
         }
 
-        log.info("知识库删除完成 id={} 共删除文档 {} 个", kbId, docs.size());
+        log.info("知识库删除完成 id={} 共删除文档 {} 个、切片 {} 个", kbId, deletedDocs, deletedChunks);
     }
 
     // ====================================================================
@@ -199,6 +195,14 @@ public class KnowledgeBaseService {
         // 先校验知识库归属
         getKnowledgeBase(tenantId, kbId);
         return documentMapper.findByKbId(kbId);
+    }
+
+    /**
+     * 按 ID 获取文档（用于单文档状态轮询）
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<Document> getDocumentById(Long docId) {
+        return documentMapper.findById(docId);
     }
 
     /**

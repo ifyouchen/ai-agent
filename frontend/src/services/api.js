@@ -23,6 +23,11 @@ http.interceptors.response.use(
       return Promise.reject(new Error('登录已过期，请重新登录'));
     }
 
+    if (error.response?.status === 429) {
+      const retryAfter = parseInt(error.response.headers?.['retry-after'] || '60', 10);
+      return Promise.reject(new Error(`请求频率超限，请 ${retryAfter} 秒后再试`));
+    }
+
     if (!error.response) {
       return Promise.reject(new Error('无法连接服务器，请稍后再试'));
     }
@@ -160,6 +165,13 @@ export async function deleteChatSession(sessionId) {
 }
 
 /**
+ * 更新会话标题（前端双击标题后保存到服务端）
+ */
+export async function updateSessionTitle(sessionId, title) {
+  await http.patch(`/api/v1/chat/sessions/${sessionId}/title`, { title });
+}
+
+/**
  * 将前端 localStorage 历史同步到服务端（首次加载时调用）
  */
 export async function syncChatSessions(sessions) {
@@ -218,6 +230,16 @@ export async function listDocuments(kbId, orgId) {
 export async function deleteDocument(kbId, docId, orgId) {
   const params = orgId ? { params: { orgId } } : {};
   const { data } = await http.delete(`/api/v1/kb/${kbId}/documents/${docId}`, params);
+  return data;
+}
+
+/**
+ * 查询单个文档解析状态（前端轮询专用，比拉全量列表更轻量）
+ * GET /api/v1/kb/{kbId}/documents/{docId}/status
+ */
+export async function getDocumentStatus(kbId, docId, orgId) {
+  const params = orgId ? { params: { orgId } } : {};
+  const { data } = await http.get(`/api/v1/kb/${kbId}/documents/${docId}/status`, params);
   return data;
 }
 
@@ -316,6 +338,15 @@ export async function getProfile() {
 
 export async function changePassword(oldPassword, newPassword) {
   const { data } = await http.put('/api/v1/auth/profile/password', { oldPassword, newPassword });
+  return data;
+}
+
+/**
+ * 更新用户 Profile（昵称、邮箱）
+ * PUT /api/v1/auth/profile
+ */
+export async function updateProfile(nickname, email) {
+  const { data } = await http.put('/api/v1/auth/profile', { nickname, email });
   return data;
 }
 

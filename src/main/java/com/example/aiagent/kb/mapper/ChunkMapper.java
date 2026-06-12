@@ -19,6 +19,9 @@ public interface ChunkMapper {
 
     int deleteByDocId(@Param("docId") Long docId);
 
+    /** 删除知识库下的所有切片（deleteKnowledgeBase 批量删除优化） */
+    int deleteByKbId(@Param("kbId") Long kbId);
+
     long countByKbIdAndIsActive(@Param("kbId") Long kbId, @Param("isActive") boolean isActive);
 
     List<Chunk> findActiveByKbId(@Param("kbId") Long kbId);

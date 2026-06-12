@@ -28,13 +28,38 @@ public class ChatHistoryController {
 
     /**
      * 查询当前用户的会话列表（最近 50 个，按更新时间倒序）
+     * 传入 keyword 参数时进行标题模糊搜索（服务端搜索）
      *
      * GET /api/v1/chat/sessions
+     * GET /api/v1/chat/sessions?keyword=xxx
      */
     @GetMapping("/sessions")
     public ResponseEntity<List<ChatSession>> listSessions(
-            @AuthenticationPrincipal String userId) {
-        return ResponseEntity.ok(chatHistoryService.listSessions(userId));
+            @AuthenticationPrincipal String userId,
+            @RequestParam(required = false, defaultValue = "") String keyword) {
+        if (keyword.isBlank()) {
+            return ResponseEntity.ok(chatHistoryService.listSessions(userId));
+        }
+        return ResponseEntity.ok(chatHistoryService.searchSessions(userId, keyword));
+    }
+
+    /**
+     * 更新会话标题（前端双击标题后保存）
+     *
+     * PATCH /api/v1/chat/sessions/{sessionId}/title
+     * Body: {"title": "新标题"}
+     */
+    @org.springframework.web.bind.annotation.PatchMapping("/sessions/{sessionId}/title")
+    public ResponseEntity<String> updateSessionTitle(
+            @PathVariable String sessionId,
+            @AuthenticationPrincipal String userId,
+            @RequestBody Map<String, String> body) {
+        String title = body.get("title");
+        if (title == null || title.isBlank()) {
+            return ResponseEntity.badRequest().body("标题不能为空");
+        }
+        chatHistoryService.updateSessionTitle(sessionId, userId, title.strip());
+        return ResponseEntity.ok("已更新");
     }
 
     /**

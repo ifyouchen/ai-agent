@@ -43,6 +43,12 @@ public class SysUser {
     /** 默认组织 ID（注册时自动创建的个人组织） */
     private String defaultOrgId;
 
+    /** 用户昵称（可选，用于展示，默认为空） */
+    private String nickname;
+
+    /** 邮箱（可选，用于通知/找回密码） */
+    private String email;
+
     private Instant createdAt;
     private Instant updatedAt;
 

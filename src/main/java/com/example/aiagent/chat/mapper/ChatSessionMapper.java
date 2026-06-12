@@ -26,4 +26,9 @@ public interface ChatSessionMapper {
 
     /** 删除会话（级联删除消息在业务层处理） */
     void deleteBySessionId(@Param("sessionId") String sessionId);
+
+    /** 按标题关键词搜索用户会话（title ILIKE %keyword%） */
+    List<ChatSession> searchByUserId(@Param("userId") String userId,
+                                     @Param("keyword") String keyword,
+                                     @Param("limit") int limit);
 }

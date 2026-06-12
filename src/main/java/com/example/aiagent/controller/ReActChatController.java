@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -26,8 +27,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 
 /**
  * ReAct 多步推理接口
@@ -56,8 +57,15 @@ public class ReActChatController {
     private final AuditLogService auditLogService;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    /** 专用线程池：SSE 流式推理在此线程中异步执行，避免阻塞 Tomcat IO 线程 */
-    private static final ExecutorService SSE_EXECUTOR = Executors.newCachedThreadPool();
+
+    /**
+     * SSE 流式推理专属线程池（有界，防止高并发下 OOM）
+     *
+     * <p>通过 AppConfig#sseTaskExecutor Bean 注入，核心10/最大50/队列200，
+     * 替代原来的 {@code Executors.newCachedThreadPool()}（无界，高并发风险）。
+     */
+    @Qualifier("sseTaskExecutor")
+    private final Executor sseExecutor;
 
     /**
      * ReAct 多步推理对话
@@ -239,7 +247,8 @@ public class ReActChatController {
         // ── Step 4：异步线程执行 ReAct 推理 ──────────
         final String sanitizedMessage = injectionCheck.sanitizedInput();
         final Long finalKbId = kbId;
-        SSE_EXECUTOR.execute(() -> {
+        try {
+        sseExecutor.execute(() -> {
             MDC.put("scenario", "react_stream");
             MDC.put("userId", userId);
             long startMs = System.currentTimeMillis();
@@ -316,6 +325,14 @@ public class ReActChatController {
                 MDC.remove("userId");
             }
         });
+        } catch (RejectedExecutionException ex) {
+            // 线程池已满，快速失败并向客户端发送错误事件
+            log.warn("[ReAct-Stream] SSE 线程池已满，拒绝请求 userId={}", userId);
+            try {
+                emitter.send(SseEmitter.event().name("error").data("服务繁忙，请稍后重试"));
+            } catch (IOException ignore) {}
+            emitter.complete();
+        }
 
         return emitter;
     }

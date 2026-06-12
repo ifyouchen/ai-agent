@@ -275,3 +275,13 @@ BEGIN
         RAISE NOTICE 'knowledge_base.embedding 已从 vector(1536) 修正为 vector(1024)';
     END IF;
 END $$;
+
+-- ============================================================
+-- 用户 Profile 扩展字段（nickname / email）
+-- continue-on-error: true 保证幂等，列已存在时跳过
+-- ============================================================
+ALTER TABLE biz_user_account ADD COLUMN IF NOT EXISTS nickname VARCHAR(50);
+ALTER TABLE biz_user_account ADD COLUMN IF NOT EXISTS email    VARCHAR(100);
+
+-- 会话标题检索加速
+CREATE INDEX IF NOT EXISTS idx_chat_session_title ON chat_session USING gin(to_tsvector('simple', title));

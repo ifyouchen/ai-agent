@@ -62,6 +62,40 @@ public class AppConfig {
     }
 
     /**
+     * SSE 流式推理专属线程池（sseTaskExecutor）
+     *
+     * <p>ReAct SSE 每路连接独占一个线程直到推理完成（约 3-30 秒），
+     * 必须与 Tomcat IO 线程池隔离，避免 IO 线程全部被 SSE 长连接阻塞。
+     *
+     * 容量规划：
+     * ┌──────────────┬──────────────────────────────────────────────────┐
+     * │  核心线程数   │  10（支持 10 路并发 ReAct 流式请求）              │
+     * │  最大线程数   │  50（流量突发时短暂扩展）                         │
+     * │  队列容量     │  200（排队等待的 SSE 请求，避免立即拒绝）          │
+     * │  空闲存活     │  60s（扩展线程在空闲 60s 后回收到核心线程数）      │
+     * └──────────────┴──────────────────────────────────────────────────┘
+     *
+     * 拒绝策略：AbortPolicy（超出容量时快速失败，返回 503，不堆积请求）
+     */
+    @Bean(name = "sseTaskExecutor")
+    public Executor sseTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(10);
+        executor.setMaxPoolSize(50);
+        executor.setQueueCapacity(200);
+        executor.setKeepAliveSeconds(60);
+        executor.setThreadNamePrefix("sse-worker-");
+        executor.setThreadGroupName("sse-group");
+        // 超出容量时直接抛出 RejectedExecutionException，由 Controller 返回 503
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        // 应用关闭时等待已建立的 SSE 流式推理完成（最长等待 30s）
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
+        executor.initialize();
+        return executor;
+    }
+
+    /**
      * 文档解析专属线程池（documentIngestExecutor）
      *
      * <p>大文件解析（PDF/Word）耗时长（秒级到分钟级），Embedding API 也有网络延迟，
