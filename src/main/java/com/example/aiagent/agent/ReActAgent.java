@@ -233,6 +233,100 @@ public class ReActAgent {
     }
 
     /**
+     * 执行 ReAct 多步推理（流式回调版本，用于 SSE 实时推送）
+     *
+     * <p>与 {@link #execute} 的差别：每完成一个推理步骤立即触发 {@code stepCallback}，
+     * 而不是全部完成后才返回，适合 SSE 场景。
+     *
+     * @param userQuery    用户原始问题
+     * @param sessionId    会话 ID（日志追踪）
+     * @param stepCallback 步骤回调，每完成一步时被调用（步骤数据 + 是否为最终答案步）
+     * @return             最终结果
+     */
+    public ReActResult executeWithCallback(String userQuery, String sessionId,
+                                           StepCallback stepCallback) {
+        log.info("[ReAct-Stream] 开始多步推理 sessionId={} query='{}'", sessionId, userQuery);
+        long startMs = System.currentTimeMillis();
+
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(SystemMessage.from(SYSTEM_PROMPT));
+        messages.add(UserMessage.from(userQuery));
+
+        List<ToolSpecification> toolSpecs = getToolSpecs();
+        List<ReActStep> steps = new ArrayList<>();
+
+        String finalAnswer = null;
+        int iteration = 0;
+
+        while (iteration < MAX_ITERATIONS) {
+            iteration++;
+            log.debug("[ReAct-Stream] 第 {} 轮推理...", iteration);
+
+            Response<AiMessage> response = chatModel.generate(messages, toolSpecs);
+            AiMessage aiMessage = response.content();
+            messages.add(aiMessage);
+
+            String thought = aiMessage.text();
+            List<ToolExecutionRequest> toolRequests = aiMessage.toolExecutionRequests();
+
+            if (toolRequests == null || toolRequests.isEmpty()) {
+                finalAnswer = thought != null ? thought : "";
+                // 推送最终答案步骤
+                stepCallback.onStep(
+                        new ReActStep(iteration, thought, null, null, null),
+                        true);
+                break;
+            }
+
+            for (ToolExecutionRequest req : toolRequests) {
+                String toolName = req.name();
+                String toolArgs = req.arguments();
+                log.info("[ReAct-Stream] 第 {} 轮 → 调用工具: {} 参数: {}", iteration, toolName, toolArgs);
+
+                String toolResult;
+                try {
+                    toolResult = invokeTool(toolName, toolArgs);
+                } catch (Exception e) {
+                    toolResult = "工具调用失败：" + e.getMessage();
+                    log.warn("[ReAct-Stream] 工具 {} 调用失败: {}", toolName, e.getMessage());
+                }
+
+                messages.add(ToolExecutionResultMessage.from(req, toolResult));
+
+                ReActStep step = new ReActStep(iteration, thought, toolName, toolArgs, toolResult);
+                steps.add(step);
+                // 每完成一个工具调用步骤立刻推送
+                stepCallback.onStep(step, false);
+            }
+        }
+
+        if (finalAnswer == null) {
+            log.warn("[ReAct-Stream] 达到最大迭代次数 {}，强制获取最终答案", MAX_ITERATIONS);
+            messages.add(UserMessage.from("请根据以上所有观察信息，给出最终答案。"));
+            Response<AiMessage> finalResponse = chatModel.generate(messages);
+            finalAnswer = finalResponse.content().text();
+            stepCallback.onStep(
+                    new ReActStep(iteration, finalAnswer, null, null, null),
+                    true);
+        }
+
+        long durationMs = System.currentTimeMillis() - startMs;
+        log.info("[ReAct-Stream] 推理完成 iterations={} durationMs={}", iteration, durationMs);
+        return new ReActResult(finalAnswer, steps, iteration, durationMs);
+    }
+
+    /**
+     * 推理步骤回调接口
+     *
+     * @param step    当前推理步骤（Thought + Action + Observation）
+     * @param isFinal 是否为最终答案步（true 时 step.thought 为最终回答，无工具调用）
+     */
+    @FunctionalInterface
+    public interface StepCallback {
+        void onStep(ReActStep step, boolean isFinal);
+    }
+
+    /**
      * 获取工具规格列表（懒加载 + 双重检查锁定）
      *
      * 通过 LangChain4j 的 Tools 工具类从 BusinessTools 的 @Tool 注解中自动提取规格，

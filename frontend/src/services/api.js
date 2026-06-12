@@ -89,6 +89,23 @@ export async function chatReact(sessionId, message) {
   return data;
 }
 
+/**
+ * ReAct 多步推理流式接口（SSE）
+ * 每完成一个推理步骤立即推送，前端可实时看到思考过程
+ *
+ * SSE 事件：
+ *   step         - 推理步骤  JSON: {iteration, thought, toolName, toolArgs, observation}
+ *   answer       - 最终答案  JSON: {answer, iterations, durationMs}
+ *   replace-answer - 脱敏替换 JSON: {answer}
+ *   error        - 错误文本
+ *   done         - 结束标识
+ */
+export function chatReactStream(sessionId, message) {
+  const token = getToken();
+  const params = new URLSearchParams({ sessionId, message, ...(token ? { token } : {}) });
+  return new EventSource(`${BASE}/api/v1/chat/react/stream?${params.toString()}`);
+}
+
 export async function clearMemory(sessionId) {
   await http.delete(`/api/v1/chat/memory/${sessionId}`);
 }

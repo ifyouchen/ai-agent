@@ -5,20 +5,28 @@ import com.example.aiagent.security.filter.OutputContentFilter;
 import com.example.aiagent.security.filter.PromptInjectionFilter;
 import com.example.aiagent.security.service.AuditLogService;
 import com.example.aiagent.security.service.RateLimitService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * ReAct 多步推理接口
@@ -45,6 +53,10 @@ public class ReActChatController {
     private final RateLimitService rateLimitService;
     private final OutputContentFilter outputContentFilter;
     private final AuditLogService auditLogService;
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    /** 专用线程池：SSE 流式推理在此线程中异步执行，避免阻塞 Tomcat IO 线程 */
+    private static final ExecutorService SSE_EXECUTOR = Executors.newCachedThreadPool();
 
     /**
      * ReAct 多步推理对话
@@ -148,6 +160,138 @@ public class ReActChatController {
         } finally {
             MDC.remove("scenario");
         }
+    }
+
+    /**
+     * ReAct 多步推理流式接口（SSE）
+     *
+     * <p>与 POST /react 的区别：每完成一个推理步骤立即通过 SSE 推送给前端，
+     * 前端可实时看到思考过程，而不必等全部完成。
+     *
+     * <pre>
+     * GET /api/v1/chat/react/stream?sessionId=user-123&message=...&token=&lt;jwt&gt;
+     *
+     * SSE 事件类型：
+     *   step  - 每步推理（工具调用）JSON：{iteration, thought, toolName, toolArgs, observation}
+     *   answer- 最终答案 JSON：{answer, iterations, durationMs}
+     *   error - 错误信息文本
+     *   done  - 结束标识
+     * </pre>
+     */
+    @GetMapping(value = "/react/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter reactStream(
+            @RequestParam String sessionId,
+            @RequestParam String message,
+            @AuthenticationPrincipal String userId,
+            HttpServletRequest httpRequest) {
+
+        SseEmitter emitter = new SseEmitter(300_000L); // ReAct 可能较慢，超时设 5 分钟
+        String clientIp = getClientIp(httpRequest);
+
+        // ── Step 1：Prompt 注入检测 ────────────────────
+        PromptInjectionFilter.FilterResult injectionCheck = promptInjectionFilter.check(message);
+        if (injectionCheck.blocked()) {
+            log.warn("[ReAct-Stream] Prompt 注入被拦截 userId={}", userId);
+            auditLogService.logSecurityBlock(
+                    AuditLogService.EventType.PROMPT_INJECTION_DETECTED,
+                    userId, clientIp, injectionCheck.reason());
+            try {
+                emitter.send(SseEmitter.event().name("error").data(injectionCheck.reason()));
+                emitter.complete();
+            } catch (IOException ignore) {}
+            return emitter;
+        }
+
+        // ── Step 2：限流校验 ──────────────────────────
+        RateLimitService.RateLimitResult rateLimit = rateLimitService.tryAcquire(userId);
+        if (!rateLimit.allowed()) {
+            log.warn("[ReAct-Stream] 限流触发 userId={}", userId);
+            auditLogService.logSecurityBlock(
+                    AuditLogService.EventType.RATE_LIMIT_TRIGGERED,
+                    userId, clientIp, rateLimit.reason());
+            try {
+                emitter.send(SseEmitter.event().name("error").data(rateLimit.reason()));
+                emitter.complete();
+            } catch (IOException ignore) {}
+            return emitter;
+        }
+
+        // ── Step 3：审计日志（请求开始）──────────────
+        auditLogService.log(AuditLogService.EventType.AI_CHAT_REQUEST,
+                userId, sessionId, clientIp, true,
+                Map.of("messageLength", injectionCheck.sanitizedInput().length(), "mode", "react-stream"));
+
+        // ── Step 4：异步线程执行 ReAct 推理 ──────────
+        final String sanitizedMessage = injectionCheck.sanitizedInput();
+        SSE_EXECUTOR.execute(() -> {
+            MDC.put("scenario", "react_stream");
+            MDC.put("userId", userId);
+            long startMs = System.currentTimeMillis();
+            try {
+                ReActAgent.ReActResult result = reActAgent.executeWithCallback(
+                        sanitizedMessage, sessionId,
+                        (step, isFinal) -> {
+                            try {
+                                if (isFinal) {
+                                    // 最终答案通过 answer 事件推送
+                                    long dur = System.currentTimeMillis() - startMs;
+                                    String answerJson = MAPPER.writeValueAsString(Map.of(
+                                            "answer", step.thought() != null ? step.thought() : "",
+                                            "iterations", step.iteration(),
+                                            "durationMs", dur
+                                    ));
+                                    emitter.send(SseEmitter.event().name("answer").data(answerJson));
+                                } else {
+                                    // 推理步骤通过 step 事件推送
+                                    String stepJson = MAPPER.writeValueAsString(Map.of(
+                                            "iteration",   step.iteration(),
+                                            "thought",     step.thought()      != null ? step.thought()      : "",
+                                            "toolName",    step.toolName()     != null ? step.toolName()     : "",
+                                            "toolArgs",    step.toolArgs()     != null ? step.toolArgs()     : "",
+                                            "observation", step.observation()  != null ? step.observation()  : ""
+                                    ));
+                                    emitter.send(SseEmitter.event().name("step").data(stepJson));
+                                }
+                            } catch (IOException e) {
+                                log.warn("[ReAct-Stream] SSE 推送失败: {}", e.getMessage());
+                                emitter.completeWithError(e);
+                            }
+                        });
+
+                // ── Step 5：输出脱敏 ──────────────────
+                OutputContentFilter.FilterResult outputCheck = outputContentFilter.filter(result.answer());
+                if (!outputCheck.detectedTypes().isEmpty()) {
+                    auditLogService.logSecurityBlock(
+                            AuditLogService.EventType.OUTPUT_SENSITIVE_FILTERED,
+                            userId, clientIp,
+                            "ReAct-Stream 输出脱敏，检测到：" + outputCheck.detectedTypes());
+                    // 通知前端替换已显示的最终答案
+                    emitter.send(SseEmitter.event().name("replace-answer")
+                            .data(MAPPER.writeValueAsString(Map.of("answer", outputCheck.filteredContent()))));
+                }
+
+                // ── Step 6：审计日志 ──────────────────
+                long duration = System.currentTimeMillis() - startMs;
+                auditLogService.logAiChat(userId, sessionId, clientIp, 0, 0);
+                log.info("[ReAct-Stream] 完成 userId={} iterations={} durationMs={}",
+                        userId, result.iterations(), duration);
+
+                emitter.send(SseEmitter.event().name("done").data("[DONE]"));
+                emitter.complete();
+
+            } catch (Exception e) {
+                log.error("[ReAct-Stream] 推理出错 userId={}: {}", userId, e.getMessage());
+                try {
+                    emitter.send(SseEmitter.event().name("error").data(e.getMessage()));
+                } catch (IOException ignore) {}
+                emitter.completeWithError(e);
+            } finally {
+                MDC.remove("scenario");
+                MDC.remove("userId");
+            }
+        });
+
+        return emitter;
     }
 
     /** 提取客户端真实 IP（兼容 Nginx 反向代理） */

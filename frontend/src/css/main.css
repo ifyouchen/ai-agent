@@ -955,6 +955,31 @@ body {
     color: #20242c;
 }
 
+/* 初始"思考中"占位区（ReAct 流式，未收到任何步骤前） */
+.react-thinking {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #7b8494;
+    font-size: 14px;
+    padding: 0 0 4px 0;
+}
+
+.react-thinking-label {
+    font-weight: 550;
+    color: #8a93a3;
+}
+
+/* 步骤列表末尾的"正在思考"待定行 */
+.react-step-pending {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #9aa3b1;
+    font-size: 13px;
+    padding-top: 4px;
+}
+
 /* ===== 知识库选择区（V2 多知识库） ===== */
 
 .kb-selector-area {
