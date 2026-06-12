@@ -148,6 +148,10 @@
     overflow-wrap: break-word;
 }
 
+.message.user .bubble p {
+    margin: 0;
+}
+
 .message.ai .bubble-wrap {
     flex: 1;
     min-width: 0;

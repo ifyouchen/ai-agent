@@ -1,6 +1,6 @@
 spring:
   profiles:
-    active: deepseek   # 切换为 claude 即可换模型
+    active: deepseek,key   # 切换为 claude,key 即可换模型
   servlet:
     multipart:
       max-file-size: 50MB        # 单个文件最大大小
@@ -46,7 +46,9 @@ mybatis:
     map-underscore-to-camel-case: true          # 自动将 snake_case 列名映射为 camelCase 字段
     default-fetch-size: 100
     default-statement-timeout: 30              # SQL 超时（秒）
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 开发期打印 SQL，生产注释掉
+    # 禁止 MyBatis 将 SQL 和参数直接打印到控制台。
+    # 文档切片 content 会作为 SQL 参数写入/读取，开启 StdOutImpl 会泄露完整文档内容。
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
 
 server:
   port: 8080
@@ -61,6 +63,11 @@ server:
 # 链路追踪（Zipkin）
 # 开发环境未启动 Zipkin 时设为 never，避免连接错误日志
 management:
+  health:
+    mail:
+      enabled: false
+    elasticsearch:
+      enabled: false
   tracing:
     sampling:
       probability: 0.0    # 采样率 0 = 不上报（开发环境）
@@ -73,8 +80,15 @@ management:
 # 日志
 logging:
   level:
-    com.example.aiagent: DEBUG
-    dev.langchain4j: DEBUG
+    com.example.aiagent: INFO
+    dev.langchain4j: INFO
+    org.mybatis: WARN
+    org.apache.ibatis: WARN
+    java.sql: WARN
+    jdbc.sqlonly: WARN
+    jdbc.sqltiming: WARN
+    jdbc.resultset: WARN
+    jdbc.audit: WARN
     # 抑制 SSE 场景下 "Cannot render error page for request [null]" 的 ERROR 噪声日志
     # 根因已通过将 completeWithError 改为 complete 修复，此处仅做降噪
     org.springframework.boot.autoconfigure.web.servlet.error.ErrorMvcAutoConfiguration: OFF
@@ -117,11 +131,6 @@ rag:
     top-k: 5                   # 最终送给 LLM 的上下文数
     llm:
       batch-size: 5            # 每批发给 LLM 评分的文档数（避免超长 Prompt）
-    bge:
-      url: http://localhost:8090/rerank
-    cohere:
-      api-key:
-      model: rerank-multilingual-v3.0
 
   # 内嵌 BM25 检索（基于 Apache Lucene，无需外部服务，始终可用）
   bm25:
@@ -132,35 +141,6 @@ rag:
     #   填路径     → MMapDirectory（磁盘持久化，重启直接可用，适合生产）
     #   生产示例：index-dir: /data/lucene-index
     index-dir: ""
-
-  # Elasticsearch（外部 BM25 检索，可选，需部署 ES 服务才能启用）
-  # 启用后 Bm25Retriever 同时使用 Lucene（内嵌）和 ES（外部）双路 BM25，效果更好
-  elasticsearch:
-    enabled: false              # 设为 true 启用外部 ES（默认关闭，内嵌 Lucene 始终可用）
-    host: localhost
-    port: 9200
-    index-name: rag-documents
-    username:                   # 留空表示无认证（开发环境）
-    password:
-    # IK 中文分词器（需安装插件：bin/elasticsearch-plugin install analysis-ik）
-    # 未安装时设为 false，自动使用 standard 分词器（英文效果好，中文效果较差）
-    ik-analyzer: true
-
-# ==================== 百度千帆 Embedding 配置 ====================
-# 申请地址：https://qianfan.cloud.baidu.com，在「密钥管理」创建 API Key
-qianfan:
-  api-key: bce-v3/ALTAK-hwJAPZlBMtrht9Zskb4hO/26375852b3614d653c162440589d6c9bcc9cab7a
-  # 填入千帆 API Key
-  base-url: https://qianfan.baidubce.com/v2
-  embedding:
-    # 向量维度 1024，中文效果好
-    model: bge-large-zh
-
-
-# 天气 API（OpenWeatherMap 免费版，申请地址：https://openweathermap.org/api）
-weather:
-  api:
-    key:                  # 留空则降级返回提示，从 openweathermap.org 免费申请
 
 # ==================== 邮件 SMTP 配置 ====================
 # 启用邮件告警时需配置此节。以 Gmail 为例：
@@ -176,17 +156,14 @@ llm:
     alert:
       dingtalk:
         enabled: false
-        webhook:
       wecom:
         enabled: false
-        webhook:
       email:
         enabled: false
         to:                    # 多收件人用逗号分隔，如: ops@corp.com,cto@corp.com
         from: ai-agent@example.com
       custom:
         enabled: false
-        webhook:
 
 # ==================== JWT 认证配置 ====================
 security:

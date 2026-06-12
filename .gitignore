@@ -27,6 +27,7 @@ logs/
 .env
 .env.local
 application-local.yml
+src/main/resources/application-key.yml
 
 # ===== 运行时产物 =====
 *.class
