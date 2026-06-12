@@ -113,6 +113,43 @@ public class KnowledgeBaseService {
     }
 
     /**
+     * 更新知识库名称和描述
+     *
+     * @param tenantId    租户 ID（用于归属校验）
+     * @param kbId        知识库 ID
+     * @param newName     新名称
+     * @param description 新描述（可为 null 或空字符串）
+     * @return 更新后的 KnowledgeBase 对象
+     * @throws IllegalArgumentException 若知识库不存在、不属于该租户或同名知识库已存在
+     */
+    @Transactional
+    public KnowledgeBase updateKnowledgeBase(String tenantId, Long kbId,
+                                              String newName, String description) {
+        log.info("更新知识库 tenantId={} kbId={} newName={}", tenantId, kbId, newName);
+
+        // 校验归属
+        KnowledgeBase kb = getKnowledgeBase(tenantId, kbId);
+
+        // 名称未变则跳过同名检查
+        if (!kb.getName().equals(newName)) {
+            kbMapper.findByTenantIdAndName(tenantId, newName).ifPresent(existing -> {
+                if (!existing.getId().equals(kbId)) {
+                    throw new IllegalArgumentException(
+                            String.format("知识库「%s」在租户 %s 下已存在", newName, tenantId));
+                }
+            });
+        }
+
+        kbMapper.updateNameAndDescription(kbId, newName,
+                description != null ? description : "");
+
+        // 返回更新后的对象
+        kb.setName(newName);
+        kb.setDescription(description != null ? description : "");
+        return kb;
+    }
+
+    /**
      * 删除知识库（级联删除全部文档和切片）
      *
      * 删除顺序：切片 → 文档 → 知识库，防止外键约束冲突。

@@ -225,6 +225,9 @@
                   <div class="kb-item-name">{{ kb.name }}</div>
                   <div class="kb-item-meta">{{ kb.docCount || 0 }} 篇文档</div>
                 </div>
+                <button class="kb-item-edit" type="button" title="编辑知识库" @click.stop="handleEditKb(kb)">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
                 <button class="kb-item-delete" type="button" title="删除知识库" @click.stop="handleDeleteKb(kb.id)"></button>
               </div>
             </div>
@@ -357,7 +360,24 @@
                   {{ member.username || member.userId }}
                   <small v-if="member.username" class="kb-member-sub-id">{{ member.userId }}</small>
                 </span>
-                <span class="kb-member-role">{{ kbRoleLabel(member.role) }}</span>
+                <!-- OWNER 角色只读展示，其余可修改 -->
+                <template v-if="member.role === 'OWNER'">
+                  <span class="kb-member-role owner-badge">{{ kbRoleLabel(member.role) }}</span>
+                </template>
+                <template v-else>
+                  <select
+                    class="kb-member-role-inline"
+                    :value="member.role"
+                    @change="changeKbMemberRole(member.userId, $event.target.value)"
+                  >
+                    <option value="VIEWER">只读</option>
+                    <option value="EDITOR">编辑</option>
+                  </select>
+                  <button class="kb-member-remove-btn" type="button" title="移除成员"
+                    @click="removeKbMemberFromPanel(member.userId)">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                  </button>
+                </template>
               </div>
             </div>
           </div>
@@ -392,13 +412,60 @@
                   </div>
                 </div>
                 <span v-if="org.orgId === currentOrgId" class="org-item-active-badge">当前</span>
+                <!-- 企业组织操作按钮 -->
+                <div v-if="org.orgType === 'ENTERPRISE'" class="org-item-actions" @click.stop>
+                  <button v-if="org.role === 'OWNER'" class="org-item-action-btn" type="button"
+                    title="编辑组织" @click.stop="handleEditOrg(org)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                  <button v-if="org.role !== 'OWNER'" class="org-item-action-btn danger" type="button"
+                    title="退出组织" @click.stop="handleLeaveOrg(org)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                  <button v-if="org.role === 'OWNER'" class="org-item-action-btn danger" type="button"
+                    title="删除组织" @click.stop="handleDeleteOrg(org)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                  </button>
+                </div>
               </div>
             </div>
             <div v-if="currentOrgId" class="org-actions">
               <h4 class="org-section-title">组织操作</h4>
-              <!-- 个人空间不支持邀请，仅企业组织显示邀请/查看成员 -->
+              <!-- 企业组织：邀请成员（用户名搜索）+ 查看成员 -->
               <template v-if="currentOrg?.orgType === 'ENTERPRISE'">
-                <button class="org-action-btn" type="button" @click="handleInviteMember">邀请成员</button>
+                <!-- 邀请成员：用户名搜索输入框 -->
+                <div class="org-invite-wrap">
+                  <div class="kb-member-search-wrap">
+                    <input
+                      v-model.trim="orgInviteUsername"
+                      type="text"
+                      placeholder="输入用户名搜索..."
+                      class="kb-member-input"
+                      autocomplete="off"
+                      @input="onOrgInviteSearchInput"
+                      @blur="hideOrgInviteSuggestions"
+                      @focus="onOrgInviteSearchInput"
+                    >
+                    <div v-if="orgInviteSuggestions.length > 0 && orgInviteSuggestionsVisible"
+                         class="kb-member-suggestions">
+                      <button
+                        v-for="u in orgInviteSuggestions"
+                        :key="u.userId"
+                        class="kb-member-suggestion-item"
+                        type="button"
+                        @mousedown.prevent="selectOrgInviteSuggestion(u)"
+                      >
+                        <span class="kb-member-sug-name">{{ u.username }}</span>
+                        <span class="kb-member-sug-id">{{ u.userId }}</span>
+                      </button>
+                    </div>
+                  </div>
+                  <select v-model="orgInviteRole" class="kb-member-role-select">
+                    <option value="MEMBER">成员</option>
+                    <option value="ADMIN">管理员</option>
+                  </select>
+                  <button class="kb-member-add-btn" type="button" @click="doInviteOrgMember">邀请</button>
+                </div>
                 <button class="org-action-btn" type="button" @click="showOrgMembers(currentOrgId)">查看成员</button>
               </template>
               <template v-else>
@@ -558,10 +625,26 @@
         <div v-if="orgModal.members.length === 0" class="empty-hint">暂无成员</div>
         <div v-for="member in orgModal.members" :key="member.userId" class="member-item">
           <div class="member-info">
-            <div class="member-id">{{ member.userId }}</div>
-            <div class="member-role">{{ orgRoleLabel(member.role) }}</div>
+            <!-- 优先显示 username，其次显示 userId -->
+            <div class="member-name">{{ member.username || member.userId }}</div>
+            <div class="member-id" v-if="member.username">{{ member.userId }}</div>
           </div>
-          <button v-if="member.role !== 'OWNER'" class="member-remove" type="button" @click="removeOrgMemberFromModal(member.userId)">移除</button>
+          <!-- OWNER 角色只读；其余成员可由 OWNER/ADMIN 修改角色 -->
+          <template v-if="member.role === 'OWNER'">
+            <span class="member-role owner-badge">{{ orgRoleLabel(member.role) }}</span>
+          </template>
+          <template v-else>
+            <select
+              class="kb-member-role-inline"
+              :value="member.role"
+              @change="changeOrgMemberRole(member.userId, $event.target.value)"
+            >
+              <option value="MEMBER">成员</option>
+              <option value="ADMIN">管理员</option>
+            </select>
+          </template>
+          <button v-if="member.role !== 'OWNER'" class="member-remove" type="button"
+            @click="removeOrgMemberFromModal(member.userId)">移除</button>
         </div>
       </div>
     </div>
@@ -833,6 +916,14 @@ let _kbSearchTimer = null;
 const organizations = ref([]);
 const currentOrgId = ref(null);
 const orgModal = reactive({ visible: false, title: '', orgId: '', members: [] });
+
+// 组织邀请成员搜索
+const orgInviteUserId = ref('');       // 选定后的 userId
+const orgInviteUsername = ref('');     // 搜索输入框内容
+const orgInviteRole = ref('MEMBER');
+const orgInviteSuggestions = ref([]);
+const orgInviteSuggestionsVisible = ref(false);
+let _orgInviteSearchTimer = null;
 
 // 用户下拉菜单
 const userMenuOpen = ref(false);
@@ -2210,19 +2301,218 @@ async function showOrgMembers(orgId) {
 }
 
 async function removeOrgMemberFromModal(userId) {
+  const member = orgModal.members.find(m => m.userId === userId);
+  const displayName = member?.username || userId;
   const confirmed = await showConfirm({
     title: '移除成员',
-    message: `确认移除成员 ${userId}？`,
+    message: `确认移除成员「${displayName}」？`,
     confirmText: '移除',
     variant: 'danger'
   });
   if (!confirmed) return;
   try {
     await api.removeOrgMember(orgModal.orgId, userId);
-    showToast('success', `已移除：${userId}`);
+    showToast('success', `已移除：${displayName}`);
     await showOrgMembers(orgModal.orgId);
   } catch (error) {
     showToast('error', `移除失败：${error.message}`);
+  }
+}
+
+/** 在成员弹窗中修改成员角色 */
+async function changeOrgMemberRole(userId, newRole) {
+  try {
+    await api.updateOrgMemberRole(orgModal.orgId, userId, newRole);
+    showToast('success', `角色已更新为「${orgRoleLabel(newRole)}」`);
+    // 更新本地列表
+    const m = orgModal.members.find(item => item.userId === userId);
+    if (m) m.role = newRole;
+  } catch (error) {
+    showToast('error', `修改角色失败：${error.message}`);
+    // 刷新以还原 UI
+    await showOrgMembers(orgModal.orgId);
+  }
+}
+
+/** 编辑知识库名称/描述 */
+async function handleEditKb(kb) {
+  const form = await showForm({
+    title: '编辑知识库',
+    confirmText: '保存',
+    fields: [
+      { key: 'name', label: '知识库名称', placeholder: '知识库名称', defaultValue: kb.name },
+      { key: 'description', label: '描述（可选）', placeholder: '简短描述', multiline: true,
+        defaultValue: kb.description || '' }
+    ]
+  });
+  const name = form?.name;
+  if (!name?.trim()) return;
+  try {
+    await api.updateKnowledgeBase(kb.id, name.trim(), form.description || '',
+                                   currentOrgId.value || undefined);
+    showToast('success', '知识库已更新');
+    await loadKnowledgeBases();
+  } catch (error) {
+    showToast('error', `更新失败：${error.message}`);
+  }
+}
+
+/** 在 KB 成员面板中修改成员角色 */
+async function changeKbMemberRole(userId, newRole) {
+  try {
+    await api.updateKbMemberRole(currentKbId.value, userId, newRole,
+                                  currentOrgId.value || undefined);
+    showToast('success', `角色已更新为「${kbRoleLabel(newRole)}」`);
+    // 更新本地列表
+    const m = kbMembers.value.find(item => item.userId === userId);
+    if (m) m.role = newRole;
+  } catch (error) {
+    showToast('error', `修改角色失败：${error.message}`);
+    await openKbMembers();
+  }
+}
+
+/** 在 KB 成员面板中移除成员 */
+async function removeKbMemberFromPanel(userId) {
+  const member = kbMembers.value.find(m => m.userId === userId);
+  const displayName = member?.username || userId;
+  const confirmed = await showConfirm({
+    title: '移除成员',
+    message: `确认从知识库移除「${displayName}」？`,
+    confirmText: '移除',
+    variant: 'danger'
+  });
+  if (!confirmed) return;
+  try {
+    await api.removeKbMember(currentKbId.value, userId, currentOrgId.value || undefined);
+    showToast('success', `已移除：${displayName}`);
+    await openKbMembers();
+  } catch (error) {
+    showToast('error', `移除失败：${error.message}`);
+  }
+}
+
+/** 编辑企业组织名称/描述 */
+async function handleEditOrg(org) {
+  const form = await showForm({
+    title: '编辑组织',
+    confirmText: '保存',
+    fields: [
+      { key: 'name', label: '组织名称', placeholder: '企业或团队名称', defaultValue: org.name || '' },
+      { key: 'description', label: '描述（可选）', placeholder: '一句话说明用途', multiline: true,
+        defaultValue: '' }
+    ]
+  });
+  const name = form?.name;
+  if (!name?.trim()) return;
+  try {
+    await api.updateOrganization(org.orgId, name.trim(), form.description || '');
+    showToast('success', '组织信息已更新');
+    await loadOrganizations();
+  } catch (error) {
+    showToast('error', `更新失败：${error.message}`);
+  }
+}
+
+/** 删除企业组织（OWNER 专属） */
+async function handleDeleteOrg(org) {
+  const confirmed = await showConfirm({
+    title: '删除组织',
+    message: `确认删除组织「${org.name || org.orgId}」？\n\n` +
+             '此操作不可恢复。组织下的知识库数据不会自动删除，但组织本身及成员关系将被永久移除。',
+    confirmText: '确认删除',
+    variant: 'danger'
+  });
+  if (!confirmed) return;
+  try {
+    await api.deleteOrganization(org.orgId);
+    showToast('success', `组织「${org.name || org.orgId}」已删除`);
+    if (currentOrgId.value === org.orgId) currentOrgId.value = null;
+    await loadOrganizations();
+    if (currentOrgId.value) await loadKnowledgeBases();
+  } catch (error) {
+    showToast('error', `删除失败：${error.message}`);
+  }
+}
+
+/** 退出企业组织（非 OWNER） */
+async function handleLeaveOrg(org) {
+  const confirmed = await showConfirm({
+    title: '退出组织',
+    message: `确认退出组织「${org.name || org.orgId}」？`,
+    confirmText: '退出',
+    variant: 'danger'
+  });
+  if (!confirmed) return;
+  try {
+    await api.leaveOrganization(org.orgId);
+    showToast('success', `已退出组织「${org.name || org.orgId}」`);
+    if (currentOrgId.value === org.orgId) currentOrgId.value = null;
+    await loadOrganizations();
+    if (currentOrgId.value) await loadKnowledgeBases();
+  } catch (error) {
+    showToast('error', `退出失败：${error.message}`);
+  }
+}
+
+// ── 组织邀请成员搜索（与 KB 成员搜索逻辑一致） ─────────────────────────────
+
+function onOrgInviteSearchInput() {
+  clearTimeout(_orgInviteSearchTimer);
+  const keyword = orgInviteUsername.value;
+  if (!keyword || keyword.length < 1) {
+    orgInviteSuggestions.value = [];
+    orgInviteSuggestionsVisible.value = false;
+    orgInviteUserId.value = '';
+    return;
+  }
+  _orgInviteSearchTimer = setTimeout(async () => {
+    try {
+      orgInviteSuggestions.value = await api.searchUsers(keyword);
+      orgInviteSuggestionsVisible.value = orgInviteSuggestions.value.length > 0;
+    } catch { orgInviteSuggestions.value = []; }
+  }, 300);
+}
+
+function selectOrgInviteSuggestion(u) {
+  orgInviteUserId.value = u.userId;
+  orgInviteUsername.value = `${u.username}（${u.userId}）`;
+  orgInviteSuggestions.value = [];
+  orgInviteSuggestionsVisible.value = false;
+}
+
+function hideOrgInviteSuggestions() {
+  setTimeout(() => { orgInviteSuggestionsVisible.value = false; }, 150);
+}
+
+/** 执行组织成员邀请 */
+async function doInviteOrgMember() {
+  if (!currentOrgId.value) return showToast('warning', '请先选择一个组织');
+
+  // 若用户没有从下拉选择，尝试精确匹配
+  if (!orgInviteUserId.value) {
+    if (orgInviteUsername.value) {
+      const results = await api.searchUsers(orgInviteUsername.value).catch(() => []);
+      if (results.length === 1) {
+        orgInviteUserId.value = results[0].userId;
+      } else if (results.length > 1) {
+        return showToast('warning', '匹配到多个用户，请从下拉列表中选择');
+      } else {
+        return showToast('warning', '未找到该用户，请确认用户名是否正确');
+      }
+    } else {
+      return showToast('warning', '请输入用户名搜索并选择');
+    }
+  }
+
+  try {
+    await api.inviteOrgMember(currentOrgId.value, orgInviteUserId.value, orgInviteRole.value);
+    showToast('success', `已邀请「${orgInviteUsername.value || orgInviteUserId.value}」加入组织`);
+    orgInviteUserId.value = '';
+    orgInviteUsername.value = '';
+    orgInviteSuggestions.value = [];
+  } catch (error) {
+    showToast('error', `邀请失败：${error.message}`);
   }
 }
 

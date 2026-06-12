@@ -186,6 +186,12 @@ export async function deleteKnowledgeBase(kbId, orgId) {
   return data;
 }
 
+export async function updateKnowledgeBase(kbId, name, description, orgId) {
+  const params = orgId ? { params: { orgId } } : {};
+  const { data } = await http.put(`/api/v1/kb/${kbId}`, { name, description }, params);
+  return data;
+}
+
 export async function uploadDocument(kbId, file, onProgress, orgId) {
   const formData = new FormData();
   formData.append('file', file);
@@ -239,6 +245,12 @@ export async function removeKbMember(kbId, userId, orgId) {
   return data;
 }
 
+export async function updateKbMemberRole(kbId, userId, role, orgId) {
+  const params = orgId ? { params: { orgId } } : {};
+  const { data } = await http.put(`/api/v1/kb/${kbId}/members/${userId}`, { role }, params);
+  return data;
+}
+
 export async function listOrganizations() {
   const { data } = await http.get('/api/v1/org');
   return data;
@@ -261,6 +273,26 @@ export async function inviteOrgMember(orgId, userId, role) {
 
 export async function removeOrgMember(orgId, userId) {
   const { data } = await http.delete(`/api/v1/org/${orgId}/members/${userId}`);
+  return data;
+}
+
+export async function updateOrganization(orgId, name, description) {
+  const { data } = await http.put(`/api/v1/org/${orgId}`, { name, description });
+  return data;
+}
+
+export async function updateOrgMemberRole(orgId, userId, role) {
+  const { data } = await http.put(`/api/v1/org/${orgId}/members/${userId}`, { role });
+  return data;
+}
+
+export async function deleteOrganization(orgId) {
+  const { data } = await http.delete(`/api/v1/org/${orgId}`);
+  return data;
+}
+
+export async function leaveOrganization(orgId) {
+  const { data } = await http.delete(`/api/v1/org/${orgId}/leave`);
   return data;
 }
 

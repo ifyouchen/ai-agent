@@ -1,6 +1,5 @@
 package com.example.aiagent.security.controller;
 
-import com.example.aiagent.security.entity.OrgMember;
 import com.example.aiagent.security.entity.Organization;
 import com.example.aiagent.security.service.OrganizationService;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +11,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -84,7 +84,7 @@ public class OrganizationController {
     }
 
     /**
-     * 获取组织详情
+     * 获取组织详情（含 org 基本信息 + 成员列表，成员包含 username）
      * GET /api/v1/org/{orgId}
      */
     @GetMapping("/{orgId}")
@@ -96,9 +96,122 @@ public class OrganizationController {
                     .body(Map.of("error", "您不是该组织的成员"));
         }
 
-        // 返回成员列表和组织信息
-        List<OrgMember> members = orgService.getOrgMembers(orgId);
-        return ResponseEntity.ok(Map.of("members", members));
+        var org = orgService.getOrganizationById(orgId);
+        if (org == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "组织不存在"));
+        }
+
+        List<Map<String, Object>> members = orgService.getOrgMembersWithUsername(orgId);
+        return ResponseEntity.ok(Map.of(
+                "orgId",       org.getOrgId(),
+                "name",        org.getName() != null ? org.getName() : "",
+                "orgType",     org.getOrgType(),
+                "description", org.getDescription() != null ? org.getDescription() : "",
+                "ownerId",     org.getOwnerId(),
+                "members",     members
+        ));
+    }
+
+    /**
+     * 编辑企业组织名称/描述
+     * PUT /api/v1/org/{orgId}
+     * Body: {"name": "新名称", "description": "新描述"}
+     *
+     * <p>仅 OWNER 可操作
+     */
+    @PutMapping("/{orgId}")
+    public ResponseEntity<?> updateOrganization(
+            @PathVariable String orgId,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal String userId) {
+        String name = body.get("name");
+        if (name == null || name.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "组织名称不能为空"));
+        }
+        try {
+            Organization updated = orgService.updateOrganization(
+                    orgId, name.trim(), body.getOrDefault("description", ""), userId);
+            return ResponseEntity.ok(Map.of(
+                    "orgId",       updated.getOrgId(),
+                    "name",        updated.getName(),
+                    "description", updated.getDescription() != null ? updated.getDescription() : "",
+                    "message",     "组织信息已更新"
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 修改组织成员角色
+     * PUT /api/v1/org/{orgId}/members/{memberUserId}
+     * Body: {"role": "ADMIN"}
+     *
+     * <p>OWNER 可将成员改为 MEMBER / ADMIN；ADMIN 可将成员改为 MEMBER
+     */
+    @PutMapping("/{orgId}/members/{memberUserId}")
+    public ResponseEntity<?> updateMemberRole(
+            @PathVariable String orgId,
+            @PathVariable String memberUserId,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal String userId) {
+        String newRole = body.get("role");
+        if (newRole == null || (!newRole.equals("MEMBER") && !newRole.equals("ADMIN"))) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "角色必须为 MEMBER 或 ADMIN"));
+        }
+        try {
+            orgService.updateMemberRole(orgId, memberUserId, newRole, userId);
+            return ResponseEntity.ok(Map.of(
+                    "message", "成员角色已更新",
+                    "orgId", orgId,
+                    "userId", memberUserId,
+                    "role", newRole
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 删除企业组织
+     * DELETE /api/v1/org/{orgId}
+     *
+     * <p>仅 OWNER 可操作，PERSONAL 组织不可删除
+     */
+    @DeleteMapping("/{orgId}")
+    public ResponseEntity<?> deleteOrganization(
+            @PathVariable String orgId,
+            @AuthenticationPrincipal String userId) {
+        try {
+            orgService.deleteOrganization(orgId, userId);
+            return ResponseEntity.ok(Map.of("message", "组织已删除", "orgId", orgId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 退出组织
+     * DELETE /api/v1/org/{orgId}/leave
+     *
+     * <p>非 OWNER 成员主动退出；OWNER 须先转让身份
+     */
+    @DeleteMapping("/{orgId}/leave")
+    public ResponseEntity<?> leaveOrganization(
+            @PathVariable String orgId,
+            @AuthenticationPrincipal String userId) {
+        try {
+            orgService.leaveOrganization(orgId, userId);
+            return ResponseEntity.ok(Map.of("message", "已成功退出组织", "orgId", orgId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        }
     }
 
     /**
@@ -130,7 +243,7 @@ public class OrganizationController {
     }
 
     /**
-     * 列出组织成员
+     * 列出组织成员（含 username）
      * GET /api/v1/org/{orgId}/members
      */
     @GetMapping("/{orgId}/members")
@@ -142,8 +255,7 @@ public class OrganizationController {
                     .body(Map.of("error", "您不是该组织的成员"));
         }
 
-        List<OrgMember> members = orgService.getOrgMembers(orgId);
-        return ResponseEntity.ok(members);
+        return ResponseEntity.ok(orgService.getOrgMembersWithUsername(orgId));
     }
 
     /**

@@ -1,14 +1,33 @@
 /**
  * 工具函数集合
  */
+import DOMPurify from 'dompurify';
 
 /**
- * 简易 Markdown 渲染（不引入外部库）
+ * DOMPurify 白名单配置
+ *
+ * 精确匹配 formatMarkdown 产生的标签集合，拒绝所有其他标签和属性，
+ * 防止 LLM 输出中的恶意 HTML（如 <img onerror=...>、<script>）执行。
+ */
+const PURIFY_CONFIG = {
+    ALLOWED_TAGS: ['pre', 'code', 'strong', 'em', 'h2', 'h3', 'li', 'br',
+                   'div', 'span', 'details', 'summary'],
+    ALLOWED_ATTR: ['class'],
+};
+
+/**
+ * 简易 Markdown 渲染 + DOMPurify 二次过滤
+ *
+ * 渲染流程：
+ *   1. 先 HTML 转义（& < > "），防止原始 HTML 直通
+ *   2. 应用 Markdown 正则，仅生成白名单标签
+ *   3. DOMPurify 白名单过滤，作为最后一道防线
+ *
  * 支持：代码块、行内代码、加粗、斜体、h2/h3、列表、换行
  */
 export function formatMarkdown(text) {
     if (!text) return '';
-    return text
+    const html = text
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/```(\w*)\n?([\s\S]*?)```/g,
             '<pre class="code-block"><code>$2</code></pre>')
@@ -20,6 +39,7 @@ export function formatMarkdown(text) {
         .replace(/^## (.+)$/gm, '<h2 class="md-h2">$1</h2>')
         .replace(/^- (.+)$/gm, '<li>$1</li>')
         .replace(/\n/g, '<br>');
+    return DOMPurify.sanitize(html, PURIFY_CONFIG);
 }
 
 /**

@@ -4,6 +4,7 @@ import com.example.aiagent.security.entity.OrgMember;
 import com.example.aiagent.security.entity.Organization;
 import com.example.aiagent.security.mapper.OrgMemberMapper;
 import com.example.aiagent.security.mapper.OrganizationMapper;
+import com.example.aiagent.security.mapper.SysUserMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,7 @@ public class OrganizationService {
 
     private final OrganizationMapper organizationMapper;
     private final OrgMemberMapper orgMemberMapper;
+    private final SysUserMapper sysUserMapper;
 
     /**
      * 创建个人组织（注册时自动调用）
@@ -262,6 +264,149 @@ public class OrganizationService {
      */
     public boolean isMemberOf(String orgId, String userId) {
         return orgMemberMapper.findByOrgIdAndUserId(orgId, userId).isPresent();
+    }
+
+    /**
+     * 按 orgId 查询组织（返回 null 而非抛异常，供 Controller 判断）
+     */
+    public Organization getOrganizationById(String orgId) {
+        return organizationMapper.findByOrgId(orgId).orElse(null);
+    }
+
+    /**
+     * 获取组织的所有成员（含 username）
+     *
+     * <p>通过 SysUserMapper 逐条查询 username（N+1），组织成员数通常 &lt; 50，性能可接受。
+     */
+    public List<Map<String, Object>> getOrgMembersWithUsername(String orgId) {
+        List<OrgMember> members = orgMemberMapper.findByOrgId(orgId);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (OrgMember member : members) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("userId", member.getUserId());
+            item.put("role", member.getRole());
+            item.put("joinedAt", member.getJoinedAt());
+            // 查询用户名
+            sysUserMapper.findByUserId(member.getUserId())
+                    .ifPresent(u -> item.put("username", u.getUsername()));
+            result.add(item);
+        }
+        return result;
+    }
+
+    /**
+     * 更新企业组织的名称和描述
+     *
+     * @throws IllegalArgumentException 若组织不存在、类型为 PERSONAL、或操作者无 OWNER 权限
+     */
+    @Transactional
+    public Organization updateOrganization(String orgId, String name, String description,
+                                            String operatorId) {
+        Organization org = organizationMapper.findByOrgId(orgId)
+                .orElseThrow(() -> new IllegalArgumentException("组织不存在：" + orgId));
+
+        if ("PERSONAL".equals(org.getOrgType())) {
+            throw new IllegalArgumentException("个人空间不支持编辑");
+        }
+
+        OrgMember operator = orgMemberMapper.findByOrgIdAndUserId(orgId, operatorId)
+                .orElseThrow(() -> new IllegalArgumentException("您不是该组织的成员"));
+        if (!"OWNER".equals(operator.getRole())) {
+            throw new IllegalArgumentException("只有组织拥有者才能编辑组织信息");
+        }
+
+        org.setName(name);
+        org.setDescription(description != null ? description : "");
+        organizationMapper.update(org);
+        log.info("组织信息更新：orgId={} name={} operatorId={}", orgId, name, operatorId);
+        return org;
+    }
+
+    /**
+     * 修改组织成员角色
+     *
+     * @throws IllegalArgumentException 若无权限、目标成员不存在或试图修改 OWNER 角色
+     */
+    @Transactional
+    public void updateMemberRole(String orgId, String targetUserId, String newRole,
+                                  String operatorId) {
+        OrgMember operator = orgMemberMapper.findByOrgIdAndUserId(orgId, operatorId)
+                .orElseThrow(() -> new IllegalArgumentException("您不是该组织的成员"));
+        if (!"OWNER".equals(operator.getRole()) && !"ADMIN".equals(operator.getRole())) {
+            throw new IllegalArgumentException("只有组织拥有者或管理员才能修改成员角色");
+        }
+
+        OrgMember target = orgMemberMapper.findByOrgIdAndUserId(orgId, targetUserId)
+                .orElseThrow(() -> new IllegalArgumentException("该用户不是组织成员"));
+        if ("OWNER".equals(target.getRole())) {
+            throw new IllegalArgumentException("不能修改组织拥有者的角色，请先转让拥有者身份");
+        }
+        // ADMIN 不能将他人提升为 OWNER
+        if ("OWNER".equals(newRole) && !"OWNER".equals(operator.getRole())) {
+            throw new IllegalArgumentException("只有拥有者才能指定新的拥有者");
+        }
+
+        orgMemberMapper.updateRole(orgId, targetUserId, newRole);
+        log.info("成员角色已修改：orgId={} userId={} newRole={} operatorId={}",
+                orgId, targetUserId, newRole, operatorId);
+    }
+
+    /**
+     * 删除企业组织
+     *
+     * <p>规则：仅 OWNER 可删，PERSONAL 组织不可删。
+     * 删除后移除所有成员记录，知识库数据本身不自动删除（由调用方决定）。
+     *
+     * @throws IllegalArgumentException 若组织不存在、是 PERSONAL 组织、或操作者非 OWNER
+     */
+    @Transactional
+    public void deleteOrganization(String orgId, String operatorId) {
+        Organization org = organizationMapper.findByOrgId(orgId)
+                .orElseThrow(() -> new IllegalArgumentException("组织不存在：" + orgId));
+
+        if ("PERSONAL".equals(org.getOrgType())) {
+            throw new IllegalArgumentException("个人空间不能删除");
+        }
+
+        OrgMember operator = orgMemberMapper.findByOrgIdAndUserId(orgId, operatorId)
+                .orElseThrow(() -> new IllegalArgumentException("您不是该组织的成员"));
+        if (!"OWNER".equals(operator.getRole())) {
+            throw new IllegalArgumentException("只有组织拥有者才能删除组织");
+        }
+
+        // 删除所有成员记录
+        List<OrgMember> members = orgMemberMapper.findByOrgId(orgId);
+        for (OrgMember m : members) {
+            orgMemberMapper.deleteByOrgIdAndUserId(orgId, m.getUserId());
+        }
+
+        // 删除组织
+        organizationMapper.deleteByOrgId(orgId);
+        log.info("企业组织已删除：orgId={} operatorId={}", orgId, operatorId);
+    }
+
+    /**
+     * 退出组织（非 OWNER 成员主动离开）
+     *
+     * @throws IllegalArgumentException 若用户非成员、或用户是 OWNER（须先转让）
+     */
+    @Transactional
+    public void leaveOrganization(String orgId, String userId) {
+        OrgMember member = orgMemberMapper.findByOrgIdAndUserId(orgId, userId)
+                .orElseThrow(() -> new IllegalArgumentException("您不是该组织的成员"));
+
+        if ("OWNER".equals(member.getRole())) {
+            throw new IllegalArgumentException("组织拥有者不能直接退出，请先将拥有者身份转让给其他成员");
+        }
+
+        Organization org = organizationMapper.findByOrgId(orgId)
+                .orElseThrow(() -> new IllegalArgumentException("组织不存在：" + orgId));
+        if ("PERSONAL".equals(org.getOrgType())) {
+            throw new IllegalArgumentException("个人空间不支持退出");
+        }
+
+        orgMemberMapper.deleteByOrgIdAndUserId(orgId, userId);
+        log.info("成员退出组织：orgId={} userId={}", orgId, userId);
     }
 
     // ── 私有辅助 ─────────────────────────────────────────────

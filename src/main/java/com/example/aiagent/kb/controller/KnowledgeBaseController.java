@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -138,6 +139,42 @@ public class KnowledgeBaseController {
             return ResponseEntity.ok(kbs);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 编辑知识库名称和描述
+     * PUT /api/v1/kb/{kbId}
+     * Body: {"name": "新名称", "description": "新描述"}
+     *
+     * <p>仅 OWNER 角色可编辑
+     */
+    @PutMapping("/{kbId}")
+    public ResponseEntity<?> updateKnowledgeBase(
+            @PathVariable Long kbId,
+            @RequestBody Map<String, String> body,
+            @RequestParam(required = false) String orgId,
+            @AuthenticationPrincipal String userId) {
+        try {
+            String tenantId = orgService.resolveOrgId(userId, orgId);
+
+            String role = kbMemberService.checkAccess(kbId, userId, tenantId);
+            if (!"OWNER".equals(role)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "只有知识库拥有者才能编辑知识库"));
+            }
+
+            String name = body.get("name");
+            if (name == null || name.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "知识库名称不能为空"));
+            }
+
+            KnowledgeBase updated = kbService.updateKnowledgeBase(
+                    tenantId, kbId, name.trim(), body.getOrDefault("description", ""));
+            return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }
     }
@@ -358,6 +395,40 @@ public class KnowledgeBaseController {
             kbMemberService.addMember(kbId, targetUserId, role, userId);
             return ResponseEntity.ok(Map.of("message", "成员添加成功",
                     "kbId", kbId, "userId", targetUserId, "role", role));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 修改知识库成员角色
+     * PUT /api/v1/kb/{kbId}/members/{memberUserId}
+     * Body: {"role": "EDITOR"}
+     *
+     * <p>仅 OWNER 角色可修改成员角色
+     */
+    @PutMapping("/{kbId}/members/{memberUserId}")
+    public ResponseEntity<?> updateMemberRole(
+            @PathVariable Long kbId,
+            @PathVariable String memberUserId,
+            @RequestBody Map<String, String> body,
+            @RequestParam(required = false) String orgId,
+            @AuthenticationPrincipal String userId) {
+        try {
+            String tenantId = orgService.resolveOrgId(userId, orgId);
+            if (!kbMemberService.canManageMembers(kbId, userId, tenantId)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "只有知识库拥有者才能修改成员角色"));
+            }
+            String newRole = body.get("role");
+            if (newRole == null || (!newRole.equals("VIEWER") && !newRole.equals("EDITOR"))) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "角色必须为 VIEWER 或 EDITOR"));
+            }
+            kbMemberService.updateMemberRole(kbId, memberUserId, newRole, userId);
+            return ResponseEntity.ok(Map.of("message", "成员角色已更新",
+                    "kbId", kbId, "userId", memberUserId, "role", newRole));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
