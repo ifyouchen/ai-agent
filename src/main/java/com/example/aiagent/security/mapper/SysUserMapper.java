@@ -44,5 +44,16 @@ public interface SysUserMapper {
     void updateProfile(@Param("userId") String userId,
                        @Param("nickname") String nickname,
                        @Param("email") String email);
+
+    /** 管理员：分页查询（支持按用户名关键词过滤） */
+    List<SysUser> findByKeyword(@Param("keyword") String keyword,
+                                @Param("offset") int offset,
+                                @Param("limit") int limit);
+
+    /** 管理员：关键词匹配总数 */
+    long countByKeyword(@Param("keyword") String keyword);
+
+    /** 更新用户角色 */
+    void updateRoles(@Param("userId") String userId, @Param("roles") String roles);
 }
 

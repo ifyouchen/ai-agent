@@ -62,16 +62,40 @@
           </button>
         </div>
       </div>
+
+      <!-- P2-14：Token 用量历史（普通用户可见） -->
+      <div class="profile-section">
+        <h3 class="profile-section-title">
+          我的用量
+          <button class="profile-toggle-btn" type="button" @click="usageVisible = !usageVisible">
+            {{ usageVisible ? '收起' : '展开' }}
+          </button>
+        </h3>
+        <div v-if="usageVisible" class="usage-section">
+          <div class="usage-cards">
+            <div class="usage-card">
+              <div class="usage-card-value">${{ todayCost }}</div>
+              <div class="usage-card-label">今日消费（USD）</div>
+            </div>
+          </div>
+          <div class="usage-chart-title">近 7 天费用趋势</div>
+          <div v-if="!dailyData.length" class="usage-empty">暂无消费记录</div>
+          <canvas v-else ref="usageChartEl" height="140"></canvas>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { Chart, LineController, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler } from 'chart.js';
 import Avatar from '../components/ui/Avatar.vue';
 import { useAuthStore } from '../stores/auth.js';
 import { useUiStore } from '../stores/ui.js';
 import * as api from '../services/api.js';
+
+Chart.register(LineController, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler);
 
 const auth = useAuthStore();
 const ui   = useUiStore();
@@ -81,6 +105,57 @@ const saving  = ref(false);
 const pwdVisible = ref(false);
 const pwdSaving  = ref(false);
 const pwd = reactive({ old: '', new: '', confirm: '' });
+
+// P2-14：Token 用量
+const usageVisible = ref(false);
+const todayCost    = ref('—');
+const dailyData    = ref([]);
+const usageChartEl = ref(null);
+let   usageChart   = null;
+
+watch(usageVisible, async (v) => {
+  if (!v) return;
+  try {
+    const [todayRes, dailyRes] = await Promise.all([
+      api.getMyTodayCost(),
+      api.getMyDailyReport(7),
+    ]);
+    const cost = todayRes.totalCostUsd ?? todayRes.costUsd ?? 0;
+    const c = Number(cost);
+    todayCost.value = c === 0 ? '0.00' : c >= 0.01 ? c.toFixed(2) : c >= 0.0001 ? c.toFixed(4) : c.toExponential(2);
+    dailyData.value = dailyRes || [];
+    await nextTick();
+    renderUsageChart();
+  } catch { /* 静默失败 */ }
+});
+
+function renderUsageChart() {
+  if (!usageChartEl.value || !dailyData.value.length) return;
+  usageChart?.destroy();
+  usageChart = new Chart(usageChartEl.value, {
+    type: 'line',
+    data: {
+      labels: dailyData.value.map(r => (r.day || '').slice(5)),
+      datasets: [{
+        label: '费用（USD）',
+        data: dailyData.value.map(r => Number(r.costUsd ?? 0)),
+        backgroundColor: '#4D6BFE18',
+        borderColor: '#4D6BFE',
+        borderWidth: 2,
+        pointRadius: 3,
+        fill: true,
+        tension: 0.3,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: v => '$' + Number(v).toFixed(4) } },
+      },
+    },
+  });
+}
 
 const rolesLabel = computed(() => {
   const roles = auth.user?.roles || [];
@@ -226,4 +301,18 @@ async function changePassword() {
   cursor: pointer;
   padding: 0;
 }
+
+/* P2-14：用量统计区 */
+.usage-section { display: flex; flex-direction: column; gap: 12px; }
+.usage-cards { display: flex; gap: 12px; }
+.usage-card {
+  background: var(--bg, #F7F7F8);
+  border-radius: 10px;
+  padding: 12px 16px;
+  min-width: 130px;
+}
+.usage-card-value { font-size: 20px; font-weight: 700; color: var(--primary, #4D6BFE); }
+.usage-card-label { font-size: 11px; color: #888; margin-top: 2px; }
+.usage-chart-title { font-size: 12px; font-weight: 500; color: #555; }
+.usage-empty { font-size: 13px; color: #bbb; text-align: center; padding: 24px 0; }
 </style>

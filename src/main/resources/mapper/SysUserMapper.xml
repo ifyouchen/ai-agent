@@ -100,5 +100,34 @@
         WHERE user_id = #{userId}
     </update>
 
+    <!-- 管理员：按关键词分页查询（keyword 为空时等价于 findAll） -->
+    <select id="findByKeyword" resultMap="SysUserResultMap">
+        SELECT id, user_id, username, password_hash, roles, enabled, default_org_id, nickname, email, created_at, updated_at
+        FROM biz_user_account
+        <where>
+            <if test="keyword != null and keyword != ''">
+                username ILIKE '%' || #{keyword} || '%'
+            </if>
+        </where>
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countByKeyword" resultType="long">
+        SELECT COUNT(*) FROM biz_user_account
+        <where>
+            <if test="keyword != null and keyword != ''">
+                username ILIKE '%' || #{keyword} || '%'
+            </if>
+        </where>
+    </select>
+
+    <!-- 更新角色（roles 为逗号分隔字符串，如 "ROLE_USER,ROLE_ADMIN"） -->
+    <update id="updateRoles">
+        UPDATE biz_user_account
+        SET roles = #{roles}, updated_at = NOW()
+        WHERE user_id = #{userId}
+    </update>
+
 </mapper>
 

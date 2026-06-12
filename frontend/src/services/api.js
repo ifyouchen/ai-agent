@@ -143,9 +143,11 @@ export async function clearMemory(sessionId) {
 
 /**
  * 查询当前用户的会话列表（从服务端，最近 50 个）
+ * @param {string} keyword 可选关键词，传入时按标题模糊搜索
  */
-export async function listChatSessions() {
-  const { data } = await http.get('/api/v1/chat/sessions');
+export async function listChatSessions(keyword = '') {
+  const params = keyword?.trim() ? { keyword: keyword.trim() } : {};
+  const { data } = await http.get('/api/v1/chat/sessions', { params });
   return data;
 }
 
@@ -240,6 +242,15 @@ export async function deleteDocument(kbId, docId, orgId) {
 export async function getDocumentStatus(kbId, docId, orgId) {
   const params = orgId ? { params: { orgId } } : {};
   const { data } = await http.get(`/api/v1/kb/${kbId}/documents/${docId}/status`, params);
+  return data;
+}
+
+/**
+ * 获取文档切片列表（P3-15：用于前端预览）
+ */
+export async function listDocumentChunks(kbId, docId, orgId, limit = 20) {
+  const params = { ...(orgId ? { orgId } : {}), limit };
+  const { data } = await http.get(`/api/v1/kb/${kbId}/documents/${docId}/chunks`, { params });
   return data;
 }
 
@@ -352,8 +363,10 @@ export async function updateProfile(nickname, email) {
 
 // ── 管理员：用户管理 ──────────────────────────────────────────────
 
-export async function adminListUsers(page = 0, size = 20) {
-  const { data } = await http.get('/api/v1/admin/users', { params: { page, size } });
+export async function adminListUsers(page = 0, size = 20, keyword = '') {
+  const params = { page, size };
+  if (keyword?.trim()) params.keyword = keyword.trim();
+  const { data } = await http.get('/api/v1/admin/users', { params });
   return data;
 }
 
@@ -364,6 +377,11 @@ export async function adminEnableUser(userId) {
 
 export async function adminDisableUser(userId) {
   const { data } = await http.put(`/api/v1/admin/users/${userId}/disable`);
+  return data;
+}
+
+export async function adminSetRole(userId, role) {
+  const { data } = await http.put(`/api/v1/admin/users/${userId}/role`, { role });
   return data;
 }
 
@@ -392,4 +410,24 @@ export async function adminGetUserReport(days = 7) {
 export async function adminGetErrorRate(minutes = 5) {
   const { data } = await http.get('/api/v1/admin/token-usage/error-rate', { params: { minutes } });
   return data;
+}
+
+export async function getMyDailyReport(days = 7) {
+  const { data } = await http.get('/api/v1/token-usage/my/daily', { params: { days } });
+  return data;
+}
+
+export async function adminGetDailyReport(days = 7) {
+  const { data } = await http.get('/api/v1/admin/token-usage/report/daily', { params: { days } });
+  return data;
+}
+
+// ── 消息反馈（点赞/点踩/撤销） ─────────────────────────────────
+/**
+ * 保存消息反馈
+ * @param {number} messageId  数据库消息 ID
+ * @param {string|null} feedback 'up' | 'down' | null（null = 撤销）
+ */
+export async function saveMessageFeedback(messageId, feedback) {
+  await http.patch(`/api/v1/chat/messages/${messageId}/feedback`, { feedback: feedback ?? null });
 }

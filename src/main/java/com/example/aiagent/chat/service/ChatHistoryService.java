@@ -177,6 +177,21 @@ public class ChatHistoryService {
         }
     }
 
+    /**
+     * 更新消息反馈（点赞 'up' / 点踩 'down' / 撤销 null）
+     *
+     * @param messageId 消息数据库 ID
+     * @param userId    操作用户（防越权）
+     * @param feedback  反馈类型：'up' | 'down' | null（撤销）
+     */
+    public void updateFeedback(Long messageId, String userId, String feedback) {
+        // 合法值校验
+        if (feedback != null && !feedback.equals("up") && !feedback.equals("down")) {
+            throw new IllegalArgumentException("反馈类型只能为 up、down 或 null");
+        }
+        chatMessageMapper.updateFeedback(messageId, userId, feedback);
+    }
+
     private String truncate(String text, int maxLen) {
         if (text == null) return "";
         return text.length() <= maxLen ? text : text.substring(0, maxLen) + "…";

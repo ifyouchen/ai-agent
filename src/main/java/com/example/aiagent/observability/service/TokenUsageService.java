@@ -115,6 +115,41 @@ public class TokenUsageService {
     }
 
     /**
+     * 个人成本报表：按天统计近 N 天费用趋势（用于个人折线图）
+     */
+    public List<Map<String, Object>> getUserDailyCostReport(String userId, int days) {
+        Instant since = Instant.now().minus(days, ChronoUnit.DAYS);
+        List<Map<String, Object>> rows = tokenUsageMapper.aggregateDailyByUserSince(userId, since);
+        List<Map<String, Object>> report = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("day",         String.valueOf(row.get("day")));
+            item.put("costUsd",     row.get("costUsd"));
+            item.put("totalTokens", row.get("totalTokens"));
+            report.add(item);
+        }
+        return report;
+    }
+
+    /**
+     * 成本报表：按天统计近 N 天费用趋势（用于折线图）
+     * 返回 [{day: "2026-06-01", costUsd: 0.123, totalTokens: 5000}, ...]
+     */
+    public List<Map<String, Object>> getDailyCostReport(int days) {
+        Instant since = Instant.now().minus(days, ChronoUnit.DAYS);
+        List<Map<String, Object>> rows = tokenUsageMapper.aggregateDailySince(since);
+        List<Map<String, Object>> report = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("day",         String.valueOf(row.get("day")));
+            item.put("costUsd",     row.get("costUsd"));
+            item.put("totalTokens", row.get("totalTokens"));
+            report.add(item);
+        }
+        return report;
+    }
+
+    /**
      * 查询近 N 分钟的错误率（用于告警判断）
      */
     public double getRecentErrorRate(int minutes) {

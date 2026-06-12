@@ -2,6 +2,7 @@ package com.example.aiagent.kb.controller;
 
 import com.example.aiagent.kb.entity.Document;
 import com.example.aiagent.kb.entity.KnowledgeBase;
+import com.example.aiagent.kb.mapper.ChunkMapper;
 import com.example.aiagent.kb.service.KbMemberService;
 import com.example.aiagent.kb.service.KnowledgeBaseQueryService;
 import com.example.aiagent.kb.service.KnowledgeBaseService;
@@ -71,6 +72,7 @@ public class KnowledgeBaseController {
     private final DocumentIngestService ingestService;
     private final OrganizationService orgService;
     private final KbMemberService kbMemberService;
+    private final ChunkMapper chunkMapper;
 
     // ── 知识库 CRUD ───────────────────────────────────────
 
@@ -312,6 +314,48 @@ public class KnowledgeBaseController {
                     "parseStatus", doc.getParseStatus(),
                     "chunkCount",  doc.getChunkCount(),
                     "parseError",  doc.getParseError() != null ? doc.getParseError() : ""
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 查询文档切片列表（前端预览 RAG 分片效果）
+     * GET /api/v1/kb/{kbId}/documents/{docId}/chunks?limit=20
+     *
+     * <p>需要至少 VIEWER 角色；默认返回前 20 个激活切片
+     */
+    @GetMapping("/{kbId}/documents/{docId}/chunks")
+    public ResponseEntity<?> listChunks(
+            @PathVariable Long kbId,
+            @PathVariable Long docId,
+            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(required = false) String orgId,
+            @AuthenticationPrincipal String userId) {
+        try {
+            String tenantId = orgService.resolveOrgId(userId, orgId);
+            if (kbMemberService.checkAccess(kbId, userId, tenantId) == null) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "您没有访问该知识库的权限"));
+            }
+            // 限制返回数量，防止超大文档
+            int safeLimit = Math.min(limit, 50);
+            var chunks = chunkMapper.findByDocIdAndIsActive(docId, true);
+            var items = chunks.stream().limit(safeLimit).map(c -> {
+                Map<String, Object> item = new java.util.LinkedHashMap<>();
+                item.put("id",         c.getId());
+                item.put("index",      c.getChunkIndex());
+                item.put("content",    c.getContent() != null && c.getContent().length() > 500
+                                        ? c.getContent().substring(0, 500) + "…"
+                                        : c.getContent());
+                item.put("tokenCount", c.getTokenCount());
+                return item;
+            }).toList();
+            return ResponseEntity.ok(Map.of(
+                    "chunks",     items,
+                    "total",      chunks.size(),
+                    "showing",    items.size()
             ));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));

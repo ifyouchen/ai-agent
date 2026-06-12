@@ -164,39 +164,48 @@
         </button>
       </div>
       <div class="search-results">
-        <button
-          v-for="session in filteredSessions"
-          :key="session.id"
-          class="search-result"
-          :class="{ active: session.id === sess.sessionId }"
-          type="button"
-          @click="openSearchResult(session.id)"
-        >
-          <span class="search-result-icon">
-            <svg viewBox="0 0 24 24" fill="none">
-              <path d="M8 10h8M8 14h5M6.5 19A7.5 7.5 0 1 1 18 17.7L21 20l-1.3 1.5-3.1-2.3A7.5 7.5 0 0 1 6.5 19Z"
-                    stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </span>
-          <span class="search-result-main">
-            <span class="search-result-title">{{ session.title }}</span>
-            <span class="search-result-snippet">{{ snippet(session) }}</span>
-          </span>
-          <span class="search-result-date">{{ formatDate(session.createdAt) }}</span>
-        </button>
-        <div v-if="filteredSessions.length === 0" class="search-empty">
-          <div class="search-empty-icon">
-            <svg viewBox="0 0 24 24" fill="none"><path d="m21 21-4.2-4.2m2.2-5.3a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          </div>
-          <div>没有找到相关对话</div>
+        <!-- 搜索中提示（P2-9） -->
+        <div v-if="searchLoading" class="search-loading">
+          <svg class="inline-spinner" viewBox="0 0 24 24" fill="none" width="14" height="14">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
+          </svg>
+          搜索中…
         </div>
+        <template v-else>
+          <button
+            v-for="session in filteredSessions"
+            :key="session.id"
+            class="search-result"
+            :class="{ active: session.id === sess.sessionId }"
+            type="button"
+            @click="openSearchResult(session.id)"
+          >
+            <span class="search-result-icon">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M8 10h8M8 14h5M6.5 19A7.5 7.5 0 1 1 18 17.7L21 20l-1.3 1.5-3.1-2.3A7.5 7.5 0 0 1 6.5 19Z"
+                      stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <span class="search-result-main">
+              <span class="search-result-title">{{ session.title }}</span>
+              <span class="search-result-snippet">{{ snippet(session) }}</span>
+            </span>
+            <span class="search-result-date">{{ formatDate(session.createdAt) }}</span>
+          </button>
+          <div v-if="filteredSessions.length === 0" class="search-empty">
+            <div class="search-empty-icon">
+              <svg viewBox="0 0 24 24" fill="none"><path d="m21 21-4.2-4.2m2.2-5.3a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </div>
+            <div>没有找到相关对话</div>
+          </div>
+        </template>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, defineComponent, h, nextTick, ref } from 'vue';
+import { computed, defineComponent, h, nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import Avatar from '../ui/Avatar.vue';
 import { useAuthStore } from '../../stores/auth.js';
@@ -291,19 +300,24 @@ function cancelEditTitle() {
   editingSessionId.value = null;
 }
 
-// ── 搜索 ─────────────────────────────────────────────────────────────
+// ── 搜索（P2-9：优先调用服务端接口，客户端兜底） ────────────────────────
 const searchVisible  = ref(false);
 const searchQuery    = ref('');
 const searchInputEl  = ref(null);
+const serverResults  = ref(null);   // null = 未搜索，[] = 搜索结果
+const searchLoading  = ref(false);
+let _searchTimer     = null;
 
 function openSearch() {
   searchVisible.value = true;
   searchQuery.value   = '';
+  serverResults.value = null;
   nextTick(() => searchInputEl.value?.focus());
 }
 
 function closeSearch() {
   searchVisible.value = false;
+  serverResults.value = null;
 }
 
 function openSearchResult(id) {
@@ -312,19 +326,42 @@ function openSearchResult(id) {
   closeSearch();
 }
 
+// 输入变化时 debounce 调用服务端搜索
+watch(searchQuery, (q) => {
+  clearTimeout(_searchTimer);
+  serverResults.value = null;
+  if (!q.trim()) return;
+  searchLoading.value = true;
+  _searchTimer = setTimeout(async () => {
+    try {
+      const { listChatSessions } = await import('../../services/api.js');
+      const results = await listChatSessions(q.trim());
+      serverResults.value = (results || []).map(s => ({
+        id:        s.sessionId || s.id,
+        title:     s.title || '历史对话',
+        createdAt: s.createdAt,
+      }));
+    } catch {
+      // 降级为客户端过滤
+      serverResults.value = [];
+    } finally {
+      searchLoading.value = false;
+    }
+  }, 300);
+});
+
 const filteredSessions = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
   if (!q) return sess.sessions;
-  return sess.sessions.filter(s =>
-    s.title.toLowerCase().includes(q) ||
-    (sess.sessionMessages[s.id] || []).some(m => stripHtml(m.html).toLowerCase().includes(q))
-  );
+  // 优先使用服务端结果，否则客户端标题过滤兜底
+  if (serverResults.value !== null) return serverResults.value;
+  return sess.sessions.filter(s => s.title.toLowerCase().includes(q));
 });
 
 function snippet(session) {
   const q    = searchQuery.value.trim().toLowerCase();
   const msgs = sess.sessionMessages[session.id] || [];
-  if (q) {
+  if (q && msgs.length) {
     const matched = msgs.find(m => stripHtml(m.html).toLowerCase().includes(q));
     if (matched) {
       const text = stripHtml(matched.html);
@@ -332,6 +369,7 @@ function snippet(session) {
       return text.slice(Math.max(0, idx - 20), idx + 60) || text.slice(0, 80);
     }
   }
+  // 服务端搜索结果可能没有在内存中的消息，直接返回标题摘要
   if (msgs.length) return stripHtml(msgs[msgs.length - 1].html).slice(0, 80);
   return '点击打开这段历史对话';
 }

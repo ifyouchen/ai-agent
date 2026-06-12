@@ -285,3 +285,6 @@ ALTER TABLE biz_user_account ADD COLUMN IF NOT EXISTS email    VARCHAR(100);
 
 -- 会话标题检索加速
 CREATE INDEX IF NOT EXISTS idx_chat_session_title ON chat_session USING gin(to_tsvector('simple', title));
+
+-- 消息反馈字段（'up' | 'down' | null，前端点赞/点踩后持久化）
+ALTER TABLE chat_message ADD COLUMN IF NOT EXISTS feedback VARCHAR(10);

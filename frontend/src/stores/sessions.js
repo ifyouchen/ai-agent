@@ -155,7 +155,7 @@ export const useSessionStore = defineStore('sessions', () => {
           html: formatMarkdown(m.content || ''),
           timestamp: m.createdAt ? new Date(m.createdAt).getTime() : Date.now(),
           durationMs: 0,
-          feedback: null,
+          feedback: m.feedback || null,
         }));
       }
     } catch {}
@@ -252,7 +252,17 @@ export const useSessionStore = defineStore('sessions', () => {
   function setFeedback(messageId, fb) {
     for (const msgs of Object.values(sessionMessages)) {
       const m = msgs.find(m => m.id === messageId);
-      if (m) { m.feedback = fb; scheduleSave(); return; }
+      if (m) {
+        // P3-20: 同一反馈再次点击则撤销（toggle）
+        const newFb = m.feedback === fb ? null : fb;
+        m.feedback = newFb;
+        scheduleSave();
+        // P1-5: 若消息已持久化到服务端（ID 为数字），同步到后端
+        if (typeof messageId === 'number') {
+          api.saveMessageFeedback(messageId, newFb).catch(() => {});
+        }
+        return;
+      }
     }
   }
 

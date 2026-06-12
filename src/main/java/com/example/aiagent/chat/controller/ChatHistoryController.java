@@ -89,6 +89,26 @@ public class ChatHistoryController {
     }
 
     /**
+     * 更新消息反馈（点赞/点踩/撤销）
+     *
+     * PATCH /api/v1/chat/messages/{messageId}/feedback
+     * Body: {"feedback": "up"} | {"feedback": "down"} | {"feedback": null}
+     */
+    @PatchMapping("/messages/{messageId}/feedback")
+    public ResponseEntity<String> updateFeedback(
+            @PathVariable Long messageId,
+            @AuthenticationPrincipal String userId,
+            @RequestBody Map<String, String> body) {
+        try {
+            String feedback = body.get("feedback"); // null 表示撤销
+            chatHistoryService.updateFeedback(messageId, userId, feedback);
+            return ResponseEntity.ok("反馈已记录");
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    /**
      * 前端同步历史数据到服务端（首次登录时，将 localStorage 数据迁移到数据库）
      *
      * POST /api/v1/chat/sessions/sync

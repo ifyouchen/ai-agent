@@ -25,4 +25,7 @@ public class ChatMessage {
     private String content;
 
     private LocalDateTime createdAt;
+
+    /** 用户反馈：'up'（有帮助）| 'down'（没帮助）| null（未反馈） */
+    private String feedback;
 }

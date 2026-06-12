@@ -10,6 +10,7 @@
         <result property="role"      column="role"/>
         <result property="content"   column="content"/>
         <result property="createdAt" column="created_at"/>
+        <result property="feedback"  column="feedback"/>
     </resultMap>
 
     <insert id="insert" parameterType="com.example.aiagent.chat.entity.ChatMessage">
@@ -18,7 +19,7 @@
     </insert>
 
     <select id="listBySessionId" resultMap="messageRM">
-        SELECT id, session_id, user_id, role, content, created_at
+        SELECT id, session_id, user_id, role, content, created_at, feedback
         FROM chat_message
         WHERE session_id = #{sessionId}
         ORDER BY created_at ASC
@@ -28,5 +29,13 @@
     <delete id="deleteBySessionId">
         DELETE FROM chat_message WHERE session_id = #{sessionId}
     </delete>
+
+    <!-- 更新消息反馈（校验 user_id 防越权） -->
+    <update id="updateFeedback">
+        UPDATE chat_message
+        SET feedback = #{feedback}
+        WHERE id = #{id}
+          AND user_id = #{userId}
+    </update>
 
 </mapper>

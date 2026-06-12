@@ -3736,3 +3736,90 @@ a.user-dropdown-item:hover { background: var(--sidebar-hover); color: #fff; }
     margin-left: 6px;
     vertical-align: middle;
 }
+
+/* ===== P2-9：搜索加载提示 ===== */
+.search-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 16px;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+/* ===== P3-18：topbar 左侧布局（侧边栏收起时显示页面标题） ===== */
+.topbar-left {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+}
+.topbar-page-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ===== P3-19：移动端响应式布局 ===== */
+@media (max-width: 768px) {
+    /* 侧边栏变为抽屉式 */
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        height: 100vh;
+        z-index: 200;
+        transform: translateX(-100%);
+        transition: transform .25s ease;
+        box-shadow: 4px 0 24px rgba(0,0,0,.3);
+    }
+    .sidebar:not(.collapsed) {
+        transform: translateX(0);
+    }
+    /* 主内容区占满屏幕 */
+    .main {
+        margin-left: 0 !important;
+        width: 100% !important;
+    }
+    .main.sidebar-collapsed {
+        margin-left: 0 !important;
+    }
+    /* KB 面板单列 */
+    .kb-panel {
+        flex-direction: column;
+        width: 100%;
+        margin: 56px 0 0;
+        padding: 0;
+    }
+    .kb-selector-area {
+        width: 100%;
+        border-radius: 0;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        max-height: 220px;
+    }
+    .kb-current-area {
+        width: 100%;
+        border-radius: 0;
+    }
+    /* 顶栏收窄 */
+    .topbar { padding: 0 12px; gap: 8px; }
+    .topbar-actions { gap: 4px; }
+    .topbar-btn { padding: 4px 8px; font-size: 11px; }
+    /* 聊天消息区减少内边距 */
+    .message.user .bubble { max-width: 90%; }
+    .message.ai   .bubble { max-width: 95%; }
+    /* 监控图表单列 */
+    .monitor-charts-row { grid-template-columns: 1fr; }
+    /* 对话输入区 */
+    .chat-input-area { padding: 8px; }
+}
+
+@media (max-width: 480px) {
+    .topbar-actions .topbar-btn:nth-child(n+3) { display: none; } /* 超小屏只显示前2个链接 */
+    .chat-messages { padding: 8px; }
+}

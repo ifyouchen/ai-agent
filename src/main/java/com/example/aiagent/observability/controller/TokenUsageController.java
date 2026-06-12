@@ -44,6 +44,21 @@ public class TokenUsageController {
         return ResponseEntity.ok(result);
     }
 
+    /**
+     * 查看自己近 N 天每日费用趋势（普通用户可用）
+     * GET /api/v1/token-usage/my/daily?days=7
+     */
+    @GetMapping("/api/v1/token-usage/my/daily")
+    public ResponseEntity<List<Map<String, Object>>> myDailyCost(
+            @AuthenticationPrincipal String userId,
+            @RequestParam(defaultValue = "7") int days) {
+
+        if (days < 1 || days > 90) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(tokenUsageService.getUserDailyCostReport(userId, days));
+    }
+
     // ── 管理员接口 ────────────────────────────────────────
 
     /**
@@ -85,6 +100,21 @@ public class TokenUsageController {
             return ResponseEntity.badRequest().build();
         }
         return ResponseEntity.ok(tokenUsageService.getUserCostReport(days));
+    }
+
+    /**
+     * 近 N 天按天统计费用趋势（用于折线图）
+     * GET /api/v1/admin/token-usage/report/daily?days=7
+     */
+    @GetMapping("/api/v1/admin/token-usage/report/daily")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<Map<String, Object>>> dailyCostReport(
+            @RequestParam(defaultValue = "7") int days) {
+
+        if (days < 1 || days > 90) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(tokenUsageService.getDailyCostReport(days));
     }
 
     /**
