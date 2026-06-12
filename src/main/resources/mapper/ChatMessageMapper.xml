@@ -30,6 +30,19 @@
         DELETE FROM chat_message WHERE session_id = #{sessionId}
     </delete>
 
+    <delete id="deleteByUserIdAndSessionIds">
+        DELETE FROM chat_message
+        WHERE user_id = #{userId}
+          AND session_id IN
+        <foreach collection="sessionIds" item="sessionId" open="(" separator="," close=")">
+            #{sessionId}
+        </foreach>
+    </delete>
+
+    <delete id="deleteByUserId">
+        DELETE FROM chat_message WHERE user_id = #{userId}
+    </delete>
+
     <!-- 更新消息反馈（校验 user_id 防越权） -->
     <update id="updateFeedback">
         UPDATE chat_message

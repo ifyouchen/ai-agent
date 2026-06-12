@@ -139,6 +139,39 @@ public class ChatHistoryService {
     }
 
     /**
+     * 批量删除当前用户的指定会话及消息。
+     */
+    @Async
+    public void deleteSessions(List<String> sessionIds, String userId) {
+        if (sessionIds == null || sessionIds.isEmpty()) return;
+        List<String> cleanedIds = sessionIds.stream()
+                .filter(id -> id != null && !id.isBlank())
+                .distinct()
+                .toList();
+        if (cleanedIds.isEmpty()) return;
+        try {
+            chatMessageMapper.deleteByUserIdAndSessionIds(userId, cleanedIds);
+            chatSessionMapper.deleteByUserIdAndSessionIds(userId, cleanedIds);
+        } catch (Exception e) {
+            log.warn("批量删除会话失败 userId={} count={}: {}", userId, cleanedIds.size(), e.getMessage());
+        }
+    }
+
+    /**
+     * 删除当前用户的全部会话及消息。
+     */
+    @Async
+    public void deleteAllSessions(String userId) {
+        if (userId == null || userId.isBlank()) return;
+        try {
+            chatMessageMapper.deleteByUserId(userId);
+            chatSessionMapper.deleteByUserId(userId);
+        } catch (Exception e) {
+            log.warn("清空全部会话失败 userId={}: {}", userId, e.getMessage());
+        }
+    }
+
+    /**
      * 批量保存前端同步来的会话+消息（用于首次登录时从 localStorage 迁移到后端）
      */
     @Async

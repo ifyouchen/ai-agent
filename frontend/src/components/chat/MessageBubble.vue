@@ -15,7 +15,7 @@
         </span>
       </div>
 
-      <!-- AI 消息操作栏（hover 时显示） -->
+      <!-- AI 消息操作栏 -->
       <div v-if="message.role === 'ai' && !isStreaming" class="message-actions">
         <!-- 复制消息文本 -->
         <button

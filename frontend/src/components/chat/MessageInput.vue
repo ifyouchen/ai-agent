@@ -18,8 +18,11 @@
           <span>引用文档</span>
           <small v-if="currentKbName">{{ currentKbName }}</small>
         </div>
-        <div v-if="!sess.currentKbId" class="doc-mention-empty">
-          先关联知识库后可 @ 文档
+        <div v-if="kb.kbLoading" class="doc-mention-empty">
+          正在加载知识库…
+        </div>
+        <div v-else-if="!kb.currentKbId" class="doc-mention-empty">
+          暂无可引用的知识库文档
         </div>
         <div v-else-if="kb.docsLoading" class="doc-mention-empty">
           正在加载文档…
@@ -188,10 +191,8 @@ function handleInput() {
 }
 
 async function ensureMentionDocs() {
-  if (!sess.currentKbId) return;
-  if (kb.currentKbId !== sess.currentKbId) {
-    await kb.selectKb(sess.currentKbId, org.currentOrgId);
-    return;
+  if (!kb.knowledgeBases.length && !kb.kbLoading) {
+    await kb.loadKbs(org.currentOrgId);
   }
   if (!kb.docs.length && !kb.docsLoading) {
     await kb.loadDocs(org.currentOrgId);
@@ -299,20 +300,26 @@ function handleFileChange(event) {
 async function handleSend() {
   const text = inputText.value.trim();
   if (!text || sess.currentSessionSending) return;
+  const referencedDocs = getReferencedDocs(text);
   const message = buildMentionAwareMessage(text);
+  const effectiveKbId = sess.currentKbId ?? (referencedDocs.length ? kb.currentKbId : null);
   inputText.value = '';
   closeMention();
   nextTick(() => {
     const el = inputEl.value;
     if (el) el.style.height = 'auto';
   });
-  await sess.sendMessage(text, sess.currentKbId, message);
+  await sess.sendMessage(text, effectiveKbId, message);
+}
+
+function getReferencedDocs(text) {
+  return mentionSourceDocs.value
+    .filter(doc => text.includes(`@${doc.filename}`))
+    .map(doc => doc.filename);
 }
 
 function buildMentionAwareMessage(text) {
-  const matchedDocs = mentionSourceDocs.value
-    .filter(doc => text.includes(`@${doc.filename}`))
-    .map(doc => doc.filename);
+  const matchedDocs = getReferencedDocs(text);
   if (!matchedDocs.length) return text;
   const docList = matchedDocs.map(name => `《${name}》`).join('、');
   return `${text}\n\n请优先基于已引用文档 ${docList} 的内容进行检索和回答；如果文档中没有依据，请明确说明。`;

@@ -24,15 +24,14 @@
 }
 .message-duration { color: var(--text-muted); }
 
-/* ===== 消息操作栏（hover 显示） ===== */
+/* ===== 消息操作栏 ===== */
 .message-actions {
-    display: none;
+    display: flex;
     align-items: center;
     gap: 4px;
     margin-top: 6px;
     flex-wrap: wrap;
 }
-.bubble-wrap:hover .message-actions { display: flex; }
 
 .msg-action-btn {
     display: inline-flex;
@@ -56,35 +55,126 @@
 /* ===== 代码块复制按钮 ===== */
 .code-block-wrap {
     position: relative;
-    margin: 8px 0;
+    max-width: 100%;
+    margin: 14px 0 16px;
+    overflow: hidden;
+    border-radius: 14px;
+    background: #f7f8fa;
+    border: 1px solid #eef1f5;
 }
+
+.code-block-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 44px;
+    padding: 0 156px 0 18px;
+}
+
 .code-lang {
-    display: block;
-    font-size: 11px;
-    color: var(--text-muted);
-    background: #F0F0F2;
-    border-radius: 6px 6px 0 0;
-    padding: 3px 10px;
-    border: 1px solid var(--border);
-    border-bottom: none;
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1;
+    color: #111827;
     font-family: monospace;
+    text-transform: lowercase;
 }
-.copy-code-btn {
+
+.code-block-actions {
     position: absolute;
-    top: 6px;
-    right: 8px;
-    padding: 3px 8px;
-    font-size: 11px;
-    background: rgba(255,255,255,.85);
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    cursor: pointer;
-    color: var(--text-muted);
-    transition: all .15s;
-    z-index: 1;
+    top: 14px;
+    right: 18px;
+    display: inline-flex;
+    align-items: center;
+    gap: 18px;
+    z-index: 2;
 }
-.copy-code-btn:hover  { background: #fff; color: var(--primary); border-color: var(--primary); }
-.copy-code-btn.copied { background: #E6FAF4; color: var(--success); border-color: var(--success); }
+
+.code-tool-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #4b5563;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    transition: color .15s;
+    font-family: inherit;
+}
+
+.code-tool-btn svg {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 auto;
+}
+
+.code-tool-btn:hover { color: var(--primary); }
+.code-tool-btn.copied { color: var(--success); }
+
+.bubble .code-block-wrap .code-block {
+    display: block;
+    max-width: 100%;
+    margin: 0;
+    padding: 8px 24px 24px;
+    overflow-x: auto;
+    background: transparent;
+    color: #1f2937;
+    border-radius: 0;
+    box-shadow: none;
+    font-size: 14px;
+    line-height: 1.7;
+    font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+    white-space: pre;
+}
+
+.bubble .code-block-wrap code {
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
+    color: inherit;
+    font: inherit;
+}
+
+.code-block-wrap .hljs-keyword,
+.code-block-wrap .hljs-selector-tag,
+.code-block-wrap .hljs-built_in {
+    color: #b21bb5;
+}
+
+.code-block-wrap .hljs-title,
+.code-block-wrap .hljs-function .hljs-title {
+    color: #2f6df6;
+}
+
+.code-block-wrap .hljs-string,
+.code-block-wrap .hljs-attr,
+.code-block-wrap .hljs-attribute {
+    color: #2f9e44;
+}
+
+.code-block-wrap .hljs-number,
+.code-block-wrap .hljs-literal {
+    color: #d97706;
+}
+
+.code-block-wrap .hljs-type,
+.code-block-wrap .hljs-class .hljs-title {
+    color: #c76a00;
+}
+
+.code-block-wrap .hljs-comment {
+    color: #8a94a6;
+}
+
+.code-block-wrap .hljs-meta {
+    color: #64748b;
+}
 
 /* ===== 会话标题行内编辑 ===== */
 .session-title-input {
@@ -99,6 +189,150 @@
     outline: none;
 }
 .session-title-input:focus { border-color: var(--primary); }
+
+/* ===== 会话批量管理 ===== */
+.session-bulk-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 30px;
+    margin: 8px 2px 0;
+    padding: 0 4px;
+    color: #7b8496;
+}
+
+.session-bulk-toolbar.managing {
+    border-top: 1px solid #edf0f6;
+    border-bottom: 1px solid #edf0f6;
+}
+
+.session-bulk-entry,
+.session-bulk-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #667085;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: color .15s, background .15s;
+    white-space: nowrap;
+}
+
+.session-bulk-entry {
+    width: 100%;
+    min-height: 32px;
+    gap: 6px;
+    padding: 0 6px;
+    justify-content: center;
+    border-radius: 10px;
+    color: #8a93a5;
+}
+
+.session-bulk-entry svg {
+    width: 14px;
+    height: 14px;
+}
+
+.session-bulk-entry:hover,
+.session-bulk-btn:hover {
+    color: #4f67f5;
+    background: transparent;
+}
+
+.session-bulk-btn.danger {
+    color: #cf4c4c;
+    padding: 0 4px;
+    border-radius: 6px;
+}
+
+.session-bulk-btn.danger:hover {
+    color: #b83232;
+    background: #fff1f1;
+}
+
+.session-bulk-btn:disabled {
+    opacity: .38;
+    cursor: not-allowed;
+    color: #9aa3b2;
+    background: transparent;
+}
+
+.session-bulk-count {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    flex: 1;
+    min-width: 0;
+    color: #8b94a5;
+    font-size: 12px;
+}
+
+.session-bulk-close {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 auto;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: #9aa3b2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: color .15s, background .15s;
+}
+
+.session-bulk-close svg {
+    width: 14px;
+    height: 14px;
+}
+
+.session-bulk-close:hover {
+    color: #596276;
+    background: #edf1f7;
+}
+
+.session-item.selecting {
+    cursor: pointer;
+}
+
+.session-item.selecting.active {
+    background: transparent;
+    color: #555d6e;
+}
+
+.session-item.selected {
+    background: #edf3ff;
+    color: #4f67f5;
+}
+
+.session-check {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    border-radius: 5px;
+    border: 1px solid #cfd6e3;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    background: #fff;
+}
+
+.session-check.checked {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.session-check svg {
+    width: 12px;
+    height: 12px;
+}
 
 /* ===== 知识库描述 ===== */
 .kb-item-desc {

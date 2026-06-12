@@ -19,6 +19,30 @@
         <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="2"/><path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         开启新对话
       </button>
+      <div v-if="sess.sessions.length" class="session-bulk-toolbar" :class="{ managing: bulkMode }">
+        <template v-if="bulkMode">
+          <span class="session-bulk-count">已选 {{ selectedCount }}</span>
+          <button class="session-bulk-btn" type="button" @click="toggleSelectAll">
+            {{ allVisibleSelected ? '取消全选' : '全选' }}
+          </button>
+          <button
+            class="session-bulk-btn danger"
+            type="button"
+            :disabled="selectedCount === 0"
+            @click="handleDeleteSelected"
+          >删除</button>
+          <button class="session-bulk-btn danger" type="button" @click="handleDeleteAll">清空</button>
+          <button class="session-bulk-close" type="button" title="退出管理" @click="exitBulkMode">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </template>
+        <button v-else class="session-bulk-entry" type="button" @click="enterBulkMode">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M8 7h12M8 12h12M8 17h12M4 7h.01M4 12h.01M4 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          管理会话
+        </button>
+      </div>
     </div>
 
     <!-- 会话列表 -->
@@ -30,15 +54,26 @@
           v-for="session in group.items"
           :key="session.id"
           class="session-item"
-          :class="{ active: session.id === sess.sessionId, generating: sess.sessionRuntime[session.id]?.sending }"
+          :class="{
+            active: session.id === sess.sessionId && !bulkMode,
+            generating: sess.sessionRuntime[session.id]?.sending,
+            selecting: bulkMode,
+            selected: selectedSessionIds.has(session.id)
+          }"
           :title="session.title"
-          @click="handleSwitchSession(session.id)"
+          @click="handleSessionClick(session.id)"
         >
+          <span v-if="bulkMode" class="session-check" :class="{ checked: selectedSessionIds.has(session.id) }">
+            <svg v-if="selectedSessionIds.has(session.id)" viewBox="0 0 24 24" fill="none">
+              <path d="m5 12 4 4L19 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+
           <!-- 标题（双击可编辑） -->
           <span
             v-if="editingSessionId !== session.id"
             class="session-title"
-            @dblclick.stop="startEditTitle(session)"
+            @dblclick.stop="bulkMode ? null : startEditTitle(session)"
           >{{ session.title }}</span>
           <input
             v-else
@@ -57,7 +92,7 @@
             <span></span><span></span><span></span>
           </span>
           <button
-            v-else-if="editingSessionId !== session.id"
+            v-else-if="editingSessionId !== session.id && !bulkMode"
             class="session-delete"
             type="button"
             title="删除会话"
@@ -232,6 +267,7 @@ function handleGlobalKeydown(event) {
   if (event.key !== 'Escape') return;
   userMenuOpen.value = false;
   modelMenuOpen.value = false;
+  exitBulkMode();
 }
 
 onMounted(() => {
@@ -304,7 +340,19 @@ const groupedSessions = computed(() => {
 });
 
 // ── 会话操作 ────────────────────────────────────────────────────────
+const bulkMode = ref(false);
+const selectedSessionIds = ref(new Set());
+const selectedCount = computed(() => selectedSessionIds.value.size);
+const visibleSessionIds = computed(() =>
+  groupedSessions.value.flatMap(group => group.items.map(session => session.id))
+);
+const allVisibleSelected = computed(() =>
+  visibleSessionIds.value.length > 0
+  && visibleSessionIds.value.every(id => selectedSessionIds.value.has(id))
+);
+
 function handleNewSession() {
+  exitBulkMode();
   sess.newSession();
   router.push('/chat');
 }
@@ -312,6 +360,73 @@ function handleNewSession() {
 function handleSwitchSession(id) {
   sess.switchSession(id);
   router.push('/chat');
+}
+
+function handleSessionClick(id) {
+  if (bulkMode.value) {
+    toggleSessionSelection(id);
+    return;
+  }
+  handleSwitchSession(id);
+}
+
+function enterBulkMode() {
+  bulkMode.value = true;
+  selectedSessionIds.value = new Set();
+}
+
+function exitBulkMode() {
+  bulkMode.value = false;
+  selectedSessionIds.value = new Set();
+}
+
+function toggleSessionSelection(id) {
+  const next = new Set(selectedSessionIds.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  selectedSessionIds.value = next;
+}
+
+function toggleSelectAll() {
+  if (allVisibleSelected.value) {
+    selectedSessionIds.value = new Set();
+    return;
+  }
+  selectedSessionIds.value = new Set(visibleSessionIds.value);
+}
+
+async function handleDeleteSelected() {
+  const ids = [...selectedSessionIds.value];
+  if (!ids.length) return;
+  const confirmed = await ui.showConfirm({
+    title: '删除所选会话',
+    message: `确认删除选中的 ${ids.length} 个会话？删除后不可恢复。`,
+    confirmText: '删除',
+    variant: 'danger',
+  });
+  if (!confirmed) return;
+  try {
+    await sess.removeSessions(ids);
+    exitBulkMode();
+  } catch (err) {
+    ui.showToast('error', err.message || '批量删除失败');
+  }
+}
+
+async function handleDeleteAll() {
+  const confirmed = await ui.showConfirm({
+    title: '清空全部会话',
+    message: '确认删除所有会话记录？删除后不可恢复。',
+    confirmText: '清空全部',
+    variant: 'danger',
+  });
+  if (!confirmed) return;
+  try {
+    await sess.removeAllSessions();
+    exitBulkMode();
+  } catch (err) {
+    ui.showToast('error', err.message || '清空全部会话失败');
+  }
 }
 
 // ── 标题编辑 ────────────────────────────────────────────────────────

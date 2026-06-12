@@ -1,0 +1,97 @@
+/* Global one-step typography bump. Keep this as the last imported layer. */
+body {
+    font-size: 15px;
+}
+
+.sidebar-logo h1 {
+    font-size: 22px;
+}
+
+.new-chat-btn,
+.session-item,
+.session-title,
+.user-name,
+.model-select-trigger,
+.model-option-main {
+    font-size: 15px;
+}
+
+.sidebar-section-title,
+.session-bulk-count,
+.session-bulk-entry,
+.session-bulk-btn,
+.user-state,
+.model-option-desc {
+    font-size: 13px;
+}
+
+.topbar-page-title,
+.topbar-btn,
+.welcome-mode,
+.welcome-prompt-btn,
+.tool-chip,
+.kb-use-chat-btn,
+.msg-action-btn,
+.code-tool-btn {
+    font-size: 14px;
+}
+
+.welcome h2 {
+    font-size: 27px;
+}
+
+#messageInput,
+.message-input,
+.chat-input,
+.composer-textarea,
+textarea {
+    font-size: 18px;
+}
+
+.message.user .bubble {
+    font-size: 15px;
+}
+
+.message.ai .bubble {
+    font-size: 16px;
+}
+
+.message.ai .bubble .md-h2 {
+    font-size: 17px;
+}
+
+.message.ai .bubble .md-h3 {
+    font-size: 16px;
+}
+
+.message.ai .bubble table,
+.bubble .code-block-wrap .code-block {
+    font-size: 15px;
+}
+
+.message-meta,
+.hint-text,
+.doc-meta,
+.doc-meta-hint,
+.kb-query-hint,
+.session-bulk-close {
+    font-size: 12px;
+}
+
+.modal-header h3,
+.dialog-title,
+.toast-title,
+.search-title {
+    font-size: 16px;
+}
+
+.modal-body,
+.dialog-body,
+.toast,
+.search-result-title,
+.kb-query-result,
+.kb-item-name,
+.doc-name,
+.org-item-name {
+    font-size: 14px;
+}

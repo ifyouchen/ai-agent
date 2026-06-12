@@ -89,6 +89,34 @@ public class ChatHistoryController {
     }
 
     /**
+     * 批量删除会话（同时删除所选会话的所有消息）
+     *
+     * POST /api/v1/chat/sessions/batch-delete
+     * Body: {"sessionIds": ["session-a", "session-b"]}
+     */
+    @PostMapping("/sessions/batch-delete")
+    public ResponseEntity<String> deleteSessions(
+            @RequestBody BatchDeleteRequest request,
+            @AuthenticationPrincipal String userId) {
+        List<String> sessionIds = request != null ? request.sessionIds() : List.of();
+        chatHistoryService.deleteSessions(sessionIds, userId);
+        log.info("批量删除会话 userId={} count={}", userId, sessionIds != null ? sessionIds.size() : 0);
+        return ResponseEntity.ok("已批量删除会话");
+    }
+
+    /**
+     * 删除当前用户的全部会话（同时删除所有消息）
+     *
+     * DELETE /api/v1/chat/sessions
+     */
+    @DeleteMapping("/sessions")
+    public ResponseEntity<String> deleteAllSessions(@AuthenticationPrincipal String userId) {
+        chatHistoryService.deleteAllSessions(userId);
+        log.info("清空全部会话 userId={}", userId);
+        return ResponseEntity.ok("已清空全部会话");
+    }
+
+    /**
      * 更新消息反馈（点赞/点踩/撤销）
      *
      * PATCH /api/v1/chat/messages/{messageId}/feedback
@@ -122,4 +150,6 @@ public class ChatHistoryController {
         log.info("同步会话历史 userId={} count={}", userId, sessions != null ? sessions.size() : 0);
         return ResponseEntity.ok("同步完成");
     }
+
+    private record BatchDeleteRequest(List<String> sessionIds) {}
 }

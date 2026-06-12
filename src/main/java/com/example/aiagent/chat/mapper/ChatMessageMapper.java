@@ -22,6 +22,13 @@ public interface ChatMessageMapper {
     /** 删除会话的所有消息 */
     void deleteBySessionId(@Param("sessionId") String sessionId);
 
+    /** 删除当前用户指定会话的所有消息 */
+    void deleteByUserIdAndSessionIds(@Param("userId") String userId,
+                                     @Param("sessionIds") List<String> sessionIds);
+
+    /** 删除当前用户的所有消息 */
+    void deleteByUserId(@Param("userId") String userId);
+
     /** 更新消息反馈（点赞/点踩，幂等） */
     void updateFeedback(@Param("id") Long id,
                         @Param("userId") String userId,

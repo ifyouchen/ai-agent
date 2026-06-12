@@ -52,7 +52,7 @@
 </template>
 
 <script setup>
-import { nextTick, onUpdated, ref } from 'vue';
+import { nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import MessageBubble from '../components/chat/MessageBubble.vue';
 import MessageInput  from '../components/chat/MessageInput.vue';
@@ -68,12 +68,17 @@ const org    = useOrgStore();
 const router = useRouter();
 const chatEl = ref(null);
 
-// 消息更新时自动滚动到底部
-onUpdated(() => {
-  nextTick(() => {
-    if (chatEl.value) chatEl.value.scrollTop = chatEl.value.scrollHeight;
-  });
-});
+// 只在切换会话或新增消息时即时定位到底部，避免 smooth scroll 产生“从上滚到底”的动画。
+watch(
+  () => [sess.sessionId, sess.messages.length],
+  async () => {
+    await nextTick();
+    if (chatEl.value) {
+      chatEl.value.scrollTop = chatEl.value.scrollHeight;
+    }
+  },
+  { flush: 'post' }
+);
 
 async function handleRegenerate(messageId) {
   await sess.regenerateMessage(messageId, sess.currentKbId);

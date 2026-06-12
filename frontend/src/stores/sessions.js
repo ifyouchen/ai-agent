@@ -229,6 +229,48 @@ export const useSessionStore = defineStore('sessions', () => {
     }
   }
 
+  function removeSessionsFromState(ids) {
+    const idSet = new Set(ids.filter(Boolean));
+    if (!idSet.size) return;
+
+    idSet.forEach(id => {
+      stopSessionGeneration(id, false);
+      delete sessionMessages[id];
+      delete sessionRuntime[id];
+    });
+
+    sessions.value = sessions.value.filter(s => !idSet.has(s.id));
+
+    if (idSet.has(sessionId.value)) {
+      if (sessions.value.length) switchSession(sessions.value[0].id);
+      else newSession();
+    }
+    scheduleSave();
+  }
+
+  async function removeSessions(ids) {
+    const cleanedIds = [...new Set((ids || []).filter(Boolean))];
+    if (!cleanedIds.length) return;
+    await api.deleteChatSessions(cleanedIds);
+    removeSessionsFromState(cleanedIds);
+    ui.showToast('info', `已删除 ${cleanedIds.length} 个会话`);
+  }
+
+  async function removeAllSessions() {
+    const ids = sessions.value.map(s => s.id);
+    if (!ids.length) return;
+    await api.deleteAllChatSessions();
+    ids.forEach(id => {
+      stopSessionGeneration(id, false);
+      delete sessionMessages[id];
+      delete sessionRuntime[id];
+    });
+    sessions.value = [];
+    newSession();
+    scheduleSave();
+    ui.showToast('info', '已清空全部会话');
+  }
+
   function updateSessionTitle(text, id = sessionId.value) {
     const session = sessions.value.find(s => s.id === id);
     if (session && session.title === '新对话') {
@@ -526,7 +568,7 @@ async function doStreamChat(reqId, text, kbId) {
     reactEnabled, streamEnabled, enterToSend, model, activeModel, currentKbId, messageInput,
     currentSessionSending, currentSessionTitle,
     QUICK_MODEL, EXPERT_MODEL, setQuickMode, setExpertMode, toggleExpertMode,
-    init, newSession, switchSession, removeSession, renameSession, updateSessionTitle,
+    init, newSession, switchSession, removeSession, removeSessions, removeAllSessions, renameSession, updateSessionTitle,
     sendMessage, regenerateMessage, setFeedback,
     stopGeneration: id => stopSessionGeneration(id ?? sessionId.value, true),
     stopSessionGeneration, ensureRuntime,

@@ -27,6 +27,13 @@ public interface ChatSessionMapper {
     /** 删除会话（级联删除消息在业务层处理） */
     void deleteBySessionId(@Param("sessionId") String sessionId);
 
+    /** 删除当前用户的指定会话 */
+    void deleteByUserIdAndSessionIds(@Param("userId") String userId,
+                                     @Param("sessionIds") List<String> sessionIds);
+
+    /** 删除当前用户的全部会话 */
+    void deleteByUserId(@Param("userId") String userId);
+
     /** 按标题或消息内容搜索用户会话 */
     List<ChatSession> searchByUserId(@Param("userId") String userId,
                                      @Param("keyword") String keyword,

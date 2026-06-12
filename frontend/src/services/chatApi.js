@@ -59,6 +59,14 @@ export async function deleteChatSession(sessionId) {
   await http.delete(`/api/v1/chat/sessions/${sessionId}`);
 }
 
+export async function deleteChatSessions(sessionIds) {
+  await http.post('/api/v1/chat/sessions/batch-delete', { sessionIds });
+}
+
+export async function deleteAllChatSessions() {
+  await http.delete('/api/v1/chat/sessions');
+}
+
 export async function updateSessionTitle(sessionId, title) {
   await http.patch(`/api/v1/chat/sessions/${sessionId}/title`, { title });
 }
