@@ -8,7 +8,6 @@ import com.example.aiagent.security.service.AuditLogService;
 import com.example.aiagent.security.service.RateLimitService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -47,7 +46,6 @@ import java.util.concurrent.RejectedExecutionException;
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/chat")
-@RequiredArgsConstructor
 public class ReActChatController {
 
     private final ReActAgent reActAgent;
@@ -64,8 +62,22 @@ public class ReActChatController {
      * <p>通过 AppConfig#sseTaskExecutor Bean 注入，核心10/最大50/队列200，
      * 替代原来的 {@code Executors.newCachedThreadPool()}（无界，高并发风险）。
      */
-    @Qualifier("sseTaskExecutor")
     private final Executor sseExecutor;
+
+    public ReActChatController(
+            ReActAgent reActAgent,
+            PromptInjectionFilter promptInjectionFilter,
+            RateLimitService rateLimitService,
+            OutputContentFilter outputContentFilter,
+            AuditLogService auditLogService,
+            @Qualifier("sseTaskExecutor") Executor sseExecutor) {
+        this.reActAgent = reActAgent;
+        this.promptInjectionFilter = promptInjectionFilter;
+        this.rateLimitService = rateLimitService;
+        this.outputContentFilter = outputContentFilter;
+        this.auditLogService = auditLogService;
+        this.sseExecutor = sseExecutor;
+    }
 
     /**
      * ReAct 多步推理对话
