@@ -2,7 +2,7 @@ package com.example.aiagent.chat.entity;
 
 import lombok.Data;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * 聊天消息实体（对应 chat_message 表）
@@ -24,7 +24,7 @@ public class ChatMessage {
     /** 消息纯文本内容（存储原始文本，不含 HTML） */
     private String content;
 
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     /** 用户反馈：'up'（有帮助）| 'down'（没帮助）| null（未反馈） */
     private String feedback;

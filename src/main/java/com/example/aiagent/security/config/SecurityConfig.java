@@ -17,6 +17,7 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import jakarta.servlet.DispatcherType;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
@@ -69,6 +70,8 @@ public class SecurityConfig {
 
             // 接口权限配置
             .authorizeHttpRequests(auth -> auth
+                // ASYNC 分发（SseEmitter 等异步请求）跳过认证，原始请求已校验过
+                .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                 // 公开接口：认证、健康检查、跨域预检
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers(

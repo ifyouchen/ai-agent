@@ -2,7 +2,7 @@ package com.example.aiagent.chat.entity;
 
 import lombok.Data;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * 聊天会话实体（对应 chat_session 表）
@@ -24,6 +24,6 @@ public class ChatSession {
     /** 关联的知识库 ID（可选） */
     private Long kbId;
 
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
+    private Instant createdAt;
+    private Instant updatedAt;
 }

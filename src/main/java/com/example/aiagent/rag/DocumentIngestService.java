@@ -162,12 +162,19 @@ public class DocumentIngestService {
             // 更新状态 → PARSING
             documentMapper.updateParseStatus(docEntityId, "PARSING");
 
-            // 解析文档
-            dev.langchain4j.data.document.Document document =
-                    dev.langchain4j.data.document.loader.FileSystemDocumentLoader.loadDocument(
-                            filePath,
-                            new dev.langchain4j.data.document.parser.apache.tika.ApacheTikaDocumentParser()
-                    );
+            // 解析文档：.txt/.md 等纯文本文件直接读取，避免 Tika 对大文件返回空内容
+            dev.langchain4j.data.document.Document document;
+            String fileNameLower = fileName.toLowerCase();
+            if (fileNameLower.endsWith(".txt") || fileNameLower.endsWith(".md")) {
+                String text = Files.readString(filePath);
+                document = dev.langchain4j.data.document.Document.from(text);
+                document.metadata();
+            } else {
+                document = dev.langchain4j.data.document.loader.FileSystemDocumentLoader.loadDocument(
+                        filePath,
+                        new dev.langchain4j.data.document.parser.apache.tika.ApacheTikaDocumentParser()
+                );
+            }
 
             // 更新状态 → CHUNKING
             documentMapper.updateParseStatus(docEntityId, "CHUNKING");
