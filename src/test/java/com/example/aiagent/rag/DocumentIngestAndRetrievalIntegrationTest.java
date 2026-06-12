@@ -258,7 +258,7 @@ class DocumentIngestAndRetrievalIntegrationTest {
             String kbName = "摄入测试KB-" + System.currentTimeMillis();
 
             // 1. 创建知识库
-            KnowledgeBase kb = kbService().createKnowledgeBase(tenantId, kbName, "测试摄入闭环");
+            KnowledgeBase kb = kbService().createKnowledgeBase(tenantId, kbName, "测试摄入闭环", "test-user");
 
             // 2. 准备测试文件
             Path tempFile = Files.createTempFile("test-ingest-", ".txt");

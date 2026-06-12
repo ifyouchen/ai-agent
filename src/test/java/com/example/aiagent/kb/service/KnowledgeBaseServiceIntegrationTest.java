@@ -6,7 +6,6 @@ import com.example.aiagent.kb.mapper.ChunkMapper;
 import com.example.aiagent.kb.mapper.DocumentMapper;
 import com.example.aiagent.kb.mapper.KnowledgeBaseMapper;
 import com.example.aiagent.rag.retrieval.Bm25Retriever;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -87,7 +86,7 @@ class KnowledgeBaseServiceIntegrationTest {
         @Test
         @DisplayName("创建知识库 - 成功")
         void shouldCreateKnowledgeBase() {
-            KnowledgeBase kb = kbService.createKnowledgeBase("tenant-test", "产品手册", "产品相关文档");
+            KnowledgeBase kb = kbService.createKnowledgeBase("tenant-test", "产品手册", "产品相关文档", "test-user");
 
             assertThat(kb).isNotNull();
             assertThat(kb.getId()).isNotNull();
@@ -100,9 +99,9 @@ class KnowledgeBaseServiceIntegrationTest {
         @Test
         @DisplayName("创建知识库 - 同租户同名重复应抛异常")
         void shouldRejectDuplicateNameInSameTenant() {
-            kbService.createKnowledgeBase("tenant-dup", "手册", null);
+            kbService.createKnowledgeBase("tenant-dup", "手册", null, "test-user");
 
-            assertThatThrownBy(() -> kbService.createKnowledgeBase("tenant-dup", "手册", null))
+            assertThatThrownBy(() -> kbService.createKnowledgeBase("tenant-dup", "手册", null, "test-user"))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("已存在");
         }
@@ -110,8 +109,8 @@ class KnowledgeBaseServiceIntegrationTest {
         @Test
         @DisplayName("创建知识库 - 不同租户同名可创建")
         void shouldAllowSameNameInDifferentTenants() {
-            kbService.createKnowledgeBase("tenant-A", "手册", null);
-            KnowledgeBase kbB = kbService.createKnowledgeBase("tenant-B", "手册", null);
+            kbService.createKnowledgeBase("tenant-A", "手册", null, "test-user");
+            KnowledgeBase kbB = kbService.createKnowledgeBase("tenant-B", "手册", null, "test-user");
 
             assertThat(kbB).isNotNull();
             assertThat(kbB.getTenantId()).isEqualTo("tenant-B");
@@ -120,9 +119,9 @@ class KnowledgeBaseServiceIntegrationTest {
         @Test
         @DisplayName("列出知识库 - 只返回当前租户的")
         void shouldListOnlyCurrentTenantKBs() {
-            kbService.createKnowledgeBase("tenant-list-A", "知识库A1", null);
-            kbService.createKnowledgeBase("tenant-list-A", "知识库A2", null);
-            kbService.createKnowledgeBase("tenant-list-B", "知识库B1", null);
+            kbService.createKnowledgeBase("tenant-list-A", "知识库A1", null, "test-user");
+            kbService.createKnowledgeBase("tenant-list-A", "知识库A2", null, "test-user");
+            kbService.createKnowledgeBase("tenant-list-B", "知识库B1", null, "test-user");
 
             List<KnowledgeBase> listA = kbService.listKnowledgeBases("tenant-list-A");
             List<KnowledgeBase> listB = kbService.listKnowledgeBases("tenant-list-B");
@@ -143,7 +142,7 @@ class KnowledgeBaseServiceIntegrationTest {
         @Test
         @DisplayName("获取知识库 - 不属于当前租户应抛异常")
         void shouldRejectCrossTenantAccess() {
-            KnowledgeBase kb = kbService.createKnowledgeBase("tenant-owner", "私有知识库", null);
+            KnowledgeBase kb = kbService.createKnowledgeBase("tenant-owner", "私有知识库", null, "test-user");
 
             assertThatThrownBy(() -> kbService.getKnowledgeBase("tenant-intruder", kb.getId()))
                     .isInstanceOf(IllegalArgumentException.class)
@@ -161,7 +160,7 @@ class KnowledgeBaseServiceIntegrationTest {
         @DisplayName("删除知识库 - 应级联删除文档和切片")
         void shouldCascadeDeleteDocsAndChunks() {
             // 1. 创建知识库
-            KnowledgeBase kb = kbService.createKnowledgeBase("tenant-del", "待删除KB", null);
+            KnowledgeBase kb = kbService.createKnowledgeBase("tenant-del", "待删除KB", null, "test-user");
 
             // 2. 手动插入文档和切片（模拟已有数据）
             Document doc = Document.builder()
@@ -192,7 +191,7 @@ class KnowledgeBaseServiceIntegrationTest {
         @Test
         @DisplayName("删除知识库 - 应清理 BM25 索引")
         void shouldCleanUpBm25IndexOnDelete() {
-            KnowledgeBase kb = kbService.createKnowledgeBase("tenant-bm25-del", "BM25测试KB", null);
+            KnowledgeBase kb = kbService.createKnowledgeBase("tenant-bm25-del", "BM25测试KB", null, "test-user");
 
             // 索引一些切片到 BM25
             com.example.aiagent.rag.model.RetrievedChunk chunk1 =
@@ -227,7 +226,7 @@ class KnowledgeBaseServiceIntegrationTest {
         @Test
         @DisplayName("列出文档 - 应校验知识库归属")
         void shouldVerifyOwnershipWhenListingDocs() {
-            KnowledgeBase kb = kbService.createKnowledgeBase("tenant-doc-list", "文档管理KB", null);
+            KnowledgeBase kb = kbService.createKnowledgeBase("tenant-doc-list", "文档管理KB", null, "test-user");
 
             // 另一租户尝试列文档应抛异常
             assertThatThrownBy(() -> kbService.getDocuments("tenant-intruder", kb.getId()))
@@ -238,7 +237,7 @@ class KnowledgeBaseServiceIntegrationTest {
         @DisplayName("删除文档 - 应更新知识库 docCount")
         void shouldUpdateDocCountOnDelete() {
             // 1. 创建知识库
-            KnowledgeBase kb = kbService.createKnowledgeBase("tenant-doc-del", "文档计数KB", null);
+            KnowledgeBase kb = kbService.createKnowledgeBase("tenant-doc-del", "文档计数KB", null, "test-user");
 
             // 2. 插入文档
             Document doc = Document.builder()
@@ -269,7 +268,7 @@ class KnowledgeBaseServiceIntegrationTest {
         @Test
         @DisplayName("删除文档 - 不属于当前租户应拒绝")
         void shouldRejectCrossTenantDocDelete() {
-            KnowledgeBase kb = kbService.createKnowledgeBase("tenant-doc-owner", "文档KB", null);
+            KnowledgeBase kb = kbService.createKnowledgeBase("tenant-doc-owner", "文档KB", null, "test-user");
             Document doc = Document.builder()
                     .kbId(kb.getId())
                     .tenantId("tenant-doc-owner")
@@ -295,9 +294,9 @@ class KnowledgeBaseServiceIntegrationTest {
         @DisplayName("各租户的知识库完全隔离")
         void shouldFullyIsolateKnowledgeBases() {
             // 租户 A 创建知识库
-            KnowledgeBase kbA = kbService.createKnowledgeBase("iso-A", "A的知识库", null);
+            KnowledgeBase kbA = kbService.createKnowledgeBase("iso-A", "A的知识库", null, "test-user");
             // 租户 B 创建知识库
-            KnowledgeBase kbB = kbService.createKnowledgeBase("iso-B", "B的知识库", null);
+            KnowledgeBase kbB = kbService.createKnowledgeBase("iso-B", "B的知识库", null, "test-user");
 
             // 租户 A 看不到 B 的知识库
             List<KnowledgeBase> listA = kbService.listKnowledgeBases("iso-A");

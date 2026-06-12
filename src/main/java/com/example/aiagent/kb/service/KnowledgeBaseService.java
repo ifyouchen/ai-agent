@@ -56,8 +56,8 @@ public class KnowledgeBaseService {
      * @throws IllegalArgumentException 若同名知识库已存在
      */
     @Transactional
-    public KnowledgeBase createKnowledgeBase(String tenantId, String name, String description) {
-        log.info("创建知识库 tenantId={} name={}", tenantId, name);
+    public KnowledgeBase createKnowledgeBase(String tenantId, String name, String description, String createdBy) {
+        log.info("创建知识库 tenantId={} name={} createdBy={}", tenantId, name, createdBy);
 
         kbMapper.findByTenantIdAndName(tenantId, name).ifPresent(existing -> {
             throw new IllegalArgumentException(
@@ -68,6 +68,7 @@ public class KnowledgeBaseService {
                 .tenantId(tenantId)
                 .name(name)
                 .description(description)
+                .createdBy(createdBy)
                 .build();
 
         kbMapper.insert(kb);

@@ -117,7 +117,7 @@ public class KbMemberService {
             // 对于创建知识库的场景，grantedBy 是创建者本人，此时 kb_member 还没有记录
             // 需要检查知识库是否属于该用户所在的组织
             var kb = knowledgeBaseMapper.findById(kbId);
-            if (kb.isEmpty() || !kb.get().getCreatedBy().equals(grantedBy)) {
+            if (kb.isEmpty() || !grantedBy.equals(kb.get().getCreatedBy())) {
                 throw new IllegalArgumentException("只有知识库拥有者才能管理成员");
             }
         }

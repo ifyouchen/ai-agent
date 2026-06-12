@@ -59,7 +59,7 @@ class KnowledgeBaseServiceTest {
             return null;
         }).when(kbMapper).insert(any(KnowledgeBase.class));
 
-        KnowledgeBase result = kbService.createKnowledgeBase("tenant-A", "产品手册", "描述");
+        KnowledgeBase result = kbService.createKnowledgeBase("tenant-A", "产品手册", "描述", "user-A");
 
         assertThat(result.getName()).isEqualTo("产品手册");
         assertThat(result.getTenantId()).isEqualTo("tenant-A");
@@ -74,7 +74,7 @@ class KnowledgeBaseServiceTest {
         when(kbMapper.findByTenantIdAndName("tenant-A", "产品手册"))
                 .thenReturn(Optional.of(existing));
 
-        assertThatThrownBy(() -> kbService.createKnowledgeBase("tenant-A", "产品手册", null))
+        assertThatThrownBy(() -> kbService.createKnowledgeBase("tenant-A", "产品手册", null, "user-A"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("已存在");
 

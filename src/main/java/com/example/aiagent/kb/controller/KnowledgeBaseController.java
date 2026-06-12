@@ -85,7 +85,8 @@ public class KnowledgeBaseController {
             KnowledgeBase kb = kbService.createKnowledgeBase(
                     tenantId,
                     body.get("name"),
-                    body.get("description"));
+                    body.get("description"),
+                    userId);
 
             // 创建者自动成为知识库 OWNER
             kbMemberService.addMember(kb.getId(), userId, "OWNER", userId);

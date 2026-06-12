@@ -6,11 +6,25 @@ import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
-import org.apache.lucene.document.*;
-import org.apache.lucene.index.*;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.document.Field;
+import org.apache.lucene.document.StoredField;
+import org.apache.lucene.document.StringField;
+import org.apache.lucene.document.TextField;
+import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.IndexWriter;
+import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.index.Term;
 import org.apache.lucene.queryparser.classic.MultiFieldQueryParser;
 import org.apache.lucene.queryparser.classic.QueryParser;
-import org.apache.lucene.search.*;
+import org.apache.lucene.search.BooleanClause;
+import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.Query;
+import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.TermQuery;
+import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.similarities.BM25Similarity;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
@@ -410,15 +424,19 @@ public class Bm25Retriever {
         }
 
         return RetrievedChunk.builder()
-                .chunkId(      doc.get(FIELD_CHUNK_ID))
-                .content(      doc.get(FIELD_CONTENT))
-                .documentName( doc.get(FIELD_DOCUMENT_NAME))
-                .documentPath( doc.get(FIELD_DOCUMENT_PATH))
+                .chunkId(doc.get(FIELD_CHUNK_ID))
+                .content(doc.get(FIELD_CONTENT))
+                .documentName(doc.get(FIELD_DOCUMENT_NAME))
+                .documentPath(doc.get(FIELD_DOCUMENT_PATH))
                 .pageNumber(pageNum)
                 .chunkIndex(chunkIdx)
                 .tenantId(tenantId)
                 .kbId(kbId)
+                .vectorScore(0.0)
                 .bm25Score(score)
+                .rrfScore(0.0)
+                .rerankerScore(0.0)
+                .metadata(null)
                 .retrievalSource(RetrievedChunk.RetrievalSource.BM25_ONLY)
                 .build();
     }
