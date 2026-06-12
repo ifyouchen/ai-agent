@@ -51,6 +51,18 @@ mybatis:
 server:
   port: 8080
 
+# 链路追踪（Zipkin）
+# 开发环境未启动 Zipkin 时设为 never，避免连接错误日志
+management:
+  tracing:
+    sampling:
+      probability: 0.0    # 采样率 0 = 不上报（开发环境）
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+      export:
+        enabled: false    # 不向 Zipkin 上报
+
 # 日志
 logging:
   level:
@@ -117,6 +129,15 @@ rag:
     # IK 中文分词器（需安装插件：bin/elasticsearch-plugin install analysis-ik）
     # 未安装时设为 false，自动使用 standard 分词器（英文效果好，中文效果较差）
     ik-analyzer: true
+
+# ==================== 百度千帆 Embedding 配置 ====================
+# 申请地址：https://qianfan.cloud.baidu.com，在「密钥管理」创建 API Key
+qianfan:
+  api-key:                                            # 填入千帆 API Key
+  base-url: https://qianfan.baidubce.com/v2
+  embedding:
+    model: bge-large-zh                               # 向量维度 1024，中文效果好
+
 
 # 天气 API（OpenWeatherMap 免费版，申请地址：https://openweathermap.org/api）
 weather:

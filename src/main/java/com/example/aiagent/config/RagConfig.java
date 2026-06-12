@@ -13,23 +13,21 @@ import org.springframework.context.annotation.Configuration;
 public class RagConfig {
 
     /**
-     * Embedding 模型统一使用 DeepSeek
+     * Embedding 模型使用百度千帆 bge-large-zh
      *
-     * 无论当前 profile 是 deepseek 还是 claude，Embedding 都走 DeepSeek API。
-     * 原因：Embedding 只负责把文字转成向量，和对话模型无关，
-     *       统一用一个服务更简单，也避免跨服务向量维度不一致的问题。
-     *
-     * DeepSeek 兼容 OpenAI Embedding 接口，直接用 OpenAiEmbeddingModel 即可。
-     * 向量维度：1536
+     * 千帆兼容 OpenAI Embedding 接口，直接用 OpenAiEmbeddingModel 即可。
+     * 申请地址：https://qianfan.cloud.baidu.com
+     * bge-large-zh 向量维度：1024
      */
     @Bean
     public EmbeddingModel embeddingModel(
-            @Value("${deepseek.api-key:${DEEPSEEK_API_KEY:}}") String apiKey,
-            @Value("${deepseek.base-url:https://api.deepseek.com/v1}") String baseUrl) {
+            @Value("${qianfan.api-key}") String apiKey,
+            @Value("${qianfan.base-url:https://qianfan.baidubce.com/v2}") String baseUrl,
+            @Value("${qianfan.embedding.model:bge-large-zh}") String modelName) {
         return OpenAiEmbeddingModel.builder()
                 .baseUrl(baseUrl)
                 .apiKey(apiKey)
-                .modelName("deepseek-embedding")
+                .modelName(modelName)
                 .build();
     }
 
@@ -52,7 +50,7 @@ public class RagConfig {
                 .user(user)
                 .password(password)
                 .table("knowledge_base")
-                .dimension(1536)         // DeepSeek / OpenAI embedding 维度
+                .dimension(1024)         // bge-large-zh 向量维度
                 .createTable(true)
                 .build();
     }
