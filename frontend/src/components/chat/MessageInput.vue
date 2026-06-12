@@ -3,7 +3,7 @@
     <div class="input-wrapper">
       <textarea
         ref="inputEl"
-        v-model="sess.messageInput ?? ''"
+        v-model="inputText"
         :disabled="sess.currentSessionSending"
         :placeholder="enterToSendHint"
         rows="1"

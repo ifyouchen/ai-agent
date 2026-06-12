@@ -55,6 +55,7 @@ export const useSessionStore = defineStore('sessions', () => {
   const enterToSend    = ref(false);
   const model          = ref('deepseek');
   const currentKbId    = ref(null);
+  const messageInput   = ref('');
 
   let _saveTimer = null;
 
@@ -516,7 +517,7 @@ export const useSessionStore = defineStore('sessions', () => {
 
   return {
     sessions, sessionId, messages, sessionMessages, sessionRuntime,
-    reactEnabled, streamEnabled, enterToSend, model, currentKbId,
+    reactEnabled, streamEnabled, enterToSend, model, currentKbId, messageInput,
     currentSessionSending, currentSessionTitle,
     init, newSession, switchSession, removeSession, renameSession, updateSessionTitle,
     sendMessage, regenerateMessage, setFeedback,

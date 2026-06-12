@@ -3524,3 +3524,215 @@ button {
     font-size: 11px;
     color: var(--text-muted);
 }
+
+/* ============================================================
+   新功能样式：消息操作栏、时间戳、代码复制、标题编辑、KB描述、
+               个人资料、聊天工具栏
+   ============================================================ */
+
+/* ===== 消息气泡外层（用于定位操作栏） ===== */
+.bubble-wrap {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    max-width: 100%;
+}
+.message.ai .bubble-wrap { align-items: flex-start; }
+.message.user .bubble-wrap { align-items: flex-end; }
+
+/* ===== 消息时间戳 + 耗时 ===== */
+.message-meta {
+    font-size: 11px;
+    color: var(--text-light);
+    margin-top: 4px;
+    padding: 0 4px;
+    display: flex;
+    gap: 4px;
+}
+.message-duration { color: var(--text-muted); }
+
+/* ===== 消息操作栏（hover 显示） ===== */
+.message-actions {
+    display: none;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+.bubble-wrap:hover .message-actions { display: flex; }
+
+.msg-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all .15s;
+    white-space: nowrap;
+}
+.msg-action-btn:hover  { background: var(--primary-light); color: var(--primary); border-color: var(--primary); }
+.msg-action-btn.copied { background: #E6FAF4; color: var(--success); border-color: var(--success); }
+
+.feedback-btn.active   { background: var(--primary-light); color: var(--primary); }
+
+/* ===== 代码块复制按钮 ===== */
+.code-block-wrap {
+    position: relative;
+    margin: 8px 0;
+}
+.code-lang {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    background: #F0F0F2;
+    border-radius: 6px 6px 0 0;
+    padding: 3px 10px;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    font-family: monospace;
+}
+.copy-code-btn {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    padding: 3px 8px;
+    font-size: 11px;
+    background: rgba(255,255,255,.85);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: all .15s;
+    z-index: 1;
+}
+.copy-code-btn:hover  { background: #fff; color: var(--primary); border-color: var(--primary); }
+.copy-code-btn.copied { background: #E6FAF4; color: var(--success); border-color: var(--success); }
+
+/* ===== 会话标题行内编辑 ===== */
+.session-title-input {
+    flex: 1;
+    min-width: 0;
+    background: rgba(255,255,255,.12);
+    border: 1px solid rgba(255,255,255,.3);
+    border-radius: 4px;
+    color: #fff;
+    font-size: 13px;
+    padding: 2px 6px;
+    outline: none;
+}
+.session-title-input:focus { border-color: var(--primary); }
+
+/* ===== 知识库描述 ===== */
+.kb-item-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    word-break: break-all;
+}
+
+/* ===== 聊天视图工具栏（右上角） ===== */
+.chat-view { display: flex; flex-direction: column; height: 100%; position: relative; }
+.chat-toolbar {
+    position: absolute;
+    top: 10px;
+    right: 16px;
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+}
+
+/* ===== 应用整体布局（新增 RouterView wrapper） ===== */
+.app-layout {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* ===== 主内容区 overflow 修复（原 .main 定义保持） ===== */
+.chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    /* content area ends above input */
+    padding-bottom: 8px;
+}
+
+/* ===== 新增 topbar RouterLink 样式 ===== */
+.topbar-btn {
+    padding: 5px 12px;
+    font-size: 13px;
+    border-radius: 7px;
+    border: 1.5px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all .15s;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+}
+.topbar-btn:hover    { background: var(--primary-light); color: var(--primary); border-color: var(--primary); }
+.topbar-btn.danger   { color: var(--error); border-color: var(--error); }
+.topbar-btn.danger:hover { background: #FFF5F5; }
+.topbar-btn.router-link-active { background: var(--primary-light); color: var(--primary); border-color: var(--primary); }
+
+/* ===== 用户下拉菜单 RouterLink 样式 ===== */
+a.user-dropdown-item {
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 6px;
+    border: none;
+    background: none;
+    text-align: left;
+    transition: background .15s;
+}
+a.user-dropdown-item:hover { background: var(--sidebar-hover); color: #fff; }
+
+/* ===== KB 用于对话按钮 ===== */
+.kb-use-chat-btn {
+    font-size: 12px;
+    color: var(--primary);
+    border: 1px solid var(--primary);
+    border-radius: 6px;
+    padding: 3px 8px;
+    cursor: pointer;
+    background: transparent;
+    transition: all .15s;
+}
+.kb-use-chat-btn:hover { background: var(--primary-light); }
+
+/* ===== 文档状态 badge 更新 ===== */
+.doc-parsing-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--warning);
+    background: #FFFBEB;
+    border: 1px solid #FDE68A;
+    border-radius: 4px;
+    padding: 1px 5px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
