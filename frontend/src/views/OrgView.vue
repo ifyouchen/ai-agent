@@ -148,12 +148,10 @@
 <script setup>
 import { reactive, ref } from 'vue';
 import { useOrgStore } from '../stores/org.js';
-import { useKbStore } from '../stores/kb.js';
 import { useUiStore } from '../stores/ui.js';
 import * as api from '../services/api.js';
 
 const org = useOrgStore();
-const kb  = useKbStore();
 const ui  = useUiStore();
 
 const inviteUsername    = ref('');
@@ -174,9 +172,8 @@ function orgRoleLabel(role) {
   return map[role] || role || '';
 }
 
-async function handleSelectOrg(orgId) {
+function handleSelectOrg(orgId) {
   org.selectOrg(orgId);
-  await kb.loadKbs(orgId);
 }
 
 // ── CRUD ─────────────────────────────────────────────────────────────

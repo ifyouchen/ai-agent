@@ -23,6 +23,12 @@ public class ChatRequest {
     private Long kbId;
 
     /**
+     * 当前组织 ID（同时作为知识库 tenantId）。
+     * 不传时默认解析为用户个人组织。
+     */
+    private String orgId;
+
+    /**
      * 模型名。快速模式使用 deepseek-v4-flash，专家模式使用 deepseek-v4-pro。
      */
     private String model;

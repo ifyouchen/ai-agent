@@ -20,6 +20,8 @@ export const useKbStore = defineStore('kb', () => {
 
   // 文档轮询 timers: {docId: timerId}
   const _pollTimers = {};
+  let _kbLoadSeq = 0;
+  let _docsLoadSeq = 0;
 
   const currentKb = computed(() =>
     knowledgeBases.value.find(kb => kb.id === currentKbId.value) || null
@@ -28,23 +30,46 @@ export const useKbStore = defineStore('kb', () => {
   const currentKbName = computed(() => currentKb.value?.name || '');
 
   // ── 知识库列表 ──────────────────────────────────────────────────────
-  async function loadKbs(orgId) {
+  function stopAllDocPolling() {
+    Object.keys(_pollTimers).forEach(docId => stopDocPolling(docId));
+  }
+
+  function resetSelection() {
+    _docsLoadSeq += 1;
+    stopAllDocPolling();
+    currentKbId.value = null;
+    docs.value = [];
+    kbMembers.value = [];
+    kbMembersVisible.value = false;
+  }
+
+  async function loadKbs(orgId, options = {}) {
+    const { reset = false } = options;
+    const seq = ++_kbLoadSeq;
+    if (reset) {
+      knowledgeBases.value = [];
+      resetSelection();
+    }
     kbLoading.value = true;
     try {
-      knowledgeBases.value = await api.listKnowledgeBases(orgId);
+      const list = await api.listKnowledgeBases(orgId);
+      if (seq !== _kbLoadSeq) return;
+      knowledgeBases.value = list;
       // 当前选中的 KB 若不在新列表中，清空
       if (currentKbId.value && !knowledgeBases.value.find(kb => kb.id === currentKbId.value)) {
-        currentKbId.value = null;
-        docs.value = [];
+        resetSelection();
       }
       if (knowledgeBases.value.length && !currentKbId.value) {
         await selectKb(knowledgeBases.value[0].id, orgId);
       }
     } catch (err) {
-      knowledgeBases.value = [];
-      ui.showToast('error', err.message || '加载知识库失败');
+      if (seq === _kbLoadSeq) {
+        knowledgeBases.value = [];
+        resetSelection();
+        ui.showToast('error', err.message || '加载知识库失败');
+      }
     } finally {
-      kbLoading.value = false;
+      if (seq === _kbLoadSeq) kbLoading.value = false;
     }
   }
 
@@ -75,18 +100,22 @@ export const useKbStore = defineStore('kb', () => {
   // ── 文档列表 ────────────────────────────────────────────────────────
   async function loadDocs(orgId) {
     if (!currentKbId.value) { docs.value = []; return; }
+    const seq = ++_docsLoadSeq;
     docsLoading.value = true;
     try {
       const data = await api.listDocuments(currentKbId.value, orgId);
+      if (seq !== _docsLoadSeq) return;
       docs.value = data.map(mapDoc);
       // 对仍在处理中的文档启动轮询
       docs.value.filter(d => ['PROCESSING','PENDING','PARSING','CHUNKING','EMBEDDING'].includes(d.status))
         .forEach(d => startDocPolling(d.id, orgId));
     } catch (err) {
-      if (currentKbId.value) ui.showToast('error', err.message || '加载文档失败');
-      docs.value = [];
+      if (seq === _docsLoadSeq) {
+        if (currentKbId.value) ui.showToast('error', err.message || '加载文档失败');
+        docs.value = [];
+      }
     } finally {
-      docsLoading.value = false;
+      if (seq === _docsLoadSeq) docsLoading.value = false;
     }
   }
 
@@ -199,6 +228,7 @@ export const useKbStore = defineStore('kb', () => {
   return {
     knowledgeBases, currentKbId, docs, uploadQueue, kbLoading, docsLoading,
     kbMembers, kbMembersVisible, currentKb, currentKbName,
+    resetSelection,
     loadKbs, selectKb, createKb, updateKb, deleteKb,
     loadDocs, uploadFile,
     startDocPolling, stopDocPolling,

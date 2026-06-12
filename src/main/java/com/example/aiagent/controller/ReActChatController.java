@@ -1,6 +1,7 @@
 package com.example.aiagent.controller;
 
 import com.example.aiagent.agent.ReActAgent;
+import com.example.aiagent.kb.service.ChatRagContextService;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
 import com.example.aiagent.security.filter.PromptInjectionFilter;
@@ -53,6 +54,7 @@ public class ReActChatController {
     private final RateLimitService rateLimitService;
     private final OutputContentFilter outputContentFilter;
     private final AuditLogService auditLogService;
+    private final ChatRagContextService chatRagContextService;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -70,12 +72,14 @@ public class ReActChatController {
             RateLimitService rateLimitService,
             OutputContentFilter outputContentFilter,
             AuditLogService auditLogService,
+            ChatRagContextService chatRagContextService,
             @Qualifier("sseTaskExecutor") Executor sseExecutor) {
         this.reActAgent = reActAgent;
         this.promptInjectionFilter = promptInjectionFilter;
         this.rateLimitService = rateLimitService;
         this.outputContentFilter = outputContentFilter;
         this.auditLogService = auditLogService;
+        this.chatRagContextService = chatRagContextService;
         this.sseExecutor = sseExecutor;
     }
 
@@ -109,6 +113,7 @@ public class ReActChatController {
         String sessionId = request.getOrDefault("sessionId", "unknown");
         String message   = request.getOrDefault("message", "");
         String model     = request.get("model");
+        String orgId     = request.get("orgId");
         String clientIp  = getClientIp(httpRequest);
 
         MDC.put("scenario", "react_chat");
@@ -148,13 +153,16 @@ public class ReActChatController {
             if (kbIdStr != null && !kbIdStr.isBlank()) {
                 try { kbId = Long.parseLong(kbIdStr); } catch (NumberFormatException ignore) {}
             }
-            if (kbId != null) {
-                HybridRagContentRetriever.setContext(
-                        new HybridRagContentRetriever.RetrievalContext(userId, kbId));
+            HybridRagContentRetriever.RetrievalContext ragContext =
+                    chatRagContextService.resolve(userId, orgId, kbId);
+            if (ragContext != null) {
+                HybridRagContentRetriever.setContext(ragContext);
             }
             ReActAgent.ReActResult result;
             try {
-                result = reActAgent.execute(injectionCheck.sanitizedInput(), sessionId, model);
+                result = reActAgent.execute(injectionCheck.sanitizedInput(), sessionId, model,
+                        ragContext != null ? ragContext.tenantId() : null,
+                        ragContext != null ? ragContext.kbId() : null);
             } finally {
                 HybridRagContentRetriever.clearContext();
             }
@@ -192,6 +200,11 @@ public class ReActChatController {
                     "steps",      stepList
             ));
 
+        } catch (IllegalArgumentException e) {
+            log.warn("[ReAct] 知识库上下文无效 userId={} orgId={} reason={}",
+                    userId, orgId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", e.getMessage()));
         } finally {
             MDC.remove("scenario");
         }
@@ -218,6 +231,7 @@ public class ReActChatController {
             @RequestParam String sessionId,
             @RequestParam String message,
             @RequestParam(required = false) Long kbId,
+            @RequestParam(required = false) String orgId,
             @RequestParam(required = false) String model,
             @AuthenticationPrincipal String userId,
             HttpServletRequest httpRequest) {
@@ -260,20 +274,32 @@ public class ReActChatController {
 
         // ── Step 4：异步线程执行 ReAct 推理 ──────────
         final String sanitizedMessage = injectionCheck.sanitizedInput();
-        final Long finalKbId = kbId;
+        final HybridRagContentRetriever.RetrievalContext ragContext;
+        try {
+            ragContext = chatRagContextService.resolve(userId, orgId, kbId);
+        } catch (IllegalArgumentException e) {
+            log.warn("[ReAct-Stream] 知识库上下文无效 userId={} orgId={} kbId={} reason={}",
+                    userId, orgId, kbId, e.getMessage());
+            try {
+                emitter.send(SseEmitter.event().name("error").data(e.getMessage()));
+            } catch (IOException ignore) {}
+            emitter.complete();
+            return emitter;
+        }
         try {
         sseExecutor.execute(() -> {
             MDC.put("scenario", "react_stream");
             MDC.put("userId", userId);
             long startMs = System.currentTimeMillis();
             // 异步线程中设置 RAG 上下文（ThreadLocal 是线程级别的）
-            if (finalKbId != null) {
-                HybridRagContentRetriever.setContext(
-                        new HybridRagContentRetriever.RetrievalContext(userId, finalKbId));
+            if (ragContext != null) {
+                HybridRagContentRetriever.setContext(ragContext);
             }
             try {
                 ReActAgent.ReActResult result = reActAgent.executeWithCallback(
                         sanitizedMessage, sessionId, model,
+                        ragContext != null ? ragContext.tenantId() : null,
+                        ragContext != null ? ragContext.kbId() : null,
                         (step, isFinal) -> {
                             try {
                                 if (isFinal) {

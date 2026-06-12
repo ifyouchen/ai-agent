@@ -2,6 +2,7 @@ package com.example.aiagent.controller;
 
 import com.example.aiagent.agent.AgentFactory;
 import com.example.aiagent.chat.service.ChatHistoryService;
+import com.example.aiagent.kb.service.ChatRagContextService;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
 import com.example.aiagent.security.filter.PromptInjectionFilter;
@@ -47,6 +48,7 @@ public class StreamingChatController {
     private final OutputContentFilter outputContentFilter;
     private final AuditLogService auditLogService;
     private final ChatHistoryService chatHistoryService;
+    private final ChatRagContextService chatRagContextService;
 
     /**
      * 流式对话（SSE 推送，字符逐步出现）
@@ -67,6 +69,7 @@ public class StreamingChatController {
             @RequestParam String sessionId,
             @RequestParam String message,
             @RequestParam(required = false) Long kbId,
+            @RequestParam(required = false) String orgId,
             @RequestParam(required = false) String model,
             @AuthenticationPrincipal String userId,
             HttpServletRequest httpRequest) {
@@ -120,13 +123,27 @@ public class StreamingChatController {
         }
 
         // ── Step 4：LLM 流式调用 ──────────────────────────
-        log.info("开始流式对话 userId={} sessionId={} kbId={} model={}", userId, sessionId, kbId, model);
+        log.info("开始流式对话 userId={} sessionId={} orgId={} kbId={} model={}",
+                userId, sessionId, orgId, kbId, model);
         String sanitizedMessage = promptInjectionFilter.check(message).sanitizedInput();
 
         // 设置 RAG 检索上下文（指定知识库时生效）
-        if (kbId != null) {
-            HybridRagContentRetriever.setContext(
-                    new HybridRagContentRetriever.RetrievalContext(userId, kbId));
+        HybridRagContentRetriever.RetrievalContext ragContext;
+        try {
+            ragContext = chatRagContextService.resolve(userId, orgId, kbId);
+        } catch (IllegalArgumentException e) {
+            log.warn("流式对话知识库上下文无效 userId={} orgId={} kbId={} reason={}",
+                    userId, orgId, kbId, e.getMessage());
+            try {
+                emitter.send(SseEmitter.event().name("error").data(e.getMessage()));
+            } catch (IOException ignore) {
+                // 客户端已断开，忽略
+            }
+            emitter.complete();
+            return emitter;
+        }
+        if (ragContext != null) {
+            HybridRagContentRetriever.setContext(ragContext);
         }
 
         // 用 AtomicReference 累积全部 token，供 onComplete 时统一脱敏

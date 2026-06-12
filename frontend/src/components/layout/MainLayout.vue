@@ -69,9 +69,8 @@ const currentPageTitle = computed(() => route.meta?.title || sess.currentSession
 onMounted(async () => {
   // 初始化数据
   await auth.refreshProfile();
-  await sess.init();
   await org.loadOrgs();
-  await kb.loadKbs(org.currentOrgId);
+  await sess.init();
 
   // 全局代码块复制处理
   setupCopyCodeHandler();
@@ -79,7 +78,9 @@ onMounted(async () => {
 
 // P2-13：组织切换时自动刷新知识库
 watch(() => org.currentOrgId, (newOrgId) => {
-  if (newOrgId) kb.loadKbs(newOrgId);
+  sess.currentKbId = null;
+  if (newOrgId) kb.loadKbs(newOrgId, { reset: true });
+  else kb.resetSelection();
 });
 
 async function handleClearMemory() {

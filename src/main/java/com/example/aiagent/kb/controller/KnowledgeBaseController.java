@@ -25,7 +25,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -115,11 +114,8 @@ public class KnowledgeBaseController {
      * 列出当前用户可访问的知识库
      * GET /api/v1/kb?orgId=xxx
      *
-     * <p>列出逻辑：
-     * <ol>
-     *   <li>列出指定组织（orgId）下的所有知识库</li>
-     *   <li>同时追加通过 kb_member 显式授权、但不在该组织下的知识库</li>
-     * </ol>
+     * <p>列出逻辑：只列出指定组织（orgId）下的所有知识库。
+     * 跨组织共享知识库不混入当前组织列表，避免前端用当前 orgId 访问其他租户的 kbId。
      * <p>不传 orgId 则使用默认个人组织（向后兼容）。
      */
     @GetMapping
@@ -128,15 +124,7 @@ public class KnowledgeBaseController {
             @AuthenticationPrincipal String userId) {
         try {
             String tenantId = orgService.resolveOrgId(userId, orgId);
-            List<KnowledgeBase> kbs = new ArrayList<>(kbService.listKnowledgeBases(tenantId));
-
-            // 追加通过 kb_member 显式授权（但不属于当前组织）的知识库
-            List<Long> memberKbIds = kbMemberService.getAccessibleKbIds(userId);
-            for (Long kbId : memberKbIds) {
-                if (kbs.stream().noneMatch(kb -> kb.getId().equals(kbId))) {
-                    kbService.findById(kbId).ifPresent(kbs::add);
-                }
-            }
+            List<KnowledgeBase> kbs = kbService.listKnowledgeBases(tenantId);
 
             return ResponseEntity.ok(kbs);
         } catch (IllegalArgumentException e) {

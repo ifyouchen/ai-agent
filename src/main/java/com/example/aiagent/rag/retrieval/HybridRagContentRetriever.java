@@ -62,7 +62,7 @@ public class HybridRagContentRetriever implements ContentRetriever {
      * <p>在 Controller 层调用检索前设置，检索完成后自动清除。
      * 示例：
      * <pre>
-     *   HybridRagContentRetriever.setContext(new RetrievalContext(userId, kbId));
+     *   HybridRagContentRetriever.setContext(new RetrievalContext(tenantId, kbId));
      *   try {
      *       // ... 调用 Agent 对话 ...
      *   } finally {
@@ -112,6 +112,11 @@ public class HybridRagContentRetriever implements ContentRetriever {
         Long kbId = context != null ? context.kbId() : null;
 
         log.debug("[HybridRAG] 开始检索，query='{}'，tenantId={}，kbId={}", userText, tenantId, kbId);
+
+        if (tenantId == null || tenantId.isBlank()) {
+            log.debug("[HybridRAG] 未设置有效租户上下文，跳过检索");
+            return Collections.emptyList();
+        }
 
         try {
             // 执行完整的混合 RAG Pipeline（步骤 1-4），带租户隔离

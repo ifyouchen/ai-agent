@@ -1,6 +1,8 @@
 package com.example.aiagent.agent;
 
 import com.example.aiagent.config.DeepSeekModelFactory;
+import com.example.aiagent.rag.model.RetrievedChunk;
+import com.example.aiagent.rag.pipeline.HybridRagPipeline;
 import com.example.aiagent.tool.BusinessTools;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -58,6 +60,7 @@ public class ReActAgent {
 
     private final ChatLanguageModel chatModel;
     private final BusinessTools businessTools;
+    private final HybridRagPipeline hybridRagPipeline;
     private final ObjectProvider<DeepSeekModelFactory> deepSeekModelFactory;
 
     /** 最大推理迭代次数（防止工具调用死循环） */
@@ -102,13 +105,19 @@ public class ReActAgent {
     }
 
     public ReActResult execute(String userQuery, String sessionId, String modelName) {
+        return execute(userQuery, sessionId, modelName, null, null);
+    }
+
+    public ReActResult execute(String userQuery, String sessionId, String modelName,
+                               String tenantId, Long kbId) {
         ChatLanguageModel activeModel = chatModel(modelName);
-        log.info("[ReAct] 开始多步推理 sessionId={} model={} query='{}'", sessionId, modelName, userQuery);
+        log.info("[ReAct] 开始多步推理 sessionId={} model={} tenantId={} kbId={} query='{}'",
+                sessionId, modelName, tenantId, kbId, userQuery);
         long startMs = System.currentTimeMillis();
 
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(SystemMessage.from(SYSTEM_PROMPT));
-        messages.add(UserMessage.from(userQuery));
+        messages.add(UserMessage.from(buildKnowledgeAwareUserMessage(userQuery, tenantId, kbId)));
 
         List<ToolSpecification> toolSpecs = getToolSpecs();
         List<ReActStep> steps = new ArrayList<>();
@@ -258,13 +267,20 @@ public class ReActAgent {
 
     public ReActResult executeWithCallback(String userQuery, String sessionId, String modelName,
                                            StepCallback stepCallback) {
+        return executeWithCallback(userQuery, sessionId, modelName, null, null, stepCallback);
+    }
+
+    public ReActResult executeWithCallback(String userQuery, String sessionId, String modelName,
+                                           String tenantId, Long kbId,
+                                           StepCallback stepCallback) {
         ChatLanguageModel activeModel = chatModel(modelName);
-        log.info("[ReAct-Stream] 开始多步推理 sessionId={} model={} query='{}'", sessionId, modelName, userQuery);
+        log.info("[ReAct-Stream] 开始多步推理 sessionId={} model={} tenantId={} kbId={} query='{}'",
+                sessionId, modelName, tenantId, kbId, userQuery);
         long startMs = System.currentTimeMillis();
 
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(SystemMessage.from(SYSTEM_PROMPT));
-        messages.add(UserMessage.from(userQuery));
+        messages.add(UserMessage.from(buildKnowledgeAwareUserMessage(userQuery, tenantId, kbId)));
 
         List<ToolSpecification> toolSpecs = getToolSpecs();
         List<ReActStep> steps = new ArrayList<>();
@@ -332,6 +348,45 @@ public class ReActAgent {
     private ChatLanguageModel chatModel(String modelName) {
         DeepSeekModelFactory factory = deepSeekModelFactory.getIfAvailable();
         return factory != null ? factory.chatModel(modelName) : chatModel;
+    }
+
+    private String buildKnowledgeAwareUserMessage(String userQuery, String tenantId, Long kbId) {
+        if (tenantId == null || tenantId.isBlank()) {
+            return userQuery;
+        }
+
+        List<RetrievedChunk> chunks;
+        try {
+            chunks = hybridRagPipeline.retrieveOnly(userQuery, tenantId, kbId);
+        } catch (Exception e) {
+            log.warn("[ReAct] 知识库检索失败，降级为无知识库上下文: {}", e.getMessage());
+            chunks = List.of();
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("用户问题：\n").append(userQuery).append("\n\n");
+        sb.append("当前已关联知识库。回答与知识库相关的问题时，必须只依据下面的知识库片段；");
+        sb.append("如果片段不能支持回答，请明确说明当前知识库未找到相关信息，不要凭空补充。\n\n");
+
+        if (chunks.isEmpty()) {
+            sb.append("知识库片段：本次未检索到相关内容。\n");
+            return sb.toString();
+        }
+
+        sb.append("知识库片段：\n");
+        for (int i = 0; i < chunks.size(); i++) {
+            RetrievedChunk chunk = chunks.get(i);
+            sb.append("[").append(i + 1).append("] 来源：")
+                    .append(chunk.getDocumentName() != null ? chunk.getDocumentName() : "未知文档");
+            if (chunk.getChunkIndex() != null) {
+                sb.append("，第").append(chunk.getChunkIndex() + 1).append("片");
+            }
+            sb.append("\n")
+                    .append(chunk.getContent() != null ? chunk.getContent() : "")
+                    .append("\n\n");
+        }
+
+        return sb.toString();
     }
 
     /**

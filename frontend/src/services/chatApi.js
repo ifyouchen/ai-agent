@@ -1,28 +1,42 @@
 import { BASE, getToken, http } from './http.js';
 
-export async function chatSync(sessionId, message, kbId, model) {
-  const { data } = await http.post('/api/v1/chat', { sessionId, message, kbId: kbId || null, model });
+export async function chatSync(sessionId, message, kbId, model, orgId) {
+  const { data } = await http.post('/api/v1/chat', {
+    sessionId,
+    message,
+    kbId: kbId || null,
+    model,
+    orgId: orgId || null,
+  });
   return data;
 }
 
-export function chatStream(sessionId, message, kbId, model) {
+export function chatStream(sessionId, message, kbId, model, orgId) {
   const token = getToken();
   const params = new URLSearchParams({ sessionId, message, ...(token ? { token } : {}) });
   if (kbId) params.set('kbId', String(kbId));
   if (model) params.set('model', model);
+  if (orgId) params.set('orgId', orgId);
   return new EventSource(`${BASE}/api/v1/chat/stream?${params.toString()}`);
 }
 
-export async function chatReact(sessionId, message, kbId, model) {
-  const { data } = await http.post('/api/v1/chat/react', { sessionId, message, kbId: kbId ? String(kbId) : null, model });
+export async function chatReact(sessionId, message, kbId, model, orgId) {
+  const { data } = await http.post('/api/v1/chat/react', {
+    sessionId,
+    message,
+    kbId: kbId ? String(kbId) : null,
+    model,
+    orgId: orgId || null,
+  });
   return data;
 }
 
-export function chatReactStream(sessionId, message, kbId, model) {
+export function chatReactStream(sessionId, message, kbId, model, orgId) {
   const token = getToken();
   const params = new URLSearchParams({ sessionId, message, ...(token ? { token } : {}) });
   if (kbId) params.set('kbId', String(kbId));
   if (model) params.set('model', model);
+  if (orgId) params.set('orgId', orgId);
   return new EventSource(`${BASE}/api/v1/chat/react/stream?${params.toString()}`);
 }
 

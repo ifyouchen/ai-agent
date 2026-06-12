@@ -4,6 +4,7 @@ import com.example.aiagent.agent.AgentFactory;
 import com.example.aiagent.chat.service.ChatHistoryService;
 import com.example.aiagent.dto.ChatRequest;
 import com.example.aiagent.dto.ChatResponse;
+import com.example.aiagent.kb.service.ChatRagContextService;
 import com.example.aiagent.memory.RedisChatMemoryStore;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
@@ -50,6 +51,7 @@ public class ChatController {
     private final OutputContentFilter outputContentFilter;
     private final AuditLogService auditLogService;
     private final ChatHistoryService chatHistoryService;
+    private final ChatRagContextService chatRagContextService;
 
     /**
      * 发送消息（普通同步模式）
@@ -101,11 +103,12 @@ public class ChatController {
                     Map.of("messageLength", injectionCheck.sanitizedInput().length()));
 
             // ── Step 4：LLM 调用（设置 RAG 上下文后执行）──────────
-            // 若请求中指定了 kbId，则将当前用户的 tenantId 和 kbId 注入 ThreadLocal，
+            // 若请求中指定了 kbId，则将当前组织的 tenantId 和 kbId 注入 ThreadLocal，
             // HybridRagContentRetriever 会据此过滤只检索指定知识库的内容
-            if (request.getKbId() != null) {
-                HybridRagContentRetriever.setContext(
-                        new HybridRagContentRetriever.RetrievalContext(userId, request.getKbId()));
+            HybridRagContentRetriever.RetrievalContext ragContext =
+                    chatRagContextService.resolve(userId, request.getOrgId(), request.getKbId());
+            if (ragContext != null) {
+                HybridRagContentRetriever.setContext(ragContext);
             }
             long start = System.currentTimeMillis();
             String rawReply;
@@ -146,6 +149,11 @@ public class ChatController {
                     .durationMs(duration)
                     .build());
 
+        } catch (IllegalArgumentException e) {
+            log.warn("对话知识库上下文无效 userId={} kbId={} orgId={} reason={}",
+                    userId, request.getKbId(), request.getOrgId(), e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", e.getMessage()));
         } finally {
             MDC.remove("scenario");
         }

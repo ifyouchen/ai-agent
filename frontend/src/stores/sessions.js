@@ -11,6 +11,8 @@ import { computed, nextTick, reactive, ref, watch } from 'vue';
 import * as api from '../services/api.js';
 import { formatMarkdown } from '../js/utils.js';
 import { useUiStore } from './ui.js';
+import { useOrgStore } from './org.js';
+import { useKbStore } from './kb.js';
 import {
   EXPERT_MODEL,
   MAX_MSGS,
@@ -26,6 +28,8 @@ import {
 
 export const useSessionStore = defineStore('sessions', () => {
   const ui = useUiStore();
+  const org = useOrgStore();
+  const kb = useKbStore();
 
   // ── 状态 ─────────────────────────────────────────────────────────────
   const sessions       = ref([]);            // [{id, title, createdAt}]
@@ -308,13 +312,15 @@ export const useSessionStore = defineStore('sessions', () => {
     const rt    = ensureRuntime(reqId);
     if (!text?.trim() || rt.sending) return;
     const outboundText = requestText?.trim() || text;
+    const effectiveKbId = kbId ?? currentKbId.value ?? kb.currentKbId ?? null;
+    if (!currentKbId.value && effectiveKbId) currentKbId.value = effectiveKbId;
 
     pushMessage(reqId, 'user', formatMarkdown(text));
     updateSessionTitle(text, reqId);
 
-    if (reactEnabled.value)   await doReactChat(reqId, outboundText, kbId);
-    else if (streamEnabled.value) await doStreamChat(reqId, outboundText, kbId);
-    else                       await doSyncChat(reqId, outboundText, kbId);
+    if (reactEnabled.value)   await doReactChat(reqId, outboundText, effectiveKbId);
+    else if (streamEnabled.value) await doStreamChat(reqId, outboundText, effectiveKbId);
+    else                       await doSyncChat(reqId, outboundText, effectiveKbId);
   }
 
   /** 重新生成某条 AI 消息（删除该消息，重发上一条 user 消息） */
@@ -328,9 +334,11 @@ export const useSessionStore = defineStore('sessions', () => {
     messages.value = [...msgs];
     sessionMessages[sessionId.value] = messages.value;
     const text = stripHtml(userMsg.html);
-    if (reactEnabled.value)   await doReactChat(sessionId.value, text, kbId);
-    else if (streamEnabled.value) await doStreamChat(sessionId.value, text, kbId);
-    else                       await doSyncChat(sessionId.value, text, kbId);
+    const effectiveKbId = kbId ?? currentKbId.value ?? kb.currentKbId ?? null;
+    if (!currentKbId.value && effectiveKbId) currentKbId.value = effectiveKbId;
+    if (reactEnabled.value)   await doReactChat(sessionId.value, text, effectiveKbId);
+    else if (streamEnabled.value) await doStreamChat(sessionId.value, text, effectiveKbId);
+    else                       await doSyncChat(sessionId.value, text, effectiveKbId);
   }
 
   async function doSyncChat(reqId, text, kbId) {
@@ -341,7 +349,7 @@ export const useSessionStore = defineStore('sessions', () => {
     const bubble = pushMessage(reqId, 'ai', '<span class="typing-dots">●●●</span>');
     rt.bubble = bubble;
     try {
-      const data = await api.chatSync(reqId, text, kbId, activeModel.value);
+      const data = await api.chatSync(reqId, text, kbId, activeModel.value, org.currentOrgId);
       if (rt.requestId !== rid || rt.cancelled) return;
       bubble.html = formatMarkdown(data.reply);
       bubble.durationMs = Date.now() - startMs;
@@ -365,7 +373,7 @@ async function doStreamChat(reqId, text, kbId) {
     const bubble = pushMessage(reqId, 'ai', initHtml);
     rt.bubble = bubble; rt.text = '';
     let fullText = '', firstToken = true;
-    const es = api.chatStream(reqId, text, kbId, activeModel.value);
+    const es = api.chatStream(reqId, text, kbId, activeModel.value, org.currentOrgId);
     rt.eventSource = es;
 
     let rafPending = false, rafId = null;
@@ -437,7 +445,7 @@ async function doStreamChat(reqId, text, kbId) {
     const bubble = pushMessage(reqId, 'ai',
       '<div class="react-thinking"><span class="typing-dots">●●●</span><span class="react-thinking-label">思考中…</span></div>');
     rt.bubble = bubble; rt.reactSteps = []; rt.reactAnswer = null; rt.reactStartMs = startMs;
-    const es = api.chatReactStream(reqId, text, kbId, activeModel.value);
+    const es = api.chatReactStream(reqId, text, kbId, activeModel.value, org.currentOrgId);
     rt.eventSource = es;
 
     es.addEventListener('step', ev => {
