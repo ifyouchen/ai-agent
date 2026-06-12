@@ -44,6 +44,9 @@ public class KbMember {
     /** 用户 ID */
     private String userId;
 
+    /** 用户名（来自 biz_user_account 联表查询，非数据库字段） */
+    private String username;
+
     /**
      * 知识库角色
      * <ul>

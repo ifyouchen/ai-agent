@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationContext;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -62,6 +63,10 @@ public class DocumentIngestService {
     /** BM25 检索器，required=false：未启用时 Bean 不存在，注入 null，不影响启动 */
     @Autowired(required = false)
     private Bm25Retriever bm25Retriever;
+
+    /** 通过 ApplicationContext 获取自身代理，确保 @Async 跨方法调用生效 */
+    @Autowired
+    private ApplicationContext applicationContext;
 
     @Value("${agent.rag.chunk-size:500}")
     private int chunkSize;
@@ -134,8 +139,10 @@ public class DocumentIngestService {
                 file.getOriginalFilename(), file.getSize(), fileHash, file.getContentType());
 
         // 3. 后台异步执行解析（不阻塞当前 HTTP 线程）
-        doIngestAsync(savedFile, tenantId, kbId, file.getOriginalFilename(),
-                file.getSize(), file.getContentType(), docEntity.getId(), asyncDir);
+        // 通过 Spring 代理调用（确保 @Async 生效，避免同类自调用绕过 AOP）
+        applicationContext.getBean(DocumentIngestService.class)
+                .doIngestAsync(savedFile, tenantId, kbId, file.getOriginalFilename(),
+                        file.getSize(), file.getContentType(), docEntity.getId(), asyncDir);
 
         log.info("文档已提交异步解析 documentId={} tenantId={} kbId={} file={}",
                 docEntity.getId(), tenantId, kbId, file.getOriginalFilename());

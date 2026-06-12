@@ -466,6 +466,18 @@
               </div>
             </div>
 
+            <!-- 图表区 -->
+            <div class="monitor-charts-row">
+              <div class="monitor-chart-card">
+                <div class="monitor-chart-title">费用趋势（近 {{ monitorDays }} 天）</div>
+                <canvas ref="costChartEl" height="180"></canvas>
+              </div>
+              <div class="monitor-chart-card">
+                <div class="monitor-chart-title">模型消费占比</div>
+                <canvas ref="modelPieEl" height="180"></canvas>
+              </div>
+            </div>
+
             <!-- 按模型统计 -->
             <div class="monitor-table-title">按模型统计（近 {{ monitorDays }} 天）</div>
             <div v-if="!monitorData.modelReport?.length" class="empty-hint">暂无数据</div>
@@ -673,9 +685,11 @@
 </template>
 
 <script setup>
-import {computed, defineComponent, h, nextTick, onMounted, reactive, ref, watch} from 'vue';
+import {computed, defineComponent, h, nextTick, onMounted, onUnmounted, reactive, ref, watch} from 'vue';
 import * as api from './services/api.js';
 import {formatFileSize, formatMarkdown, getFileIcon} from './js/utils.js';
+import { Chart, LineController, BarController, DoughnutController, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend, Filler } from 'chart.js';
+Chart.register(LineController, BarController, DoughnutController, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend, Filler);
 
 const LogoMark = defineComponent({
   setup() {
@@ -826,6 +840,10 @@ const userMenuOpen = ref(false);
 // 监控面板
 const monitorDays = ref(7);
 const monitorLoading = reactive({ my: false, admin: false });
+const costChartEl = ref(null);
+const modelPieEl = ref(null);
+let costChart = null;
+let modelPieChart = null;
 const monitorData = reactive({
   myCost: null,
   todayCost: null,
@@ -937,6 +955,12 @@ onMounted(async () => {
 
   // 点击页面其他地方时关闭用户下拉菜单
   document.addEventListener('click', () => { userMenuOpen.value = false; });
+});
+
+// 组件卸载时销毁图表实例
+onUnmounted(() => {
+  costChart?.destroy();
+  modelPieChart?.destroy();
 });
 
 function generateId() {
@@ -1074,11 +1098,86 @@ async function loadAdminStats() {
     monitorData.errorPct = errorData.errorPct;
     monitorData.modelReport = modelReport;
     monitorData.userReport = userReport;
+    // 数据加载完成后渲染图表
+    await nextTick();
+    renderMonitorCharts();
   } catch (e) {
     showToast('error', `加载监控数据失败：${e.message}`);
   } finally {
     monitorLoading.admin = false;
   }
+}
+
+/** 渲染监控图表 */
+function renderMonitorCharts() {
+  renderCostTrendChart();
+  renderModelPieChart();
+}
+
+function renderCostTrendChart() {
+  if (!costChartEl.value) return;
+  const report = monitorData.modelReport || [];
+  if (!report.length) return;
+
+  // 生成近 N 天的日期标签（简化：按模型聚合的数据没有日期维度，用模型名作 x 轴）
+  const labels = report.map(r => r.modelName || '未知');
+  const costs  = report.map(r => parseFloat(r.costUsd || 0));
+
+  if (costChart) costChart.destroy();
+  costChart = new Chart(costChartEl.value, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: '费用（USD）',
+        data: costs,
+        backgroundColor: 'rgba(77,107,254,0.7)',
+        borderColor: 'rgba(77,107,254,1)',
+        borderWidth: 1,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: v => '$' + v.toFixed(4) } }
+      }
+    }
+  });
+}
+
+function renderModelPieChart() {
+  if (!modelPieEl.value) return;
+  const report = monitorData.modelReport || [];
+  if (!report.length) return;
+
+  const labels = report.map(r => r.modelName || '未知');
+  const costs  = report.map(r => parseFloat(r.costUsd || 0));
+  const COLORS = ['#4D6BFE','#00A96E','#D69E2E','#E53E3E','#9B59B6','#1ABC9C'];
+
+  if (modelPieChart) modelPieChart.destroy();
+  modelPieChart = new Chart(modelPieEl.value, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data: costs,
+        backgroundColor: COLORS.slice(0, labels.length),
+        borderWidth: 2,
+        borderColor: '#fff'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: { callbacks: { label: ctx => ` $${parseFloat(ctx.raw).toFixed(6)}` } }
+      }
+    }
+  });
 }
 
 async function loadAdminUsers() {
