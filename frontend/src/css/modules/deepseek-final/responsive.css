@@ -1,0 +1,78 @@
+/* ── Responsive ── */
+@media (max-width: 1100px) {
+    .chat-view.is-empty .chat-input-area,
+    .chat-input-area {
+        max-width: 900px;
+    }
+
+    .chat-view.is-empty .chat-messages {
+        max-width: 100%;
+    }
+}
+
+@media (max-width: 768px) {
+    .sidebar {
+        width: 280px;
+    }
+
+    .topbar {
+        padding: 0 14px;
+    }
+
+    .topbar-actions {
+        gap: 4px;
+    }
+
+    .topbar-btn {
+        padding: 0 10px;
+        font-size: 12px;
+    }
+
+    .welcome h2 {
+        font-size: 22px;
+    }
+
+    .welcome-mode {
+        min-width: 120px;
+        height: 42px;
+        padding: 0 16px;
+        font-size: 13px;
+    }
+
+    .chat-input-area,
+    .chat-view.is-empty .chat-input-area {
+        width: calc(100% - 24px);
+    }
+
+    .chat-view.is-empty .chat-messages {
+        width: calc(100% - 24px);
+    }
+
+    .input-wrapper {
+        min-height: 120px;
+        border-radius: 20px;
+    }
+
+    #messageInput {
+        font-size: 15px;
+    }
+}
+
+@media (max-width: 480px) {
+    .topbar-actions .topbar-btn:nth-child(n+4) {
+        display: none;
+    }
+
+    .welcome-title-row {
+        gap: 8px;
+    }
+
+    .welcome-icon svg {
+        width: 32px;
+        height: 32px;
+    }
+
+    .welcome h2 {
+        font-size: 20px;
+    }
+}

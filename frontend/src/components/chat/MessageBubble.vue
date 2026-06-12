@@ -5,7 +5,7 @@
 
     <div class="bubble-wrap">
       <!-- 消息气泡内容 -->
-      <div class="bubble" v-html="message.html"></div>
+      <div class="bubble" v-html="displayHtml"></div>
 
       <!-- 消息底部信息：时间戳 + 耗时 -->
       <div v-if="message.timestamp" class="message-meta">
@@ -84,7 +84,8 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
+import { formatMarkdown } from '../../js/utils.js';
 
 const props = defineProps({
   message:   { type: Object,  required: true },
@@ -95,6 +96,26 @@ defineEmits(['regenerate', 'feedback']);
 
 const copyState = ref(false);
 
+const displayHtml = computed(() => {
+  const html = props.message.html || '';
+  if (!looksLikeLegacyMarkdownHtml(html)) return html;
+  return formatMarkdown(htmlToMarkdownText(html));
+});
+
+function looksLikeLegacyMarkdownHtml(html) {
+  if (/<h[23]\b|<li\b|class=["']md-h[23]/i.test(html)) return false;
+  return /(^|<br\s*\/?>|\n)\s*(#{1,3}\S|-\S)/i.test(html);
+}
+
+function htmlToMarkdownText(html) {
+  const withLineBreaks = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|h[1-6]|li)>/gi, '\n');
+  const tmp = document.createElement('div');
+  tmp.innerHTML = withLineBreaks;
+  return tmp.textContent || '';
+}
+
 function formatTime(ts) {
   if (!ts) return '';
   const d = new Date(ts);
@@ -103,7 +124,7 @@ function formatTime(ts) {
 
 function copyMessage() {
   const tmp = document.createElement('div');
-  tmp.innerHTML = props.message.html;
+  tmp.innerHTML = displayHtml.value;
   const text = tmp.innerText || tmp.textContent || '';
   navigator.clipboard.writeText(text).then(() => {
     copyState.value = true;

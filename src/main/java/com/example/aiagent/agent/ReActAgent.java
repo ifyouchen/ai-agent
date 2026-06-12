@@ -1,5 +1,6 @@
 package com.example.aiagent.agent;
 
+import com.example.aiagent.config.DeepSeekModelFactory;
 import com.example.aiagent.tool.BusinessTools;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,6 +16,7 @@ import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.output.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -56,6 +58,7 @@ public class ReActAgent {
 
     private final ChatLanguageModel chatModel;
     private final BusinessTools businessTools;
+    private final ObjectProvider<DeepSeekModelFactory> deepSeekModelFactory;
 
     /** 最大推理迭代次数（防止工具调用死循环） */
     private static final int MAX_ITERATIONS = 8;
@@ -95,7 +98,12 @@ public class ReActAgent {
      * @return           最终答案文本
      */
     public ReActResult execute(String userQuery, String sessionId) {
-        log.info("[ReAct] 开始多步推理 sessionId={} query='{}'", sessionId, userQuery);
+        return execute(userQuery, sessionId, null);
+    }
+
+    public ReActResult execute(String userQuery, String sessionId, String modelName) {
+        ChatLanguageModel activeModel = chatModel(modelName);
+        log.info("[ReAct] 开始多步推理 sessionId={} model={} query='{}'", sessionId, modelName, userQuery);
         long startMs = System.currentTimeMillis();
 
         List<ChatMessage> messages = new ArrayList<>();
@@ -113,7 +121,7 @@ public class ReActAgent {
             log.debug("[ReAct] 第 {} 轮推理...", iteration);
 
             // ── LLM 推理：决定下一步 ──────────────────────────
-            Response<AiMessage> response = chatModel.generate(messages, toolSpecs);
+            Response<AiMessage> response = activeModel.generate(messages, toolSpecs);
             AiMessage aiMessage = response.content();
             messages.add(aiMessage);
 
@@ -161,7 +169,7 @@ public class ReActAgent {
             // 超过最大迭代次数，要求 LLM 给出最终答案
             log.warn("[ReAct] 达到最大迭代次数 {}，强制获取最终答案", MAX_ITERATIONS);
             messages.add(UserMessage.from("请根据以上所有观察信息，给出最终答案。"));
-            Response<AiMessage> finalResponse = chatModel.generate(messages);
+            Response<AiMessage> finalResponse = activeModel.generate(messages);
             finalAnswer = finalResponse.content().text();
         }
 
@@ -245,7 +253,13 @@ public class ReActAgent {
      */
     public ReActResult executeWithCallback(String userQuery, String sessionId,
                                            StepCallback stepCallback) {
-        log.info("[ReAct-Stream] 开始多步推理 sessionId={} query='{}'", sessionId, userQuery);
+        return executeWithCallback(userQuery, sessionId, null, stepCallback);
+    }
+
+    public ReActResult executeWithCallback(String userQuery, String sessionId, String modelName,
+                                           StepCallback stepCallback) {
+        ChatLanguageModel activeModel = chatModel(modelName);
+        log.info("[ReAct-Stream] 开始多步推理 sessionId={} model={} query='{}'", sessionId, modelName, userQuery);
         long startMs = System.currentTimeMillis();
 
         List<ChatMessage> messages = new ArrayList<>();
@@ -262,7 +276,7 @@ public class ReActAgent {
             iteration++;
             log.debug("[ReAct-Stream] 第 {} 轮推理...", iteration);
 
-            Response<AiMessage> response = chatModel.generate(messages, toolSpecs);
+            Response<AiMessage> response = activeModel.generate(messages, toolSpecs);
             AiMessage aiMessage = response.content();
             messages.add(aiMessage);
 
@@ -303,7 +317,7 @@ public class ReActAgent {
         if (finalAnswer == null) {
             log.warn("[ReAct-Stream] 达到最大迭代次数 {}，强制获取最终答案", MAX_ITERATIONS);
             messages.add(UserMessage.from("请根据以上所有观察信息，给出最终答案。"));
-            Response<AiMessage> finalResponse = chatModel.generate(messages);
+            Response<AiMessage> finalResponse = activeModel.generate(messages);
             finalAnswer = finalResponse.content().text();
             stepCallback.onStep(
                     new ReActStep(iteration, finalAnswer, null, null, null),
@@ -313,6 +327,11 @@ public class ReActAgent {
         long durationMs = System.currentTimeMillis() - startMs;
         log.info("[ReAct-Stream] 推理完成 iterations={} durationMs={}", iteration, durationMs);
         return new ReActResult(finalAnswer, steps, iteration, durationMs);
+    }
+
+    private ChatLanguageModel chatModel(String modelName) {
+        DeepSeekModelFactory factory = deepSeekModelFactory.getIfAvailable();
+        return factory != null ? factory.chatModel(modelName) : chatModel;
     }
 
     /**

@@ -1,0 +1,185 @@
+/* ===== 监控面板 ===== */
+.monitor-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.monitor-section {
+    border-bottom: 1px solid var(--border-light);
+    padding-bottom: 20px;
+    margin-bottom: 20px;
+}
+.monitor-section:last-child { border-bottom: none; margin-bottom: 0; }
+
+.monitor-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+.monitor-section-title > span:first-child { flex: 1; }
+
+.monitor-refresh-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: var(--transition);
+}
+.monitor-refresh-btn:hover { border-color: var(--primary); color: var(--primary); }
+.monitor-refresh-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.monitor-cards {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+
+.monitor-card {
+    flex: 1;
+    min-width: 120px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+    text-align: center;
+}
+.monitor-card-warn { border-color: #D69E2E; background: #FFFBEB; }
+
+.monitor-card-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 4px;
+    font-variant-numeric: tabular-nums;
+}
+.monitor-card-warn .monitor-card-value { color: #D69E2E; }
+
+.monitor-card-label {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.monitor-period-btns {
+    display: flex;
+    gap: 4px;
+}
+
+.monitor-period-btn {
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: transparent;
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: var(--transition);
+}
+.monitor-period-btn:hover { border-color: var(--primary); color: var(--primary); }
+.monitor-period-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+.monitor-table-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 16px 0 8px;
+}
+
+.monitor-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+.monitor-table th {
+    background: var(--bg);
+    padding: 7px 10px;
+    text-align: left;
+    color: var(--text-muted);
+    font-weight: 500;
+    border-bottom: 1px solid var(--border);
+}
+.monitor-table td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border-light);
+    color: var(--text-secondary);
+}
+.monitor-table tr:last-child td { border-bottom: none; }
+.monitor-table tr:hover td { background: var(--bg); }
+
+.user-id-cell {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.status-enabled {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    background: #C6F6D5;
+    color: #276749;
+    font-weight: 500;
+}
+.status-disabled {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    background: #FED7D7;
+    color: #9B2C2C;
+    font-weight: 500;
+}
+
+.admin-user-btn {
+    padding: 3px 10px;
+    border-radius: var(--radius-xs);
+    border: 1px solid var(--primary);
+    background: transparent;
+    color: var(--primary);
+    font-size: 11px;
+    cursor: pointer;
+    transition: var(--transition);
+}
+.admin-user-btn:hover { background: var(--primary); color: #fff; }
+.admin-user-btn.danger { border-color: var(--error); color: var(--error); }
+.admin-user-btn.danger:hover { background: var(--error); color: #fff; }
+
+.monitor-pagination {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+    justify-content: center;
+}
+
+.monitor-page-btn {
+    padding: 4px 12px;
+    border-radius: var(--radius-xs);
+    border: 1px solid var(--border);
+    background: transparent;
+    font-size: 12px;
+    cursor: pointer;
+    transition: var(--transition);
+}
+.monitor-page-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.monitor-page-btn:disabled { opacity: .4; cursor: not-allowed; }
+

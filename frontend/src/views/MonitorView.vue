@@ -233,12 +233,5 @@ const fmtNum = n => n == null ? '—' : Number(n).toLocaleString();
 </script>
 
 <style scoped>
-.chart-empty {
-  height: 180px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #aaa;
-  font-size: 13px;
-}
+@import '../css/views/monitor-view.css';
 </style>

@@ -1,0 +1,138 @@
+/* ── Input area ── */
+.chat-input-area {
+    width: 100%;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 0 0 14px;
+    border-top: 0;
+    background: transparent;
+}
+
+.input-wrapper {
+    min-height: 140px;
+    border-radius: 24px;
+    border: 1px solid #e4e8f1;
+    background: #ffffff;
+    box-shadow: 0 4px 20px rgba(29, 39, 60, .05);
+    padding: 14px 14px 12px;
+}
+
+.input-wrapper:focus-within {
+    border-color: #d0daf5;
+    box-shadow: 0 4px 24px rgba(79, 103, 245, .08);
+}
+
+#messageInput {
+    min-height: 48px;
+    max-height: 100px;
+    font-size: 17px;
+    line-height: 1.6;
+    color: #2b3140;
+    padding: 0;
+}
+
+#messageInput::placeholder {
+    color: #a8b0c0;
+}
+
+.composer-footer {
+    margin-top: 8px;
+    align-items: center;
+}
+
+.composer-tools {
+    gap: 8px;
+}
+
+.tool-chip {
+    height: 38px;
+    padding: 0 14px;
+    border-radius: 19px;
+    border: 1px solid #dce4f5;
+    background: #ffffff;
+    color: #4f67f5;
+    font-size: 14px;
+    font-weight: 500;
+    gap: 6px;
+}
+
+.tool-chip svg {
+    width: 16px;
+    height: 16px;
+}
+
+.tool-chip.active {
+    background: #edf3ff;
+    border-color: #c7d5ff;
+}
+
+.tool-chip:hover {
+    background: #f0f4ff;
+    border-color: #c0ceff;
+}
+
+.composer-actions {
+    gap: 8px;
+}
+
+.attach-btn {
+    width: 34px;
+    height: 34px;
+    color: #6b7385;
+}
+
+.attach-btn:hover {
+    background: #f3f5f9;
+}
+
+.attach-btn.active {
+    background: #edf3ff;
+    color: #4f67f5;
+}
+
+.send-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: #d7e0ff;
+    color: #ffffff;
+}
+
+.send-btn:not(:disabled) {
+    background: #4f67f5;
+}
+
+.send-btn:hover {
+    background: #3f58ee;
+}
+
+.send-btn:disabled {
+    background: #dde3f0;
+}
+
+.stop-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: #20242c;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 6px 16px rgba(32, 36, 44, .15);
+}
+
+.stop-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.stop-btn:hover {
+    background: #111827;
+}
+
+.chat-view.is-empty .input-wrapper {
+    min-height: 136px;
+}
+

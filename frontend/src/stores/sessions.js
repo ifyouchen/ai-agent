@@ -11,35 +11,18 @@ import { computed, nextTick, reactive, ref, watch } from 'vue';
 import * as api from '../services/api.js';
 import { formatMarkdown } from '../js/utils.js';
 import { useUiStore } from './ui.js';
-
-// ── 常量 ──────────────────────────────────────────────────────────────
-const MAX_SESSIONS    = 50;
-const MAX_MSGS        = 100;  // localStorage per session
-const SAVE_DEBOUNCE   = 250;  // ms
-
-// ── 工具函数 ──────────────────────────────────────────────────────────
-function generateId() {
-  return 'sess-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
-
-function escapeHtml(str) {
-  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function trimText(str, max) {
-  const s = String(str ?? '');
-  return s.length > max ? s.slice(0, max) + '…' : s;
-}
-
-function stripHtml(html) {
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  return tmp.textContent || '';
-}
-
-function storageKey(userId) {
-  return `ai_agent_sessions_${userId}`;
-}
+import {
+  EXPERT_MODEL,
+  MAX_MSGS,
+  MAX_SESSIONS,
+  QUICK_MODEL,
+  SAVE_DEBOUNCE,
+  escapeHtml,
+  generateId,
+  renderReactBubble,
+  storageKey,
+  stripHtml,
+} from './sessionUtils.js';
 
 export const useSessionStore = defineStore('sessions', () => {
   const ui = useUiStore();
@@ -53,7 +36,7 @@ export const useSessionStore = defineStore('sessions', () => {
   const reactEnabled   = ref(false);
   const streamEnabled  = ref(true);
   const enterToSend    = ref(false);
-  const model          = ref('deepseek');
+  const model          = ref(QUICK_MODEL);
   const currentKbId    = ref(null);
   const messageInput   = ref('');
 
@@ -68,6 +51,27 @@ export const useSessionStore = defineStore('sessions', () => {
     const s = sessions.value.find(s => s.id === sessionId.value);
     return s?.title || '新对话';
   });
+
+  const activeModel = computed(() =>
+    reactEnabled.value ? EXPERT_MODEL : QUICK_MODEL
+  );
+
+  function setQuickMode() {
+    reactEnabled.value = false;
+    streamEnabled.value = true;
+    model.value = QUICK_MODEL;
+  }
+
+  function setExpertMode() {
+    reactEnabled.value = true;
+    streamEnabled.value = true;
+    model.value = EXPERT_MODEL;
+  }
+
+  function toggleExpertMode() {
+    if (reactEnabled.value) setQuickMode();
+    else setExpertMode();
+  }
 
   // ── 会话持久化 ────────────────────────────────────────────────────────
   function scheduleSave() {
@@ -299,17 +303,18 @@ export const useSessionStore = defineStore('sessions', () => {
   }
 
   // ── 聊天发送 ──────────────────────────────────────────────────────────
-  async function sendMessage(text, kbId = null) {
+  async function sendMessage(text, kbId = null, requestText = text) {
     const reqId = sessionId.value;
     const rt    = ensureRuntime(reqId);
     if (!text?.trim() || rt.sending) return;
+    const outboundText = requestText?.trim() || text;
 
     pushMessage(reqId, 'user', formatMarkdown(text));
     updateSessionTitle(text, reqId);
 
-    if (reactEnabled.value)   await doReactChat(reqId, text, kbId);
-    else if (streamEnabled.value) await doStreamChat(reqId, text, kbId);
-    else                       await doSyncChat(reqId, text, kbId);
+    if (reactEnabled.value)   await doReactChat(reqId, outboundText, kbId);
+    else if (streamEnabled.value) await doStreamChat(reqId, outboundText, kbId);
+    else                       await doSyncChat(reqId, outboundText, kbId);
   }
 
   /** 重新生成某条 AI 消息（删除该消息，重发上一条 user 消息） */
@@ -336,7 +341,7 @@ export const useSessionStore = defineStore('sessions', () => {
     const bubble = pushMessage(reqId, 'ai', '<span class="typing-dots">●●●</span>');
     rt.bubble = bubble;
     try {
-      const data = await api.chatSync(reqId, text, kbId);
+      const data = await api.chatSync(reqId, text, kbId, activeModel.value);
       if (rt.requestId !== rid || rt.cancelled) return;
       bubble.html = formatMarkdown(data.reply);
       bubble.durationMs = Date.now() - startMs;
@@ -360,7 +365,7 @@ export const useSessionStore = defineStore('sessions', () => {
     const bubble = pushMessage(reqId, 'ai', initHtml);
     rt.bubble = bubble; rt.text = '';
     let fullText = '', firstToken = true;
-    const es = api.chatStream(reqId, text, kbId);
+    const es = api.chatStream(reqId, text, kbId, activeModel.value);
     rt.eventSource = es;
 
     let rafPending = false, rafId = null;
@@ -420,7 +425,7 @@ export const useSessionStore = defineStore('sessions', () => {
     const bubble = pushMessage(reqId, 'ai',
       '<div class="react-thinking"><span class="typing-dots">●●●</span><span class="react-thinking-label">思考中…</span></div>');
     rt.bubble = bubble; rt.reactSteps = []; rt.reactAnswer = null; rt.reactStartMs = startMs;
-    const es = api.chatReactStream(reqId, text, kbId);
+    const es = api.chatReactStream(reqId, text, kbId, activeModel.value);
     rt.eventSource = es;
 
     es.addEventListener('step', ev => {
@@ -481,31 +486,6 @@ export const useSessionStore = defineStore('sessions', () => {
     }
   }
 
-  // ── ReAct 渲染 ────────────────────────────────────────────────────────
-  function renderReactBubble(steps, answer, durationMs) {
-    const secs = durationMs ? Math.max(1, Math.round(durationMs / 1000)) : '';
-    const stepsHtml = (steps || []).map(step => `
-      <div class="react-step">
-        <div class="react-step-label">第 ${step.iteration} 步${step.toolName ? ` · ${escapeHtml(step.toolName)}` : ''}</div>
-        ${step.thought   ? `<div class="react-thought"><span>思考摘要</span>${escapeHtml(trimText(step.thought, 220))}</div>` : ''}
-        ${step.toolName  ? `<div class="react-tool"><span>工具调用</span>${escapeHtml(step.toolName)}(${escapeHtml(step.toolArgs || '')})</div>` : ''}
-        ${step.observation ? `<div class="react-obs"><span>观察结果</span>${escapeHtml(trimText(step.observation, 260))}</div>` : ''}
-      </div>`).join('');
-    const label = answer
-      ? `已思考${secs ? `（用时 ${secs} 秒）` : ''}`
-      : `思考中${steps?.length ? `（已完成 ${steps.length} 步）` : ''}…`;
-    const stepsBlock = (steps?.length || !answer) ? `
-      <details class="react-steps-container"${answer ? '' : ' open'}>
-        <summary class="react-steps-summary">
-          <span class="react-steps-title">${label}</span>
-          ${steps?.length ? `<span class="react-steps-count">${steps.length} 步</span>` : ''}
-        </summary>
-        <div class="react-steps">${stepsHtml}${!answer ? '<div class="react-step react-step-pending"><span class="typing-dots">●●●</span></div>' : ''}</div>
-      </details>` : '';
-    const answerBlock = answer ? `<div class="react-answer">${formatMarkdown(answer)}</div>` : '';
-    return stepsBlock + answerBlock;
-  }
-
   // ── 导出对话 ──────────────────────────────────────────────────────────
   function exportCurrentSession() {
     const s   = sessions.value.find(s => s.id === sessionId.value);
@@ -527,8 +507,9 @@ export const useSessionStore = defineStore('sessions', () => {
 
   return {
     sessions, sessionId, messages, sessionMessages, sessionRuntime,
-    reactEnabled, streamEnabled, enterToSend, model, currentKbId, messageInput,
+    reactEnabled, streamEnabled, enterToSend, model, activeModel, currentKbId, messageInput,
     currentSessionSending, currentSessionTitle,
+    QUICK_MODEL, EXPERT_MODEL, setQuickMode, setExpertMode, toggleExpertMode,
     init, newSession, switchSession, removeSession, renameSession, updateSessionTitle,
     sendMessage, regenerateMessage, setFeedback,
     stopGeneration: id => stopSessionGeneration(id ?? sessionId.value, true),

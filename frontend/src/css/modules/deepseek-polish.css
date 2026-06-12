@@ -28,6 +28,30 @@
     bottom: calc(100% + 8px);
 }
 
+.topbar {
+    height: 72px;
+    padding: 18px 42px 0 24px;
+    align-items: flex-start;
+}
+
+.topbar-actions {
+    gap: 10px;
+}
+
+.topbar-btn {
+    height: 38px;
+    padding: 0 16px;
+}
+
+.toast-container {
+    top: 88px;
+    right: 42px;
+}
+
+.toast {
+    max-width: min(360px, calc(100vw - 84px));
+}
+
 .chat-view.is-empty {
     justify-content: center;
     gap: 40px;
@@ -37,7 +61,8 @@
 .chat-view.is-empty .chat-messages {
     flex: 0 0 auto;
     width: 100%;
-    max-width: 1000px;
+    max-width: 930px;
+    margin: 0 auto;
     overflow: visible;
 }
 
@@ -53,17 +78,25 @@
     box-shadow: 0 1px 2px rgba(28, 35, 52, .03);
 }
 
+.chat-input-area,
 .chat-view.is-empty .chat-input-area {
     flex: 0 0 auto;
-    width: min(930px, 100%);
+    width: min(930px, calc(100% - 48px));
     max-width: 930px;
     margin: 0 auto;
+    border-top: 0;
+    background: transparent;
+}
+
+.chat-view.is-empty .chat-input-area {
+    width: min(930px, 100%);
     padding: 0;
 }
 
 .chat-view.is-empty .input-wrapper,
 .input-wrapper {
     border-radius: 26px;
+    min-height: 148px;
 }
 
 .chat-view.is-empty .input-wrapper {
@@ -76,6 +109,10 @@
 
 .composer-footer {
     min-height: 38px;
+}
+
+.composer-file-input {
+    display: none;
 }
 
 .chat-view:not(.is-empty) .chat-messages {
@@ -156,5 +193,22 @@
 
     .composer-footer {
         align-items: flex-end;
+    }
+
+    .topbar {
+        height: 58px;
+        padding: 10px 16px 0;
+    }
+
+    .toast-container {
+        top: 66px;
+        right: 12px;
+        left: 12px;
+        align-items: stretch;
+    }
+
+    .toast {
+        max-width: none;
+        width: 100%;
     }
 }

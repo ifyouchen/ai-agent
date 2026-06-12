@@ -108,6 +108,7 @@ public class ReActChatController {
 
         String sessionId = request.getOrDefault("sessionId", "unknown");
         String message   = request.getOrDefault("message", "");
+        String model     = request.get("model");
         String clientIp  = getClientIp(httpRequest);
 
         MDC.put("scenario", "react_chat");
@@ -153,7 +154,7 @@ public class ReActChatController {
             }
             ReActAgent.ReActResult result;
             try {
-                result = reActAgent.execute(injectionCheck.sanitizedInput(), sessionId);
+                result = reActAgent.execute(injectionCheck.sanitizedInput(), sessionId, model);
             } finally {
                 HybridRagContentRetriever.clearContext();
             }
@@ -217,6 +218,7 @@ public class ReActChatController {
             @RequestParam String sessionId,
             @RequestParam String message,
             @RequestParam(required = false) Long kbId,
+            @RequestParam(required = false) String model,
             @AuthenticationPrincipal String userId,
             HttpServletRequest httpRequest) {
 
@@ -271,7 +273,7 @@ public class ReActChatController {
             }
             try {
                 ReActAgent.ReActResult result = reActAgent.executeWithCallback(
-                        sanitizedMessage, sessionId,
+                        sanitizedMessage, sessionId, model,
                         (step, isFinal) -> {
                             try {
                                 if (isFinal) {

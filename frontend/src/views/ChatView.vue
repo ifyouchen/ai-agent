@@ -21,11 +21,11 @@
           RAG 模式：{{ kb.currentKbName || '已关联知识库' }}
         </div>
         <div class="welcome-modes">
-          <button class="welcome-mode" :class="{ active: !sess.reactEnabled }" type="button" @click="sess.reactEnabled = false; sess.streamEnabled = true">
+          <button class="welcome-mode" :class="{ active: !sess.reactEnabled }" type="button" @click="sess.setQuickMode()">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="m13 2-8 12h6l-1 8 9-13h-6l1-7Z"/></svg>
             快速模式
           </button>
-          <button class="welcome-mode" :class="{ active: sess.reactEnabled }" type="button" @click="sess.reactEnabled = true; sess.streamEnabled = true">
+          <button class="welcome-mode" :class="{ active: sess.reactEnabled }" type="button" @click="sess.setExpertMode()">
             <svg viewBox="0 0 24 24" fill="none">
               <path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z" stroke="currentColor" stroke-width="1.8"/>
               <path d="M8.5 9.8 12 7.8l3.5 2-3.5 2-3.5-2Z" stroke="currentColor" stroke-width="1.8"/>
@@ -47,7 +47,7 @@
     </div>
 
     <!-- 输入区域 -->
-    <MessageInput @attach-kb="handleAttachKb" />
+    <MessageInput @attach-kb="handleAttachKb" @upload-files="handleUploadFiles" />
   </div>
 </template>
 
@@ -59,10 +59,12 @@ import MessageInput  from '../components/chat/MessageInput.vue';
 import { useSessionStore } from '../stores/sessions.js';
 import { useKbStore } from '../stores/kb.js';
 import { useUiStore } from '../stores/ui.js';
+import { useOrgStore } from '../stores/org.js';
 
 const sess   = useSessionStore();
 const kb     = useKbStore();
 const ui     = useUiStore();
+const org    = useOrgStore();
 const router = useRouter();
 const chatEl = ref(null);
 
@@ -84,7 +86,8 @@ function handleFeedback(messageId, fb) {
 async function handleAttachKb() {
   const kbs = kb.knowledgeBases;
   if (!kbs.length) {
-    ui.showToast('warning', '暂无知识库，请先在「知识库」页上传文档');
+    ui.showToast('warning', '暂无知识库，请先在「知识库」页创建知识库并上传文档');
+    router.push('/kb');
     return;
   }
   // P0-4: 去除 4 个上限，展示全部知识库
@@ -110,8 +113,31 @@ async function handleAttachKb() {
   } else {
     sess.currentKbId = Number(chosen);
     const found = kbs.find(k => k.id === sess.currentKbId);
+    if (kb.currentKbId !== sess.currentKbId) {
+      await kb.selectKb(sess.currentKbId, org.currentOrgId);
+    } else if (!kb.docs.length) {
+      await kb.loadDocs(org.currentOrgId);
+    }
     ui.showToast('success', `已关联知识库「${found?.name || chosen}」`);
   }
+}
+
+async function handleUploadFiles(files) {
+  if (!files?.length) return;
+  if (!kb.knowledgeBases.length) {
+    ui.showToast('warning', '暂无知识库，请先在「知识库」页创建知识库');
+    router.push('/kb');
+    return;
+  }
+  if (!kb.currentKbId) {
+    ui.showToast('warning', '请先在「知识库」页选择一个知识库');
+    router.push('/kb');
+    return;
+  }
+  const targetName = kb.currentKbName || '当前知识库';
+  ui.showToast('info', `开始上传到「${targetName}」`);
+  await Promise.all(files.map(file => kb.uploadFile(file, org.currentOrgId)));
+  ui.showToast('success', `已添加 ${files.length} 个文档到「${targetName}」`);
 }
 </script>
 

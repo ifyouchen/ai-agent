@@ -21,4 +21,9 @@ public class ChatRequest {
      * 不传或传 null 则不限定知识库（全局检索）。
      */
     private Long kbId;
+
+    /**
+     * 模型名。快速模式使用 deepseek-v4-flash，专家模式使用 deepseek-v4-pro。
+     */
+    private String model;
 }

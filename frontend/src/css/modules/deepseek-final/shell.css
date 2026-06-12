@@ -1,0 +1,59 @@
+/* ── Main area ─ */
+.main {
+    background: #ffffff;
+    flex: 1 1 auto;
+    min-width: 0;
+    width: calc(100% - var(--sidebar-w));
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ── Topbar ── */
+.topbar {
+    height: 54px;
+    padding: 0 24px 0 20px;
+    border-bottom: 0;
+    background: #ffffff;
+}
+
+.topbar-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: #2c3140;
+}
+
+.topbar-actions {
+    gap: 8px;
+}
+
+.topbar-btn {
+    height: 34px;
+    padding: 0 14px;
+    border-radius: 17px;
+    border: 1px solid #e5e9f1;
+    background: #ffffff;
+    color: #616a7d;
+    font-size: 13px;
+    box-shadow: 0 1px 2px rgba(24, 31, 50, .02);
+}
+
+.topbar-btn:hover,
+.topbar-btn.router-link-active {
+    background: #f6f8ff;
+    color: #4f67f5;
+    border-color: #cfd9ff;
+}
+
+.topbar-btn.danger {
+    background: #ffffff;
+    color: #ff5b57;
+    border-color: #ffc9c7;
+}
+
+.topbar-btn.danger:hover {
+    background: #fff7f7;
+    color: #ff4b48;
+    border-color: #ff4b48;
+}
+

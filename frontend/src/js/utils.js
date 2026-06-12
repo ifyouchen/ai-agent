@@ -23,7 +23,7 @@ const PURIFY_CONFIG = {
  *   2. 应用 Markdown 正则，仅生成白名单标签
  *   3. DOMPurify 白名单过滤，作为最后一道防线
  *
- * 支持：代码块、行内代码、加粗、斜体、h2/h3、列表、换行
+ * 支持：代码块、行内代码、加粗、斜体、h1/h2/h3、列表、换行
  */
 export function formatMarkdown(text) {
     if (!text) return '';
@@ -39,9 +39,10 @@ export function formatMarkdown(text) {
             '<code class="inline-code">$1</code>')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        .replace(/^### (.+)$/gm, '<h3 class="md-h3">$1</h3>')
-        .replace(/^## (.+)$/gm, '<h2 class="md-h2">$1</h2>')
-        .replace(/^- (.+)$/gm, '<li>$1</li>')
+        .replace(/^###\s*(.+)$/gm, '<h3 class="md-h3">$1</h3>')
+        .replace(/^##\s*(.+)$/gm, '<h2 class="md-h2">$1</h2>')
+        .replace(/^#\s*(.+)$/gm, '<h2 class="md-h2">$1</h2>')
+        .replace(/^-\s*(.+)$/gm, '<li>$1</li>')
         .replace(/\n/g, '<br>');
     return DOMPurify.sanitize(html, PURIFY_CONFIG);
 }

@@ -1,0 +1,79 @@
+/* ── Sidebar bottom ── */
+.sidebar-bottom {
+    border-top: 1px solid #eceff5;
+    padding: 12px 12px 14px;
+    position: relative;
+    background: var(--sidebar-bg);
+}
+
+.user-info {
+    position: relative;
+    cursor: pointer;
+    grid-template-columns: 32px 1fr 18px;
+    padding: 4px 2px 10px;
+    gap: 8px;
+}
+
+.user-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.user-name {
+    font-size: 14px;
+    color: #3b4350;
+    font-weight: 500;
+}
+
+.user-state {
+    font-size: 12px;
+    color: #a4acb9;
+}
+
+.user-menu-arrow {
+    display: none;
+}
+
+.model-title,
+.model-select {
+    display: none;
+}
+
+/* ── User dropdown ── */
+.user-dropdown {
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 6px);
+    width: auto;
+    background: #ffffff;
+    border: 1px solid #e4e8f0;
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(25, 32, 48, .12);
+    padding: 4px;
+    z-index: 50;
+}
+
+.user-dropdown-item,
+a.user-dropdown-item {
+    color: #4a5261;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+}
+
+.user-dropdown-item:hover,
+a.user-dropdown-item:hover {
+    background: #f3f6ff;
+    color: #4f67f5;
+}
+
+.user-dropdown-item.danger {
+    color: #e84d4d;
+}
+
+.user-dropdown-item.danger:hover {
+    background: #fff1f1;
+    color: #e33b3b;
+}
+

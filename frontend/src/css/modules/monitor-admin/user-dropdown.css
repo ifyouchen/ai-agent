@@ -1,0 +1,41 @@
+/* ===== 用户下拉菜单 ===== */
+.user-dropdown {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 6px);
+    width: 180px;
+    background: #1E1E22;
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    z-index: 1000;
+    overflow: hidden;
+    animation: fadeInUp .12s ease;
+}
+
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.user-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 14px;
+    background: transparent;
+    border: none;
+    color: rgba(255,255,255,.8);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background .1s;
+    text-align: left;
+}
+.user-dropdown-item:hover { background: rgba(255,255,255,.08); color: #fff; }
+.user-dropdown-item.danger { color: #FC8181; }
+.user-dropdown-item.danger:hover { background: rgba(229,62,62,.15); color: #FC8181; }
+.user-dropdown-item svg { flex-shrink: 0; opacity: .7; }
+
+.user-menu-arrow { color: rgba(255,255,255,.4); flex-shrink: 0; }
+

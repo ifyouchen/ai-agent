@@ -1,6 +1,6 @@
 package com.example.aiagent.controller;
 
-import com.example.aiagent.agent.AgentFactory.ChatAssistant;
+import com.example.aiagent.agent.AgentFactory;
 import com.example.aiagent.chat.service.ChatHistoryService;
 import com.example.aiagent.dto.ChatRequest;
 import com.example.aiagent.dto.ChatResponse;
@@ -43,7 +43,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ChatController {
 
-    private final ChatAssistant chatAssistant;
+    private final AgentFactory agentFactory;
     private final RedisChatMemoryStore memoryStore;
     private final PromptInjectionFilter promptInjectionFilter;
     private final RateLimitService rateLimitService;
@@ -110,7 +110,7 @@ public class ChatController {
             long start = System.currentTimeMillis();
             String rawReply;
             try {
-                rawReply = chatAssistant.chat(
+                rawReply = agentFactory.chatAssistantForModel(request.getModel()).chat(
                         request.getSessionId(), injectionCheck.sanitizedInput());
             } finally {
                 // 无论成功或异常，必须清除 ThreadLocal 防止内存泄漏

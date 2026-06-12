@@ -1,6 +1,6 @@
 package com.example.aiagent.controller;
 
-import com.example.aiagent.agent.AgentFactory.StreamingChatAssistant;
+import com.example.aiagent.agent.AgentFactory;
 import com.example.aiagent.chat.service.ChatHistoryService;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
@@ -41,7 +41,7 @@ import java.util.concurrent.atomic.AtomicReference;
 @RequiredArgsConstructor
 public class StreamingChatController {
 
-    private final StreamingChatAssistant streamingChatAssistant;
+    private final AgentFactory agentFactory;
     private final PromptInjectionFilter promptInjectionFilter;
     private final RateLimitService rateLimitService;
     private final OutputContentFilter outputContentFilter;
@@ -67,6 +67,7 @@ public class StreamingChatController {
             @RequestParam String sessionId,
             @RequestParam String message,
             @RequestParam(required = false) Long kbId,
+            @RequestParam(required = false) String model,
             @AuthenticationPrincipal String userId,
             HttpServletRequest httpRequest) {
 
@@ -119,7 +120,7 @@ public class StreamingChatController {
         }
 
         // ── Step 4：LLM 流式调用 ──────────────────────────
-        log.info("开始流式对话 userId={} sessionId={} kbId={}", userId, sessionId, kbId);
+        log.info("开始流式对话 userId={} sessionId={} kbId={} model={}", userId, sessionId, kbId, model);
         String sanitizedMessage = promptInjectionFilter.check(message).sanitizedInput();
 
         // 设置 RAG 检索上下文（指定知识库时生效）
@@ -132,7 +133,7 @@ public class StreamingChatController {
         AtomicReference<StringBuilder> fullTextRef = new AtomicReference<>(new StringBuilder());
         long startMs = System.currentTimeMillis();
 
-        streamingChatAssistant.streamChat(sessionId, sanitizedMessage)
+        agentFactory.streamingChatAssistantForModel(model).streamChat(sessionId, sanitizedMessage)
                 .onNext(token -> {
                     try {
                         // 累积 token 用于后续脱敏

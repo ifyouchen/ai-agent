@@ -1,5 +1,6 @@
 package com.example.aiagent.agent;
 
+import com.example.aiagent.config.DeepSeekModelFactory;
 import com.example.aiagent.memory.RedisChatMemoryStore;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.tool.BusinessTools;
@@ -13,8 +14,12 @@ import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.service.UserMessage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Agent 组装工厂
@@ -38,6 +43,10 @@ public class AgentFactory {
     private final RedisChatMemoryStore redisChatMemoryStore;
     private final HybridRagContentRetriever hybridRagContentRetriever;
     private final BusinessTools businessTools;
+    private final ObjectProvider<DeepSeekModelFactory> deepSeekModelFactory;
+
+    private final Map<String, ChatAssistant> chatAssistantCache = new ConcurrentHashMap<>();
+    private final Map<String, StreamingChatAssistant> streamingChatAssistantCache = new ConcurrentHashMap<>();
 
     @Value("${agent.memory.max-messages:20}")
     private int maxMessages;
@@ -49,8 +58,19 @@ public class AgentFactory {
      */
     @Bean
     public ChatAssistant chatAssistant() {
+        return buildChatAssistant(chatLanguageModel);
+    }
+
+    public ChatAssistant chatAssistantForModel(String modelName) {
+        DeepSeekModelFactory factory = deepSeekModelFactory.getIfAvailable();
+        if (factory == null) return chatAssistant();
+        String key = factory.normalizeModelName(modelName);
+        return chatAssistantCache.computeIfAbsent(key, ignored -> buildChatAssistant(factory.chatModel(key)));
+    }
+
+    private ChatAssistant buildChatAssistant(ChatLanguageModel model) {
         return AiServices.builder(ChatAssistant.class)
-                .chatLanguageModel(chatLanguageModel)
+                .chatLanguageModel(model)
                 .chatMemoryProvider(memoryId ->
                         MessageWindowChatMemory.builder()
                                 .id(memoryId)
@@ -70,8 +90,20 @@ public class AgentFactory {
      */
     @Bean
     public StreamingChatAssistant streamingChatAssistant() {
+        return buildStreamingChatAssistant(streamingChatLanguageModel);
+    }
+
+    public StreamingChatAssistant streamingChatAssistantForModel(String modelName) {
+        DeepSeekModelFactory factory = deepSeekModelFactory.getIfAvailable();
+        if (factory == null) return streamingChatAssistant();
+        String key = factory.normalizeModelName(modelName);
+        return streamingChatAssistantCache.computeIfAbsent(key,
+                ignored -> buildStreamingChatAssistant(factory.streamingModel(key)));
+    }
+
+    private StreamingChatAssistant buildStreamingChatAssistant(StreamingChatLanguageModel model) {
         return AiServices.builder(StreamingChatAssistant.class)
-                .streamingChatLanguageModel(streamingChatLanguageModel)
+                .streamingChatLanguageModel(model)
                 .chatMemoryProvider(memoryId ->
                         MessageWindowChatMemory.builder()
                                 .id(memoryId)

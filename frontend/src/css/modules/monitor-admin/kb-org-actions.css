@@ -1,0 +1,104 @@
+/* ===== 知识库编辑按钮 ===== */
+.kb-item-edit {
+    background: none;
+    border: none;
+    cursor: pointer;
+    opacity: 0;
+    transition: var(--transition);
+    padding: 2px 4px;
+    border-radius: var(--radius-xs);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+}
+.kb-item:hover .kb-item-edit { opacity: .6; }
+.kb-item-edit:hover { opacity: 1 !important; background: var(--primary-light); color: var(--primary); }
+
+/* ===== 知识库/组织成员面板 - 内联角色选择 ===== */
+.kb-member-role-inline {
+    font-size: 11px;
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    background: var(--surface);
+    color: var(--text-secondary);
+    cursor: pointer;
+    outline: none;
+    transition: var(--transition);
+}
+.kb-member-role-inline:hover,
+.kb-member-role-inline:focus {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.kb-member-remove-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 2px 4px;
+    border-radius: var(--radius-xs);
+    display: flex;
+    align-items: center;
+    transition: var(--transition);
+}
+.kb-member-remove-btn:hover { color: var(--error); background: #FEF2F2; }
+
+/* OWNER 角色标签（只读，不可修改） */
+.owner-badge {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 8px;
+    color: #92400E;
+    background: #FEF3C7;
+    border: 1px solid #FDE68A;
+    white-space: nowrap;
+}
+
+/* ===== 组织列表项操作按钮区 ===== */
+.org-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    opacity: 0;
+    transition: var(--transition);
+}
+.org-item:hover .org-item-actions { opacity: 1; }
+
+.org-item-action-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 3px 5px;
+    border-radius: var(--radius-xs);
+    display: flex;
+    align-items: center;
+    transition: var(--transition);
+}
+.org-item-action-btn:hover { color: var(--primary); background: var(--primary-light); }
+.org-item-action-btn.danger:hover { color: var(--error); background: #FEF2F2; }
+
+/* ===== 组织邀请成员表单 ===== */
+.org-invite-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+.org-invite-wrap .kb-member-search-wrap { flex: 1; min-width: 140px; }
+
+/* ===== 组织成员弹窗 - 名称显示 ===== */
+.member-name {
+    font-weight: 500;
+    color: var(--text-primary);
+    font-size: 13px;
+}
+.member-item .member-id {
+    font-weight: 400;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
