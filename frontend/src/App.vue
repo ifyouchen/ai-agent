@@ -28,7 +28,7 @@
         v-for="session in sessions"
         :key="session.id"
         class="session-item"
-        :class="{ active: session.id === sessionId }"
+        :class="{ active: session.id === sessionId, generating: sessionRuntime[session.id]?.sending }"
         :title="session.title"
         @click="switchSession(session.id)"
       >
@@ -36,7 +36,11 @@
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" opacity=".5"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
         </span>
         <span class="session-title">{{ session.title }}</span>
-        <button class="session-delete" type="button" title="删除会话" @click.stop="removeSession(session.id)">
+        <!-- 回答中动态指示器 -->
+        <span v-if="sessionRuntime[session.id]?.sending" class="session-generating">
+          <span></span><span></span><span></span>
+        </span>
+        <button v-else class="session-delete" type="button" title="删除会话" @click.stop="removeSession(session.id)">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
         </button>
       </div>
@@ -620,7 +624,7 @@
 </template>
 
 <script setup>
-import {computed, defineComponent, h, nextTick, onMounted, reactive, ref} from 'vue';
+import {computed, defineComponent, h, nextTick, onMounted, reactive, ref, watch} from 'vue';
 import * as api from './services/api.js';
 import {formatFileSize, formatMarkdown, getFileIcon} from './js/utils.js';
 
@@ -655,6 +659,72 @@ const activeTab = ref('chat');
 const sessionId = ref(generateId());
 const sessions = ref([]);
 const sessionMessages = reactive({});
+
+// ── 会话持久化（localStorage）─────────────────────────────────────
+// 按用户隔离：key 中带上 userId，防止多用户共用浏览器互看历史
+const STORAGE_KEY_PREFIX = 'ai_agent_sessions';
+const MAX_MESSAGES_PER_SESSION = 100; // 每个会话最多保留消息数
+const MAX_SESSIONS_STORED = 50;       // 最多持久化的会话数
+let _saveTimer = null;
+function scheduleSave() {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(saveSessions, 200);
+}
+
+function getStorageKey() {
+  const uid = user.value?.userId || 'guest';
+  return `${STORAGE_KEY_PREFIX}_${uid}`;
+}
+
+function saveSessions() {
+  try {
+    const key = getStorageKey();
+    // 只保留最近的 MAX_SESSIONS_STORED 个会话
+    const sessionsToSave = sessions.value.slice(0, MAX_SESSIONS_STORED);
+    const msgMap = {};
+    sessionsToSave.forEach(s => {
+      const msgs = sessionMessages[s.id] || [];
+      // 每个会话只保留最近 MAX_MESSAGES_PER_SESSION 条（避免 localStorage 超限）
+      msgMap[s.id] = msgs.slice(-MAX_MESSAGES_PER_SESSION);
+    });
+    localStorage.setItem(key, JSON.stringify({
+      sessions: sessionsToSave,
+      messages: msgMap,
+      activeSessionId: sessionId.value
+    }));
+  } catch (e) {
+    // localStorage 可能超限（通常 5MB），静默失败
+    console.warn('会话持久化失败:', e.message);
+  }
+}
+
+function loadSessions() {
+  try {
+    const key = getStorageKey();
+    const raw = localStorage.getItem(key);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data?.sessions?.length) return false;
+    // 恢复会话列表
+    sessions.value = data.sessions;
+    // 恢复消息
+    Object.entries(data.messages || {}).forEach(([id, msgs]) => {
+      sessionMessages[id] = msgs;
+    });
+    // 恢复上次激活的会话
+    const lastId = data.activeSessionId;
+    if (lastId && sessions.value.some(s => s.id === lastId)) {
+      sessionId.value = lastId;
+    } else {
+      sessionId.value = sessions.value[0].id;
+    }
+    messages.value = sessionMessages[sessionId.value] || [];
+    return true;
+  } catch (e) {
+    console.warn('恢复会话失败:', e.message);
+    return false;
+  }
+}
 const messages = ref([]);
 const messageInput = ref('');
 const streamEnabled = ref(true);
@@ -765,8 +835,21 @@ onMounted(async () => {
     location.replace('/login.html');
     return;
   }
-  addSession(sessionId.value, '新对话');
-  await Promise.all([loadKnowledgeBases(), loadOrganizations()]);
+  // 尝试从 localStorage 恢复历史会话，恢复失败则创建新会话
+  const restored = loadSessions();
+  if (!restored) {
+    addSession(sessionId.value, '新对话');
+  }
+
+  // 监听会话列表和 sessionId 变化，自动持久化
+  // 注意：sessionMessages 的深层变化（消息 push）由 pushMessage 直接调用 scheduleSave
+  watch(sessions, scheduleSave, { deep: true });
+  watch(sessionId, scheduleSave);
+
+  // 必须先加载组织（确保 currentOrgId 赋值完毕），再加载知识库
+  // 否则 loadKnowledgeBases 里 currentOrgId 仍是 null，导致 tenantId 不匹配
+  await loadOrganizations();
+  await loadKnowledgeBases();
 
   // 点击页面其他地方时关闭用户下拉菜单
   document.addEventListener('click', () => { userMenuOpen.value = false; });
@@ -1055,6 +1138,7 @@ async function doSyncChat(requestSessionId, text) {
       runtime.sending = false;
       runtime.bubble = null;
       scrollSessionToBottom(requestSessionId);
+      scheduleSave();
     }
   }
 }
@@ -1064,40 +1148,67 @@ async function doStreamChat(requestSessionId, text) {
   runtime.sending = true;
   runtime.cancelled = false;
   const requestId = ++runtime.requestId;
-  const bubble = pushMessage(requestSessionId, 'ai', '');
+  // 初始显示“思考中” loading，等待 RAG 检索 + LLM 首个 token
+  const bubble = pushMessage(requestSessionId, 'ai', '<span class="typing-dots">●●●</span>');
   let fullText = '';
+  let firstToken = true;
   const eventSource = api.chatStream(requestSessionId, text);
   runtime.eventSource = eventSource;
   runtime.bubble = bubble;
   runtime.text = '';
 
+  // 节流渲染：token 到来时仅标记待更新，每 40ms 刷新一次 DOM
+  // 避免模型快速连续输出时 Vue 批量合并导致的“一次性输出”视觉问题
+  let renderPending = false;
+  let renderRaf = null;
+  function scheduleRender() {
+    if (renderPending) return;
+    renderPending = true;
+    renderRaf = requestAnimationFrame(() => {
+      renderPending = false;
+      if (runtime.requestId !== requestId || runtime.cancelled) return;
+      bubble.html = formatMarkdown(fullText) + '<span class="typing-cursor"></span>';
+      scrollSessionToBottom(requestSessionId);
+    });
+  }
+
   eventSource.onmessage = (event) => {
     if (runtime.eventSource !== eventSource || runtime.requestId !== requestId || runtime.cancelled) return;
     if (event.data === '[DONE]') return;
+    // 收到第一个 token 时清除 loading 动画，正式开始流式输出
+    if (firstToken) {
+      firstToken = false;
+      fullText = '';
+    }
     fullText += event.data;
     runtime.text = fullText;
-    bubble.html = formatMarkdown(fullText) + '<span class="typing-cursor"></span>';
-    scrollSessionToBottom(requestSessionId);
+    scheduleRender();
   };
   eventSource.addEventListener('replace', (event) => {
     if (runtime.eventSource !== eventSource || runtime.requestId !== requestId || runtime.cancelled) return;
+    firstToken = false;
     fullText = event.data;
     runtime.text = fullText;
-    bubble.html = formatMarkdown(fullText) + '<span class="typing-cursor"></span>';
-    scrollSessionToBottom(requestSessionId);
+    scheduleRender();
   });
   eventSource.addEventListener('done', () => {
     if (runtime.eventSource !== eventSource || runtime.requestId !== requestId || runtime.cancelled) return;
     eventSource.close();
+    cancelAnimationFrame(renderRaf);
+    renderPending = false;
     bubble.html = formatMarkdown(fullText);
     finish();
   });
   eventSource.onerror = () => {
     if (runtime.eventSource !== eventSource || runtime.requestId !== requestId || runtime.cancelled) return;
     eventSource.close();
+    cancelAnimationFrame(renderRaf);
+    renderPending = false;
     if (!fullText) {
       bubble.html = '<span class="error-msg">连接失败，请重试</span>';
       showToast('error', '流式连接失败');
+    } else {
+      bubble.html = formatMarkdown(fullText);
     }
     finish();
   };
@@ -1109,6 +1220,7 @@ async function doStreamChat(requestSessionId, text) {
       runtime.bubble = null;
       runtime.text = '';
       scrollSessionToBottom(requestSessionId);
+      scheduleSave();
     }
   }
 }
@@ -1201,6 +1313,7 @@ async function doReactChat(requestSessionId, text) {
       runtime.reactSteps = null;
       runtime.reactAnswer = null;
       scrollSessionToBottom(requestSessionId);
+      scheduleSave();
     }
   }
 }
@@ -1278,6 +1391,8 @@ function pushMessage(targetSessionId, role, html) {
     messages.value = sessionMessages[targetSessionId];
   }
   scrollSessionToBottom(targetSessionId);
+  // 消息新增时触发持久化
+  scheduleSave();
   return item;
 }
 
@@ -1450,8 +1565,12 @@ async function loadDocumentList() {
       status: doc.parseStatus ?? 'UNKNOWN',
       uploadedAt: doc.createdAt ?? new Date().toLocaleString()
     }));
-  } catch {
+  } catch (err) {
     docs.value = [];
+    // 仅在非首次加载时提示错误，避免启动时误报
+    if (currentKbId.value) {
+      showToast('error', `加载文档列表失败：${err?.message || '未知错误'}`);
+    }
   }
 }
 

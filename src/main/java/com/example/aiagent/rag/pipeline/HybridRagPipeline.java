@@ -103,8 +103,16 @@ public class HybridRagPipeline {
         long start = System.currentTimeMillis();
 
         // Step 1：查询改写
+        // HyDE：用假设文档做向量检索，效果比直接用问题更好
         String hydeDoc = queryRewriter.generateHypotheticalDocument(userQuery);
-        List<String> rewrittenQueries = queryRewriter.rewriteMultiPerspective(userQuery, queryVariants);
+        // 多变体改写：variants <= 0 时跳过额外 LLM 调用，仅用原始问题，减少延迟
+        List<String> rewrittenQueries;
+        if (queryVariants > 0) {
+            rewrittenQueries = queryRewriter.rewriteMultiPerspective(userQuery, queryVariants);
+        } else {
+            rewrittenQueries = List.of(userQuery);
+            log.debug("查询改写变体数为 {}，跳过 LLM 多变体改写，仅使用原始问题", queryVariants);
+        }
 
         // Step 2：混合检索（带 tenantId/kbId 过滤）
         List<RetrievedChunk> hydeResults = vectorSearch(hydeDoc, vectorTopK, tenantId, kbId);
@@ -164,7 +172,13 @@ public class HybridRagPipeline {
         // ── Step 1：查询改写 ──────────────────────────────
         log.info("[Step 1] 查询改写...");
         String hydeDoc = queryRewriter.generateHypotheticalDocument(userQuery);
-        List<String> rewrittenQueries = queryRewriter.rewriteMultiPerspective(userQuery, queryVariants);
+        List<String> rewrittenQueries;
+        if (queryVariants > 0) {
+            rewrittenQueries = queryRewriter.rewriteMultiPerspective(userQuery, queryVariants);
+        } else {
+            rewrittenQueries = List.of(userQuery);
+            log.debug("[Step 1] 跳过 LLM 多变体改写（variants={}），仅使用原始问题", queryVariants);
+        }
 
         // ── Step 2：混合检索（带 tenantId/kbId 过滤） ────
         log.info("[Step 2] 混合检索（tenantId={}, kbId={}）...", tenantId, kbId);

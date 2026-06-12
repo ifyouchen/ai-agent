@@ -202,6 +202,30 @@ body {
 .session-item:hover .session-delete { display: block; }
 .session-delete:hover { background: rgba(220,38,38,.25); color: #f87171; }
 
+/* 回答中动态指示器（三点跳动）*/
+@keyframes session-dot-bounce {
+    0%, 80%, 100% { transform: translateY(0); opacity: .4; }
+    40%            { transform: translateY(-4px); opacity: 1; }
+}
+.session-generating {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+    padding-right: 2px;
+}
+.session-generating span {
+    display: block;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: .4;
+    animation: session-dot-bounce .9s ease-in-out infinite;
+}
+.session-generating span:nth-child(2) { animation-delay: .15s; }
+.session-generating span:nth-child(3) { animation-delay: .3s; }
+
 /* 底部模型选择 */
 .sidebar-bottom {
     padding: 12px 10px;
@@ -1800,6 +1824,18 @@ button {
     background: #fee2e2;
     color: var(--error);
 }
+
+/* 回答中指示器：浅色主题覆盖颜色 */
+.session-item.generating {
+    background: #eaf1ff;
+}
+.session-item.generating .session-generating span {
+    background: var(--primary);
+    opacity: .5;
+}
+.session-item.generating .session-generating span:nth-child(1) { animation-delay: 0s; }
+.session-item.generating .session-generating span:nth-child(2) { animation-delay: .15s; }
+.session-item.generating .session-generating span:nth-child(3) { animation-delay: .3s; }
 
 .sidebar-bottom {
     padding: 12px 14px 16px;

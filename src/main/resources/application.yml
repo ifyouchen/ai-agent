@@ -86,7 +86,7 @@ rag:
   # 查询改写
   query:
     rewrite:
-      variants: 2              # 改写变体数（越多效果越好，但越慢）
+      variants: 0              # 0=仅用原始问题（HyDE 已足够，跳过多变体 LLM 调用）；2=多变体但更慢
 
   # 向量检索
   retrieval:
@@ -99,11 +99,11 @@ rag:
   # Reranker 精排
   reranker:
     # 可选值：
-    #   llm    - 内置 LLM 打分（默认，无额外依赖，利用已有 LLM）
-    #   tfidf  - 内置 TF-IDF（纯 Java，延迟极低，无网络调用，效果较弱）
+    #   llm    - 内置 LLM 打分（无额外依赖，效果好，但需额外 LLM 调用，增加延迟 2~5s）
+    #   tfidf  - 内置 TF-IDF（纯 Java，延迟极低，无网络调用，推荐流式对话场景）
     #   bge    - 外部 BGE Python 服务（精度最高，需另行部署 Python 推理服务）
     #   cohere - Cohere Rerank API（云端，需 API Key）
-    type: llm
+    type: tfidf               # 改为 tfidf 避免 Reranker 额外占用 LLM 调用时间
     top-k: 5                   # 最终送给 LLM 的上下文数
     llm:
       batch-size: 5            # 每批发给 LLM 评分的文档数（避免超长 Prompt）
