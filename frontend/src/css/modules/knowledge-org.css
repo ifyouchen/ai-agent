@@ -1,0 +1,383 @@
+/* ===== 知识库选择区（V2 多知识库） ===== */
+
+.kb-selector-area {
+    background: var(--surface);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.kb-selector-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.kb-section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+/* 知识库标题行：标题 + 当前组织 badge */
+.kb-section-title-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+/* 当前组织 badge：显示在知识库标题旁边 */
+.kb-org-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
+    border-radius: 10px;
+    white-space: nowrap;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: default;
+}
+
+.kb-create-btn {
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-xs);
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition);
+}
+.kb-create-btn:hover { background: var(--primary-hover); }
+
+.kb-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.kb-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: var(--transition);
+    margin-bottom: 2px;
+}
+.kb-item:hover { background: var(--primary-light); }
+.kb-item.active {
+    background: var(--primary-light);
+    border: 1px solid rgba(77,107,254,.2);
+}
+
+.kb-item-icon { font-size: 18px; flex-shrink: 0; }
+
+.kb-item-info { flex: 1; min-width: 0; }
+
+.kb-item-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.kb-item-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.kb-item-delete {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    opacity: 0;
+    transition: var(--transition);
+    padding: 2px 4px;
+    border-radius: var(--radius-xs);
+}
+.kb-item:hover .kb-item-delete { opacity: .6; }
+.kb-item-delete:hover { opacity: 1 !important; background: #FEE2E2; }
+
+.kb-empty-hint,
+.kb-empty-hint {
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 16px;
+}
+
+/* 当前知识库操作区 */
+.kb-current-area {
+    background: var(--surface);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    padding: 16px;
+}
+
+.kb-current-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.kb-manage-members-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: var(--transition);
+}
+.kb-manage-members-btn:hover { background: var(--primary-light); color: var(--primary); }
+
+/* 知识库成员面板 */
+.kb-members-panel {
+    margin-top: 16px;
+    background: var(--surface);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    padding: 16px;
+}
+
+.kb-members-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+.kb-members-header h3 { font-size: 14px; font-weight: 600; margin: 0; }
+
+.kb-members-close {
+    background: none;
+    border: none;
+    font-size: 16px;
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 2px 6px;
+    border-radius: var(--radius-xs);
+}
+.kb-members-close:hover { color: var(--text-primary); background: #F3F4F6; }
+
+.kb-members-add {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.kb-member-input {
+    flex: 1;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    font-size: 13px;
+    outline: none;
+}
+.kb-member-input:focus { border-color: var(--primary); }
+
+.kb-member-role-select {
+    padding: 7px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    font-size: 12px;
+    outline: none;
+    background: #fff;
+}
+
+.kb-member-add-btn {
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-xs);
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+}
+.kb-member-add-btn:hover { background: var(--primary-hover); }
+
+.kb-members-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.kb-member-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: #F9FAFB;
+    border-radius: var(--radius-xs);
+    font-size: 13px;
+}
+
+.kb-member-id { color: var(--text-primary); font-weight: 500; }
+.kb-member-role { color: var(--text-muted); font-size: 12px; }
+
+/* ===== 组织管理面板 ===== */
+
+.org-panel {
+    padding: 0;
+}
+
+.org-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.org-section-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.org-create-btn {
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-xs);
+    padding: 7px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition);
+}
+.org-create-btn:hover { background: var(--primary-hover); }
+
+.org-desc {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.6;
+    margin-bottom: 16px;
+    padding: 10px 12px;
+    background: #F9FAFB;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-light);
+}
+
+.org-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 20px;
+}
+
+.org-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: var(--transition);
+}
+.org-item:hover { border-color: var(--primary); background: var(--primary-light); }
+.org-item.active {
+    border-color: var(--primary);
+    background: var(--primary-light);
+    box-shadow: 0 0 0 2px rgba(77,107,254,.1);
+}
+
+.org-item-icon { font-size: 20px; flex-shrink: 0; }
+
+.org-item-info { flex: 1; min-width: 0; }
+
+.org-item-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.org-item-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+/* 当前组织的知识库数量展示 */
+.org-item-kb-count {
+    color: var(--primary);
+    font-weight: 500;
+}
+
+/* "当前" 选中标记 badge */
+.org-item-active-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 8px;
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.org-empty-hint {
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 24px;
+}
+
+.org-actions {
+    background: var(--surface);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    padding: 16px;
+}
+
+.org-actions .org-section-title {
+    font-size: 14px;
+    margin-bottom: 10px;
+}
+
+.org-action-btn {
+    display: inline-block;
+    padding: 8px 16px;
+    margin-right: 8px;
+    margin-bottom: 6px;
+    background: #F9FAFB;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: var(--transition);
+}
+.org-action-btn:hover {
+    background: var(--primary-light);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+/* 个人空间不支持邀请时的提示文字 */
+.org-personal-hint {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.7;
+    padding: 6px 0;
+}
+

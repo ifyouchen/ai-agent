@@ -199,7 +199,7 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, nextTick, ref, watch } from 'vue';
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import Avatar from '../ui/Avatar.vue';
 import { useAuthStore } from '../../stores/auth.js';
@@ -223,6 +223,26 @@ const LogoMark = defineComponent({
 
 // ── 用户下拉菜单 ────────────────────────────────────────────────────
 const userMenuOpen = ref(false);
+
+function closeUserMenuOnOutsideClick() {
+  userMenuOpen.value = false;
+}
+
+function handleGlobalKeydown(event) {
+  if (event.key !== 'Escape') return;
+  userMenuOpen.value = false;
+  modelMenuOpen.value = false;
+}
+
+onMounted(() => {
+  document.addEventListener('click', closeUserMenuOnOutsideClick);
+  document.addEventListener('keydown', handleGlobalKeydown);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', closeUserMenuOnOutsideClick);
+  document.removeEventListener('keydown', handleGlobalKeydown);
+});
 
 async function handleChangePassword() {
   userMenuOpen.value = false;
