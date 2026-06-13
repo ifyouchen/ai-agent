@@ -62,7 +62,8 @@ function formatTime(value) {
 
 <style scoped>
 .share-page {
-  min-height: 100vh;
+  height: 100vh;
+  overflow-y: auto;
   padding: 48px 20px;
   background: #f6f8fc;
   color: #1f2937;

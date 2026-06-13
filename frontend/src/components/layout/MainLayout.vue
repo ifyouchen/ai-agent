@@ -18,13 +18,6 @@
               </svg>
               分享
             </button>
-            <button class="topbar-btn" type="button" @click="sess.exportCurrentSession" title="导出对话为 Markdown">
-              <svg viewBox="0 0 24 24" fill="none" width="13" height="13">
-                <path d="M12 9V21m0-12-4 4m4-4 4 4M2 7l.621-2.485A2 2 0 0 1 4.561 3h14.878a2 2 0 0 1 1.94 1.515L22 7"
-                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              导出
-            </button>
           </template>
           <router-link class="topbar-btn" to="/chat">对话</router-link>
           <router-link class="topbar-btn" to="/kb">知识库</router-link>
