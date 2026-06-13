@@ -1,19 +1,31 @@
 <template>
   <div class="profile-view">
-    <div class="profile-card">
-      <!-- 头像区 -->
-      <div class="profile-avatar-wrap">
-        <Avatar :name="auth.displayName" :size="72" style="width:72px;height:72px;font-size:28px;border-radius:50%;" />
-        <div class="profile-names">
-          <h2 class="profile-username">{{ auth.user?.username }}</h2>
-          <p class="profile-userid">ID：{{ auth.user?.userId }}</p>
-          <p class="profile-roles">{{ rolesLabel }}</p>
+    <div class="profile-container">
+      <!-- 顶部头像区 -->
+      <div class="profile-hero">
+        <div class="profile-avatar-wrap">
+          <Avatar :name="auth.displayName" :size="80" style="width:80px;height:80px;font-size:32px;border-radius:50%;" />
+          <div class="profile-names">
+            <h2 class="profile-username">{{ auth.user?.username }}</h2>
+            <p class="profile-userid">ID：{{ auth.user?.userId }}</p>
+            <span class="profile-roles">{{ rolesLabel }}</span>
+          </div>
         </div>
       </div>
 
-      <!-- 资料编辑表单 -->
-      <div class="profile-section">
-        <h3 class="profile-section-title">基本信息</h3>
+      <!-- 基本信息卡片 -->
+      <div class="profile-card">
+        <div class="profile-card-header">
+          <h3 class="profile-card-title">
+            <div class="profile-card-title-icon">
+              <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
+                <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8"/>
+                <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </div>
+            基本信息
+          </h3>
+        </div>
         <div class="profile-form">
           <label class="profile-field">
             <span class="profile-label">用户名</span>
@@ -27,50 +39,79 @@
             <span class="profile-label">邮箱</span>
             <input v-model.trim="form.email" type="email" class="profile-input" placeholder="your@email.com（可选）" maxlength="100" />
           </label>
+          <button class="profile-save-btn" type="button" :disabled="saving" @click="saveProfile">
+            <svg v-if="saving" class="inline-spinner" viewBox="0 0 24 24" fill="none" width="14" height="14">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
+            </svg>
+            {{ saving ? '保存中…' : '保存资料' }}
+          </button>
         </div>
-        <button class="profile-save-btn" type="button" :disabled="saving" @click="saveProfile">
-          <svg v-if="saving" class="inline-spinner" viewBox="0 0 24 24" fill="none" width="14" height="14">
-            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
-          </svg>
-          {{ saving ? '保存中…' : '保存资料' }}
-        </button>
       </div>
 
-      <!-- 修改密码 -->
-      <div class="profile-section">
-        <h3 class="profile-section-title">
-          修改密码
+      <!-- 安全设置卡片 -->
+      <div class="profile-card">
+        <div class="profile-card-header">
+          <h3 class="profile-card-title">
+            <div class="profile-card-title-icon">
+              <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" stroke="currentColor" stroke-width="1.8"/>
+                <path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </div>
+            安全设置
+          </h3>
           <button class="profile-toggle-btn" type="button" @click="pwdVisible = !pwdVisible">
-            {{ pwdVisible ? '收起' : '展开' }}
+            <svg v-if="!pwdVisible" viewBox="0 0 24 24" fill="none" width="14" height="14">
+              <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <svg v-else viewBox="0 0 24 24" fill="none" width="14" height="14">
+              <path d="m18 15-6-6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            {{ pwdVisible ? '收起' : '修改密码' }}
           </button>
-        </h3>
-        <div v-if="pwdVisible" class="profile-form">
-          <label class="profile-field">
-            <span class="profile-label">当前密码</span>
-            <input v-model="pwd.old" type="password" class="profile-input" placeholder="输入当前密码" />
-          </label>
-          <label class="profile-field">
-            <span class="profile-label">新密码</span>
-            <input v-model="pwd.new" type="password" class="profile-input" placeholder="至少 6 位" />
-          </label>
-          <label class="profile-field">
-            <span class="profile-label">确认新密码</span>
-            <input v-model="pwd.confirm" type="password" class="profile-input" placeholder="再次输入新密码" />
-          </label>
-          <button class="profile-save-btn" type="button" :disabled="pwdSaving" @click="changePassword">
-            {{ pwdSaving ? '保存中…' : '修改密码' }}
-          </button>
+        </div>
+        <div v-if="pwdVisible" class="password-section">
+          <div class="profile-form">
+            <label class="profile-field">
+              <span class="profile-label">当前密码</span>
+              <input v-model="pwd.old" type="password" class="profile-input" placeholder="输入当前密码" />
+            </label>
+            <label class="profile-field">
+              <span class="profile-label">新密码</span>
+              <input v-model="pwd.new" type="password" class="profile-input" placeholder="至少 6 位" />
+            </label>
+            <label class="profile-field">
+              <span class="profile-label">确认新密码</span>
+              <input v-model="pwd.confirm" type="password" class="profile-input" placeholder="再次输入新密码" />
+            </label>
+            <button class="profile-save-btn" type="button" :disabled="pwdSaving" @click="changePassword">
+              {{ pwdSaving ? '保存中…' : '修改密码' }}
+            </button>
+          </div>
         </div>
       </div>
 
-      <!-- P2-14：Token 用量历史（普通用户可见） -->
-      <div class="profile-section">
-        <h3 class="profile-section-title">
-          我的用量
+      <!-- 用量统计卡片 -->
+      <div class="profile-card">
+        <div class="profile-card-header">
+          <h3 class="profile-card-title">
+            <div class="profile-card-title-icon">
+              <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
+                <path d="M12 20V10M18 20V4M6 20v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </div>
+            我的用量
+          </h3>
           <button class="profile-toggle-btn" type="button" @click="usageVisible = !usageVisible">
-            {{ usageVisible ? '收起' : '展开' }}
+            <svg v-if="!usageVisible" viewBox="0 0 24 24" fill="none" width="14" height="14">
+              <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <svg v-else viewBox="0 0 24 24" fill="none" width="14" height="14">
+              <path d="m18 15-6-6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            {{ usageVisible ? '收起' : '查看用量' }}
           </button>
-        </h3>
+        </div>
         <div v-if="usageVisible" class="usage-section">
           <div class="usage-cards">
             <div class="usage-card">
@@ -79,8 +120,10 @@
             </div>
           </div>
           <div class="usage-chart-title">近 7 天费用趋势</div>
-          <div v-if="!dailyData.length" class="usage-empty">暂无消费记录</div>
-          <canvas v-else ref="usageChartEl" height="140"></canvas>
+          <div class="usage-chart-wrap">
+            <div v-if="!dailyData.length" class="usage-empty">暂无消费记录</div>
+            <canvas v-else ref="usageChartEl" height="140"></canvas>
+          </div>
         </div>
       </div>
     </div>
@@ -106,7 +149,6 @@ const pwdVisible = ref(false);
 const pwdSaving  = ref(false);
 const pwd = reactive({ old: '', new: '', confirm: '' });
 
-// P2-14：Token 用量
 const usageVisible = ref(false);
 const todayCost    = ref('—');
 const dailyData    = ref([]);
