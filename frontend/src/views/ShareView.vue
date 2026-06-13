@@ -21,7 +21,7 @@
           :class="msg.role"
         >
           <div class="share-role">{{ msg.role === 'ai' ? 'AI' : '我' }}</div>
-          <div class="share-content" v-html="formatMarkdown(msg.content)"></div>
+          <div class="share-content bubble" v-html="formatMarkdown(msg.content)"></div>
         </article>
       </div>
     </section>
@@ -63,6 +63,7 @@ function formatTime(value) {
 <style scoped>
 .share-page {
   height: 100vh;
+  width: 100%;
   overflow-y: auto;
   padding: 48px 20px;
   background: #f6f8fc;
@@ -144,6 +145,7 @@ function formatTime(value) {
   line-height: 1.72;
 }
 
+/* 通用段落间距 */
 .share-content :deep(p) {
   margin: 0 0 8px;
 }
@@ -154,6 +156,84 @@ function formatTime(value) {
 
 .share-content :deep(*:last-child) {
   margin-bottom: 0;
+}
+
+/* 代码块盒子边距不受 first/last-child 清零影响 */
+.share-content :deep(.code-block-wrap) {
+  margin-top: 14px;
+  margin-bottom: 16px;
+}
+.share-content :deep(.code-block-wrap:first-child) {
+  margin-top: 14px;
+}
+.share-content :deep(.code-block-wrap:last-child) {
+  margin-bottom: 16px;
+}
+
+/* ── AI 消息微调（等效于 .message.ai .bubble）── */
+.share-message.ai .share-content :deep(.md-h2) {
+  margin: 18px 0 8px;
+  font-size: 16px;
+  line-height: 1.45;
+  font-weight: 700;
+  color: #202633;
+}
+
+.share-message.ai .share-content :deep(.md-h3) {
+  margin: 14px 0 6px;
+  font-size: 15px;
+  line-height: 1.45;
+  font-weight: 700;
+  color: #242a35;
+}
+
+.share-message.ai .share-content :deep(ul),
+.share-message.ai .share-content :deep(ol) {
+  margin: 6px 0 10px;
+  padding-left: 1.35em;
+}
+
+.share-message.ai .share-content :deep(li) {
+  margin: 3px 0;
+  padding-left: 2px;
+}
+
+.share-message.ai .share-content :deep(li > p) {
+  margin: 0;
+}
+
+.share-message.ai .share-content :deep(blockquote) {
+  margin: 10px 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid #dfe6f3;
+  color: #586174;
+}
+
+.share-message.ai .share-content :deep(hr) {
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid #edf1f7;
+}
+
+.share-message.ai .share-content :deep(table) {
+  width: 100%;
+  margin: 10px 0 12px;
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.share-message.ai .share-content :deep(th),
+.share-message.ai .share-content :deep(td) {
+  padding: 7px 9px;
+  border: 1px solid #e5eaf2;
+  text-align: left;
+  vertical-align: top;
+}
+
+.share-message.ai .share-content :deep(th) {
+  background: #f7f9fd;
+  font-weight: 700;
 }
 
 .share-state {
