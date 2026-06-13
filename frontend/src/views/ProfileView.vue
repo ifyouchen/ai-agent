@@ -77,10 +77,6 @@
         <div v-if="pwdVisible" class="password-section">
           <div class="profile-form">
             <label class="profile-field">
-              <span class="profile-label">当前密码</span>
-              <input v-model="pwd.old" type="password" class="profile-input" placeholder="输入当前密码" />
-            </label>
-            <label class="profile-field">
               <span class="profile-label">邮箱验证码</span>
               <div class="verification-row">
                 <input
@@ -136,7 +132,7 @@ const form    = reactive({ nickname: '' });
 const saving  = ref(false);
 const pwdVisible = ref(false);
 const pwdSaving  = ref(false);
-const pwd = reactive({ old: '', new: '', confirm: '', emailCode: '' });
+const pwd = reactive({ new: '', confirm: '', emailCode: '' });
 const codeSending = ref(false);
 const codeCountdown = ref(0);
 let codeTimer = null;
@@ -171,13 +167,13 @@ async function saveProfile() {
 }
 
 async function changePassword() {
-  if (!pwd.old || !pwd.new) { ui.showToast('warning', '请填写当前密码和新密码'); return; }
+  if (!pwd.new) { ui.showToast('warning', '请填写新密码'); return; }
   if (!/^\d{6}$/.test(pwd.emailCode || '')) { ui.showToast('warning', '请输入 6 位邮箱验证码'); return; }
   if (pwd.new !== pwd.confirm) { ui.showToast('warning', '两次输入的新密码不一致'); return; }
   if (pwd.new.length < 6) { ui.showToast('warning', '新密码长度不能少于 6 位'); return; }
   pwdSaving.value = true;
   try {
-    await api.changePassword(pwd.old, pwd.new, pwd.emailCode);
+    await api.changePassword(pwd.new, pwd.emailCode);
     ui.showToast('success', '密码修改成功，请重新登录');
     setTimeout(() => auth.logout(), 1500);
   } catch (err) {

@@ -863,13 +863,15 @@ public class OrganizationService {
                 + ".header{background:#4D6BFE;color:#fff;padding:24px 28px}"
                 + ".header h2{margin:0;font-size:18px;font-weight:600}"
                 + ".content{padding:28px;font-size:14px;color:#333;line-height:1.6}"
-                + ".btn{display:inline-block;margin:18px 0;padding:12px 28px;background:#4D6BFE;color:#fff;text-decoration:none;border-radius:8px;font-weight:500}"
+                + ".link{word-break:break-all;color:#4D6BFE}"
                 + ".tip{color:#999;font-size:13px;line-height:1.6}"
                 + ".footer{padding:16px 28px;background:#fafafa;border-top:1px solid #eee;font-size:12px;color:#aaa}"
                 + "</style></head><body><div class=\"container\">"
                 + "<div class=\"header\"><h2>组织邀请</h2></div>"
                 + "<div class=\"content\"><p><strong>" + inviterName + "</strong> 邀请您加入组织 <strong>" + org.getName() + "</strong>，角色为 <strong>" + invitation.getRole() + "</strong>。</p>"
-                + "<a class=\"btn\" href=\"" + acceptUrl + "\">接受邀请</a>"
+                + "<p><a href=\"" + acceptUrl + "\" style=\"display:inline-block;margin:18px 0;padding:12px 28px;background:#4D6BFE;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;\">接受邀请</a></p>"
+                + "<p class=\"tip\">如果按钮无法打开，请复制此链接到浏览器：</p>"
+                + "<p><a class=\"link\" href=\"" + acceptUrl + "\">" + acceptUrl + "</a></p>"
                 + "<p class=\"tip\">链接 " + invitationTtlHours + " 小时内有效。如非本人操作，请忽略此邮件。</p></div>"
                 + "<div class=\"footer\">此邮件由 AI Agent 自动发送，请勿直接回复。</div>"
                 + "</div></body></html>";
@@ -885,9 +887,10 @@ public class OrganizationService {
     private String buildFrontendUrl(String path) {
         String base = frontendUrl != null ? frontendUrl.strip() : "";
         if (base.isEmpty()) {
-            return "/#" + path;
+            base = "http://localhost:5173";
         }
-        return base.replaceAll("/+$", "") + "/#" + path;
+        String normalizedPath = path != null && path.startsWith("/") ? path : "/" + path;
+        return base.replaceAll("/+$", "") + "/index.html#" + normalizedPath;
     }
 
     private String normalizeRole(String role) {

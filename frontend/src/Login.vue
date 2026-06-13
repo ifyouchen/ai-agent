@@ -1,5 +1,5 @@
 <template>
-  <div class="page-wrapper">
+  <div class="page-wrapper" :class="{ 'compact-auth': activeTab !== 'login' }">
     <aside class="brand-panel">
       <div class="brand-inner">
         <div class="brand-top">
@@ -33,12 +33,6 @@
       <section class="form-box">
         <div class="form-title">{{ formTitle }}</div>
         <div class="form-subtitle">{{ formSubtitle }}</div>
-
-        <div class="auth-tabs">
-          <button class="auth-tab" :class="{ active: activeTab === 'login' }" type="button" @click="switchTab('login')">登录</button>
-          <button class="auth-tab" :class="{ active: activeTab === 'register' }" type="button" @click="switchTab('register')">注册</button>
-          <button class="auth-tab" :class="{ active: activeTab === 'forgot' }" type="button" @click="switchTab('forgot')">找回密码</button>
-        </div>
 
         <div v-if="globalSuccess" class="global-success visible">{{ globalSuccess }}</div>
         <div v-else-if="globalError" class="global-error visible">{{ globalError }}</div>
@@ -76,6 +70,10 @@
           <button class="submit-btn" type="submit" :disabled="loading">
             <span v-if="loading" class="spinner"></span>{{ loading ? '登录中' : '登录' }}
           </button>
+          <div class="form-extra">
+            <span class="muted-text">还没有账号？</span>
+            <button class="text-link" type="button" @click="switchTab('register')">去注册</button>
+          </div>
         </form>
 
         <form v-else-if="activeTab === 'register'" class="auth-form active" novalidate @submit.prevent="submitRegister">
@@ -155,6 +153,10 @@
           <button class="submit-btn" type="submit" :disabled="loading">
             <span v-if="loading" class="spinner"></span>{{ loading ? '注册中' : '注册并登录' }}
           </button>
+          <div class="form-extra">
+            <span class="muted-text">已有账号？</span>
+            <button class="text-link" type="button" @click="switchTab('login')">返回登录</button>
+          </div>
         </form>
 
         <form v-else class="auth-form active" novalidate @submit.prevent="submitForgot">
@@ -284,7 +286,7 @@ const codeButtonText = computed(() => {
 });
 
 onMounted(() => {
-  if (getToken()) location.replace('/index.html');
+  if (getToken()) location.replace(getRedirectTarget());
 });
 
 onUnmounted(() => {
@@ -303,12 +305,20 @@ async function submitLogin() {
   loading.value = true;
   try {
     await login({ username: loginForm.username, password: loginForm.password });
-    location.replace('/index.html');
+    location.replace(getRedirectTarget());
   } catch (error) {
     globalError.value = error.message || '用户名或密码错误';
   } finally {
     loading.value = false;
   }
+}
+
+function getRedirectTarget() {
+  const redirect = new URLSearchParams(location.search).get('redirect');
+  if (redirect && redirect.startsWith('/') && !redirect.startsWith('//')) {
+    return redirect;
+  }
+  return '/index.html';
 }
 
 async function submitRegister() {

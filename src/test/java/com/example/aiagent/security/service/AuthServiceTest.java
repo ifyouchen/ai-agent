@@ -98,4 +98,43 @@ class AuthServiceTest {
                 org.mockito.ArgumentMatchers.anyString());
         verify(sysUserMapper, never()).insert(org.mockito.ArgumentMatchers.any());
     }
+
+    @Test
+    @DisplayName("已登录用户修改密码时只校验邮箱验证码并更新新密码")
+    void changePasswordUsesEmailCodeWithoutOldPassword() {
+        SysUser user = SysUser.builder()
+                .userId("user-1")
+                .email("alice@example.com")
+                .passwordHash(passwordEncoder.encode("old-secret"))
+                .build();
+        when(sysUserMapper.findByUserId("user-1")).thenReturn(java.util.Optional.of(user));
+
+        authService.changePassword("user-1", "new-secret", "123456");
+
+        verify(emailVerificationService).verifyChangePasswordCode("alice@example.com", "123456");
+        ArgumentCaptor<String> hashCaptor = ArgumentCaptor.forClass(String.class);
+        verify(sysUserMapper).updatePassword(eq("user-1"), hashCaptor.capture());
+        assertThat(passwordEncoder.matches("new-secret", hashCaptor.getValue())).isTrue();
+    }
+
+    @Test
+    @DisplayName("未绑定邮箱时不能通过验证码修改密码")
+    void changePasswordRejectsUserWithoutEmail() {
+        SysUser user = SysUser.builder()
+                .userId("user-1")
+                .passwordHash(passwordEncoder.encode("old-secret"))
+                .build();
+        when(sysUserMapper.findByUserId("user-1")).thenReturn(java.util.Optional.of(user));
+
+        assertThatThrownBy(() -> authService.changePassword("user-1", "new-secret", "123456"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("未绑定邮箱");
+
+        verify(emailVerificationService, never()).verifyChangePasswordCode(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString());
+        verify(sysUserMapper, never()).updatePassword(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString());
+    }
 }

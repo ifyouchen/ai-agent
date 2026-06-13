@@ -38,8 +38,8 @@ export async function getProfile() {
   return data;
 }
 
-export async function changePassword(oldPassword, newPassword, emailCode) {
-  const { data } = await http.put('/api/v1/auth/profile/password', { oldPassword, newPassword, emailCode });
+export async function changePassword(newPassword, emailCode) {
+  const { data } = await http.put('/api/v1/auth/profile/password', { newPassword, emailCode });
   return data;
 }
 

@@ -184,23 +184,22 @@ public class AuthController {
     /**
      * 修改密码
      * PUT /api/v1/auth/profile/password
-     * Body: {"oldPassword": "...", "newPassword": "...", "emailCode": "123456"}
+     * Body: {"newPassword": "...", "emailCode": "123456"}
      */
     @PutMapping("/profile/password")
     public ResponseEntity<?> changePassword(
             @AuthenticationPrincipal String userId,
             @RequestBody Map<String, String> request) {
 
-        String oldPwd = request.get("oldPassword");
         String newPwd = request.get("newPassword");
         String emailCode = request.get("emailCode");
 
-        if (oldPwd == null || newPwd == null || emailCode == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "旧密码、新密码和邮箱验证码不能为空"));
+        if (newPwd == null || emailCode == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "新密码和邮箱验证码不能为空"));
         }
 
         try {
-            authService.changePassword(userId, oldPwd, newPwd, emailCode);
+            authService.changePassword(userId, newPwd, emailCode);
             return ResponseEntity.ok(Map.of("message", "密码修改成功，请重新登录"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));

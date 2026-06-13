@@ -56,7 +56,8 @@ router.beforeEach((to) => {
 
   // 未登录 → 跳转登录页
   if (!getToken()) {
-    location.replace('/login.html');
+    const redirect = `/index.html#${to.fullPath}`;
+    location.replace(`/login.html?redirect=${encodeURIComponent(redirect)}`);
     return false;
   }
 

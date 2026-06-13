@@ -5,12 +5,14 @@ body {
                'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   background: #F7F8FA;
   min-height: 100vh;
+  height: 100svh;
   -webkit-font-smoothing: antialiased;
   color: #1A1A1A;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 36px 32px;
+  padding: 24px 32px;
+  overflow: hidden;
 }
 
 #login-app {
@@ -24,7 +26,8 @@ body {
   flex-direction: row;
   width: 100%;
   max-width: 1040px;
-  min-height: 620px;
+  height: min(680px, calc(100svh - 48px));
+  min-height: 0;
   border-radius: 18px;
   overflow: hidden;
   box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 14px 50px rgba(0,0,0,.09);
@@ -36,7 +39,7 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 64px 0;
+  padding: 52px 0;
   background: #FFFFFF;
   position: relative;
   overflow: hidden;
@@ -61,7 +64,7 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 56px;
+  gap: 42px;
   flex: 1;
   position: relative;
   z-index: 1;
@@ -71,7 +74,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 38px;
+  margin-bottom: 30px;
 }
 
 .brand-logo-icon,
@@ -104,12 +107,12 @@ body {
 }
 
 .brand-headline {
-  font-size: 42px;
+  font-size: 40px;
   font-weight: 800;
   line-height: 1.18;
   letter-spacing: 0;
   color: #111111;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .brand-headline span,
@@ -119,7 +122,7 @@ body {
 
 .brand-desc {
   max-width: 360px;
-  font-size: 17px;
+  font-size: 16px;
   color: #666666;
   line-height: 1.7;
 }
@@ -127,7 +130,7 @@ body {
 .brand-features {
   display: flex;
   flex-direction: column;
-  gap: 17px;
+  gap: 15px;
 }
 
 .brand-feature {
@@ -161,50 +164,31 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 72px;
+  padding: 44px 64px;
   background: #F7F8FA;
+  overflow: hidden;
 }
 
 .mobile-brand { display: none; }
-.form-box { width: 100%; max-width: 360px; }
+.form-box {
+  width: 100%;
+  max-width: 360px;
+  max-height: 100%;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(77,107,254,.3) transparent;
+}
 .form-title { font-size: 25px; font-weight: 800; color: #111111; margin-bottom: 8px; letter-spacing: 0; }
-.form-subtitle { font-size: 15px; color: #888888; margin-bottom: 32px; }
-.auth-tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 26px;
-  padding: 5px;
-  background: #F0F1F5;
-  border-radius: 12px;
-}
-.auth-tab {
-  flex: 1;
-  padding: 9px 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #6B7280;
-  cursor: pointer;
-  background: transparent;
-  border: none;
-  border-radius: 9px;
-  transition: color .15s, background .15s, box-shadow .15s;
-  font-family: inherit;
-}
-.auth-tab:hover { color: #374151; }
-.auth-tab.active {
-  color: #111111;
-  background: #FFFFFF;
-  box-shadow: 0 1px 3px rgba(0,0,0,.08);
-}
+.form-subtitle { font-size: 15px; color: #888888; margin-bottom: 24px; }
 .auth-form { display: block; }
-.form-group { margin-bottom: 18px; }
+.form-group { margin-bottom: 14px; }
 .form-group.compact { margin-bottom: 14px; }
-.form-label { display: block; font-size: 14px; font-weight: 500; color: #333333; margin-bottom: 7px; }
+.form-label { display: block; font-size: 13px; font-weight: 500; color: #333333; margin-bottom: 6px; }
 .label-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 7px;
+  margin-bottom: 6px;
 }
 .label-row .form-label { margin-bottom: 0; }
 .forgot-link {
@@ -225,8 +209,8 @@ body {
 .form-row .form-group { margin-bottom: 14px; }
 .form-input {
   width: 100%;
-  min-height: 46px;
-  padding: 11px 15px;
+  min-height: 43px;
+  padding: 10px 15px;
   border: 1px solid #E0E0E0;
   border-radius: 11px;
   font-size: 15px;
@@ -250,7 +234,7 @@ body {
 }
 .code-btn {
   min-width: 118px;
-  min-height: 46px;
+  min-height: 43px;
   padding: 0 16px;
   border: 1px solid #4D6BFE;
   border-radius: 10px;
@@ -286,7 +270,7 @@ body {
   border-radius: 10px;
   padding: 11px 14px;
   font-size: 13px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
   line-height: 1.5;
 }
 .global-error {
@@ -301,8 +285,8 @@ body {
 }
 .submit-btn {
   width: 100%;
-  min-height: 46px;
-  padding: 11px 12px;
+  min-height: 44px;
+  padding: 10px 12px;
   background: #4D6BFE;
   color: #fff;
   border: none;
@@ -311,13 +295,16 @@ body {
   font-weight: 600;
   cursor: pointer;
   transition: background .15s, box-shadow .15s, transform .1s;
-  margin-top: 8px;
+  margin-top: 6px;
   font-family: inherit;
 }
 .form-extra {
   text-align: center;
-  margin-top: 16px;
+  margin-top: 14px;
+  color: #8A94A6;
+  font-size: 13px;
 }
+.muted-text { margin-right: 6px; }
 .text-link {
   font-size: 13px;
   color: #4D6BFE;
@@ -347,17 +334,20 @@ body {
     align-items: flex-start;
     background: linear-gradient(180deg, #F4F7FF 0%, #FFFFFF 42%);
     padding: 0;
+    overflow: hidden;
   }
 
   .page-wrapper {
     flex-direction: column;
     width: 100%;
     max-width: 460px;
-    min-height: 100svh;
+    height: 100svh;
+    min-height: 0;
     border-radius: 0;
     margin: 0 auto;
     box-shadow: none;
     background: transparent;
+    overflow: hidden;
   }
 
   .brand-panel { display: none; }
@@ -397,8 +387,13 @@ body {
   }
   .mobile-brand-desc { font-size: 13.5px; color: #6B7280; line-height: 1.5; }
 
+  .page-wrapper.compact-auth .mobile-brand {
+    display: none;
+  }
+
   .form-panel {
     flex: 1;
+    min-height: 0;
     width: 100%;
     padding: 18px 24px 36px;
     background: #FFFFFF;
@@ -406,31 +401,47 @@ body {
     align-items: stretch;
     border-radius: 24px 24px 0 0;
     box-shadow: 0 -12px 30px rgba(17,24,39,.04);
+    overflow: hidden;
   }
 
-  .form-box { max-width: 100%; }
+  .page-wrapper.compact-auth .form-panel {
+    border-radius: 0;
+    padding-top: 22px;
+  }
+
+  .form-box {
+    max-width: 100%;
+    max-height: 100%;
+    overflow-y: hidden;
+  }
   .form-title { font-size: 24px; line-height: 1.25; margin-bottom: 7px; letter-spacing: 0; }
-  .form-subtitle { font-size: 14px; color: #7A8494; margin-bottom: 22px; }
-  .auth-tabs { gap: 6px; margin-bottom: 20px; padding: 4px; border-radius: 10px; background: #F1F2F6; }
-  .auth-tab { padding: 9px 0; font-size: 13.5px; color: #6B7280; border-radius: 7px; }
-  .auth-tab.active { color: #111111; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .form-subtitle { font-size: 14px; color: #7A8494; margin-bottom: 18px; }
+  .page-wrapper.compact-auth .form-title { font-size: 23px; margin-bottom: 6px; }
+  .page-wrapper.compact-auth .form-subtitle { margin-bottom: 16px; }
   .global-error,
   .global-success {
-    padding: 12px 14px;
-    margin-bottom: 16px;
+    padding: 10px 13px;
+    margin-bottom: 12px;
     border-radius: 12px;
     font-size: 13.5px;
     line-height: 1.55;
   }
   .global-error { color: #B42318; background: #FFF7F5; border-color: #FFD6D0; }
   .global-success { color: #15803D; background: #F0FDF4; border-color: #BBF7D0; }
-  .form-group { margin-bottom: 16px; }
+  .form-group { margin-bottom: 13px; }
   .form-group.compact { margin-bottom: 14px; }
   .form-row { grid-template-columns: 1fr; gap: 0; }
   .form-row .form-group { margin-bottom: 16px; }
-  .form-label { font-size: 13px; color: #374151; margin-bottom: 7px; }
-  .form-input { min-height: 50px; padding: 13px 15px; border-radius: 10px; border-color: #E5EAF2; font-size: 15px; }
+  .form-label { font-size: 13px; color: #374151; margin-bottom: 6px; }
+  .form-input { min-height: 46px; padding: 11px 15px; border-radius: 10px; border-color: #E5EAF2; font-size: 15px; }
   .form-input:focus { border-color: #6B83FF; box-shadow: 0 0 0 4px rgba(77,107,254,.12); }
-  .code-btn { min-height: 50px; min-width: 120px; }
-  .submit-btn { min-height: 50px; margin-top: 8px; border-radius: 10px; font-size: 15px; box-shadow: 0 10px 22px rgba(77,107,254,.22); }
+  .verification-row { gap: 8px; }
+  .code-btn { min-height: 46px; min-width: 106px; padding: 0 12px; }
+  .submit-btn { min-height: 48px; margin-top: 6px; border-radius: 10px; font-size: 15px; box-shadow: 0 10px 22px rgba(77,107,254,.22); }
+  .form-extra { margin-top: 12px; }
+}
+
+@media (max-width: 380px) {
+  .form-panel { padding-left: 18px; padding-right: 18px; }
+  .code-btn { min-width: 96px; padding: 0 10px; font-size: 12px; }
 }

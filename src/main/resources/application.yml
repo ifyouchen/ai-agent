@@ -84,7 +84,7 @@ logging:
 
 # 应用前端地址（用于邮件中的链接，如组织邀请、密码重置）
 app:
-  frontend-url: ""            # 留空表示使用相对链接；生产环境填写 https://your-domain.com
+  frontend-url: ${APP_FRONTEND_URL:http://localhost:5173} # 用于邮件绝对链接；生产环境设置为 https://your-domain.com
   org:
     invitation:
       ttl-hours: 72           # 组织邀请链接有效期（小时）

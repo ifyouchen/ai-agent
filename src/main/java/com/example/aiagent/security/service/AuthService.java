@@ -165,13 +165,12 @@ public class AuthService {
      * 修改密码
      *
      * @param userId      当前用户 ID
-     * @param oldPassword 旧密码（用于校验）
      * @param newPassword 新密码（明文，将被 BCrypt 加密）
      * @param emailCode   邮箱验证码
-     * @throws IllegalArgumentException 旧密码错误、验证码错误或新密码不符合规则
+     * @throws IllegalArgumentException 验证码错误或新密码不符合规则
      */
     @Transactional
-    public void changePassword(String userId, String oldPassword, String newPassword, String emailCode) {
+    public void changePassword(String userId, String newPassword, String emailCode) {
         SysUser user = sysUserMapper.findByUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
 
@@ -180,10 +179,6 @@ public class AuthService {
         }
 
         emailVerificationService.verifyChangePasswordCode(user.getEmail(), emailCode);
-
-        if (!passwordEncoder.matches(oldPassword, user.getPasswordHash())) {
-            throw new IllegalArgumentException("旧密码不正确");
-        }
 
         if (newPassword == null || newPassword.length() < 6) {
             throw new IllegalArgumentException("新密码长度不能少于 6 位");

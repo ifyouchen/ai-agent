@@ -1,5 +1,5 @@
 <template>
-  <div class="user-avatar" :style="{ background: bgColor }">{{ letter }}</div>
+  <div class="user-avatar" :style="avatarStyle" :aria-label="`用户头像：${displayName}`">{{ letter }}</div>
 </template>
 
 <script setup>
@@ -10,16 +10,20 @@ const props = defineProps({
   size: { type: Number, default: 32 },
 });
 
-const letter = computed(() => (props.name[0] || 'U').toUpperCase());
+const displayName = computed(() => props.name || 'User');
+const letter = computed(() => (displayName.value[0] || 'U').toUpperCase());
 
-/** 根据名称哈希生成稳定的背景色 */
-const bgColor = computed(() => {
-  const colors = [
-    '#4D6BFE','#00A96E','#E53E3E','#D69E2E',
-    '#9B59B6','#2B6CB0','#E67E22','#1ABC9C',
-  ];
-  let hash = 0;
-  for (const c of props.name) hash = (hash * 31 + c.charCodeAt(0)) & 0xFFFFFFFF;
-  return colors[Math.abs(hash) % colors.length];
+const avatarStyle = computed(() => {
+  const size = `${props.size}px`;
+  return {
+    width: size,
+    height: size,
+    background: 'linear-gradient(135deg, #F8FAFF 0%, #EEF3FF 100%)',
+    color: '#4D6BFE',
+    border: '1px solid #DCE6FF',
+    boxShadow: props.size >= 56
+      ? '0 10px 28px rgba(79, 103, 245, 0.14)'
+      : '0 2px 8px rgba(79, 103, 245, 0.10)',
+  };
 });
 </script>

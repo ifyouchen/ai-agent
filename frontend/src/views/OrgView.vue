@@ -51,25 +51,6 @@
         </button>
       </div>
 
-      <div class="org-apply-section">
-        <div class="section-heading compact">
-          <h4>加入其他组织</h4>
-        </div>
-        <div class="org-apply-row">
-          <input
-            v-model.trim="applyOrgId"
-            type="text"
-            placeholder="输入组织 ID"
-            class="org-member-input"
-          />
-          <button class="org-primary-btn" type="button" :disabled="!applyOrgId || applySending" @click="doApplyJoin">
-            <svg v-if="applySending" class="inline-spinner" viewBox="0 0 24 24" fill="none" width="14" height="14">
-              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
-            </svg>
-            {{ applySending ? '申请中' : '申请加入' }}
-          </button>
-        </div>
-      </div>
     </aside>
 
     <main class="org-detail-panel">
@@ -113,12 +94,92 @@
           </div>
         </section>
 
-        <section v-if="org.currentOrg.orgType === 'PERSONAL'" class="org-notice">
-          个人空间仅自己可见，不支持邀请成员。需要协作时请创建企业组织。
-        </section>
+        <template>
+          <nav class="org-section-tabs" aria-label="组织管理功能">
+            <button
+              v-for="tab in visibleTabs"
+              :key="tab.key"
+              class="org-section-tab"
+              :class="{ active: activeSectionKey === tab.key }"
+              type="button"
+              @click="activeSection = tab.key"
+            >
+              <span>{{ tab.label }}</span>
+              <span v-if="tab.count !== null" class="org-section-tab-count">{{ tab.count }}</span>
+            </button>
+          </nav>
 
-        <template v-else>
-          <section v-if="canManageMembers" class="org-invite-panel">
+          <section v-if="activeSectionKey === 'members'" class="org-members-panel">
+            <div class="section-heading">
+              <h4>成员</h4>
+              <span>{{ filteredMembers.length }} 人</span>
+            </div>
+
+            <div v-if="org.currentOrg.orgType === 'PERSONAL'" class="org-notice inline">
+              个人空间仅自己可见，不支持成员协作。需要协作时请创建企业组织，或在「加入申请」中申请加入其他组织。
+            </div>
+
+            <template v-else>
+              <div class="member-search-row">
+                <input
+                  v-model.trim="memberSearch"
+                  type="text"
+                  placeholder="搜索用户名或用户 ID"
+                  class="org-member-input"
+                />
+              </div>
+
+              <div v-if="membersLoading" class="org-loading members-loading">
+                <svg class="inline-spinner" viewBox="0 0 24 24" fill="none" width="18" height="18">
+                  <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
+                </svg>
+                加载成员中
+              </div>
+
+              <div v-else-if="!filteredMembers.length" class="org-empty compact">
+                <div class="org-empty-title">{{ memberSearch ? '无匹配成员' : '暂无成员' }}</div>
+              </div>
+
+              <div v-else class="member-list">
+                <div v-for="member in filteredMembers" :key="member.userId" class="member-row">
+                  <div class="member-avatar">{{ memberInitial(member) }}</div>
+                  <div class="member-main">
+                    <div class="member-name">
+                      {{ member.username || member.userId }}
+                      <span v-if="member.userId === auth.user?.userId" class="self-badge">你</span>
+                    </div>
+                    <div class="member-id">{{ member.userId }}</div>
+                  </div>
+
+                  <span v-if="member.role === 'OWNER'" class="member-role-badge owner">所有者</span>
+                  <div v-else-if="isOwner" class="member-role-actions">
+                    <button
+                      v-for="role in editableRoles"
+                      :key="role.value"
+                      class="member-role-chip"
+                      :class="{ active: member.role === role.value }"
+                      type="button"
+                      @click="updateMemberRoleInline(member, role.value)"
+                    >
+                      {{ role.label }}
+                    </button>
+                  </div>
+                  <span v-else class="member-role-badge">{{ orgRoleLabel(member.role) }}</span>
+
+                  <button
+                    v-if="canManageMembers && member.role !== 'OWNER'"
+                    class="member-remove-btn"
+                    type="button"
+                    @click="removeMemberInline(member)"
+                  >
+                    移除
+                  </button>
+                </div>
+              </div>
+            </template>
+          </section>
+
+          <section v-if="activeSectionKey === 'invite' && canManageMembers" class="org-invite-panel">
             <div class="section-heading">
               <h4>邀请成员</h4>
               <span>输入已注册用户的邮箱或用户名，默认角色为成员</span>
@@ -140,7 +201,7 @@
             </div>
           </section>
 
-          <section v-if="canManageMembers" class="org-invite-panel">
+          <section v-if="activeSectionKey === 'invitations' && canManageMembers" class="org-invite-panel">
             <div class="section-heading">
               <h4>待处理邀请</h4>
               <span>{{ pendingInvitations.length }} 条</span>
@@ -169,99 +230,96 @@
             </div>
           </section>
 
-          <section v-if="canManageMembers" class="org-invite-panel">
+          <section v-if="activeSectionKey === 'joinRequests'" class="org-invite-panel">
             <div class="section-heading">
               <h4>加入申请</h4>
-              <span>{{ pendingJoinRequests.length }} 条待处理</span>
+              <span>{{ joinRequestTabCount }} 条待处理</span>
             </div>
-            <div v-if="joinRequestsLoading" class="org-loading">
+
+            <div class="section-heading sub-heading first">
+              <h4>我收到的邀请</h4>
+              <span>{{ myInvitations.length }} 条待处理</span>
+            </div>
+            <div v-if="myInvitationsLoading" class="org-loading">
+              <svg class="inline-spinner" viewBox="0 0 24 24" fill="none" width="18" height="18">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
+              </svg>
+              加载邀请中
+            </div>
+            <div v-else-if="!myInvitations.length" class="org-empty compact">
+              <div class="org-empty-title">暂无收到的组织邀请</div>
+            </div>
+            <div v-else class="invitation-list">
+              <div v-for="inv in myInvitations" :key="inv.id" class="invitation-row">
+                <div class="invitation-main">
+                  <div class="invitation-email">{{ inv.orgName || inv.orgId }}</div>
+                  <div class="invitation-meta">
+                    <span class="invitation-role">{{ orgRoleLabel(inv.role) }}</span>
+                    <span class="invitation-expires">{{ formatExpires(inv.expiresAt) }}</span>
+                  </div>
+                </div>
+                <div class="join-request-actions">
+                  <button class="org-text-btn" type="button" @click="acceptMyInvitation(inv.token)">接受</button>
+                  <button class="member-remove-btn" type="button" @click="rejectMyInvitation(inv.token)">拒绝</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="section-heading sub-heading">
+              <h4>申请加入组织</h4>
+            </div>
+            <div class="org-apply-card">
+              <div>
+                <div class="org-apply-title">加入其他组织</div>
+                <p class="org-apply-desc">输入组织 ID，向该组织管理员提交加入申请。</p>
+              </div>
+              <div class="org-apply-row">
+                <input
+                  v-model.trim="applyOrgId"
+                  type="text"
+                  placeholder="输入组织 ID"
+                  class="org-member-input"
+                />
+                <button class="org-primary-btn" type="button" :disabled="!applyOrgId || applySending" @click="doApplyJoin">
+                  <svg v-if="applySending" class="inline-spinner" viewBox="0 0 24 24" fill="none" width="14" height="14">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
+                  </svg>
+                  {{ applySending ? '申请中' : '申请加入' }}
+                </button>
+              </div>
+            </div>
+
+            <template v-if="canManageMembers">
+              <div class="section-heading sub-heading">
+                <h4>收到的加入申请</h4>
+                <span>{{ pendingJoinRequests.length }} 条待处理</span>
+              </div>
+
+              <div v-if="joinRequestsLoading" class="org-loading">
               <svg class="inline-spinner" viewBox="0 0 24 24" fill="none" width="18" height="18">
                 <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
               </svg>
               加载申请中
-            </div>
-            <div v-else-if="!pendingJoinRequests.length" class="org-empty compact">
-              <div class="org-empty-title">暂无加入申请</div>
-            </div>
-            <div v-else class="invitation-list">
-              <div v-for="req in pendingJoinRequests" :key="req.id" class="invitation-row">
-                <div class="invitation-main">
-                  <div class="invitation-email">{{ req.username || req.userId }}</div>
-                  <div v-if="req.message" class="invitation-message">{{ req.message }}</div>
-                  <div class="invitation-meta">
-                    <span class="invitation-expires">{{ formatTime(req.createdAt) }}</span>
+              </div>
+              <div v-else-if="!pendingJoinRequests.length" class="org-empty compact">
+                <div class="org-empty-title">暂无加入申请</div>
+              </div>
+              <div v-else class="invitation-list">
+                <div v-for="req in pendingJoinRequests" :key="req.id" class="invitation-row">
+                  <div class="invitation-main">
+                    <div class="invitation-email">{{ req.username || req.userId }}</div>
+                    <div v-if="req.message" class="invitation-message">{{ req.message }}</div>
+                    <div class="invitation-meta">
+                      <span class="invitation-expires">{{ formatTime(req.createdAt) }}</span>
+                    </div>
+                  </div>
+                  <div class="join-request-actions">
+                    <button class="org-text-btn" type="button" @click="approveJoinRequest(req.id)">通过</button>
+                    <button class="member-remove-btn" type="button" @click="rejectJoinRequest(req.id)">拒绝</button>
                   </div>
                 </div>
-                <div class="join-request-actions">
-                  <button class="org-text-btn" type="button" @click="approveJoinRequest(req.id)">通过</button>
-                  <button class="member-remove-btn" type="button" @click="rejectJoinRequest(req.id)">拒绝</button>
-                </div>
               </div>
-            </div>
-          </section>
-
-          <section class="org-members-panel">
-            <div class="section-heading">
-              <h4>成员</h4>
-              <span>{{ filteredMembers.length }} 人</span>
-            </div>
-
-            <div class="member-search-row">
-              <input
-                v-model.trim="memberSearch"
-                type="text"
-                placeholder="搜索用户名或用户 ID"
-                class="org-member-input"
-              />
-            </div>
-
-            <div v-if="membersLoading" class="org-loading members-loading">
-              <svg class="inline-spinner" viewBox="0 0 24 24" fill="none" width="18" height="18">
-                <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
-              </svg>
-              加载成员中
-            </div>
-
-            <div v-else-if="!filteredMembers.length" class="org-empty compact">
-              <div class="org-empty-title">{{ memberSearch ? '无匹配成员' : '暂无成员' }}</div>
-            </div>
-
-            <div v-else class="member-list">
-              <div v-for="member in filteredMembers" :key="member.userId" class="member-row">
-                <div class="member-avatar">{{ memberInitial(member) }}</div>
-                <div class="member-main">
-                  <div class="member-name">
-                    {{ member.username || member.userId }}
-                    <span v-if="member.userId === auth.user?.userId" class="self-badge">你</span>
-                  </div>
-                  <div class="member-id">{{ member.userId }}</div>
-                </div>
-
-                <span v-if="member.role === 'OWNER'" class="member-role-badge owner">所有者</span>
-                <div v-else-if="isOwner" class="member-role-actions">
-                  <button
-                    v-for="role in editableRoles"
-                    :key="role.value"
-                    class="member-role-chip"
-                    :class="{ active: member.role === role.value }"
-                    type="button"
-                    @click="updateMemberRoleInline(member, role.value)"
-                  >
-                    {{ role.label }}
-                  </button>
-                </div>
-                <span v-else class="member-role-badge">{{ orgRoleLabel(member.role) }}</span>
-
-                <button
-                  v-if="canManageMembers && member.role !== 'OWNER'"
-                  class="member-remove-btn"
-                  type="button"
-                  @click="removeMemberInline(member)"
-                >
-                  移除
-                </button>
-              </div>
-            </div>
+            </template>
           </section>
         </template>
       </template>
@@ -286,11 +344,14 @@ const inviteEmailOrUsername = ref('');
 const inviteSending         = ref(false);
 const applyOrgId            = ref('');
 const applySending          = ref(false);
+const activeSection         = ref('members');
 const members               = ref([]);
 const membersLoading        = ref(false);
 const memberSearch          = ref('');
 const pendingInvitations    = ref([]);
 const invitationsLoading    = ref(false);
+const myInvitations         = ref([]);
+const myInvitationsLoading  = ref(false);
 const pendingJoinRequests   = ref([]);
 const joinRequestsLoading   = ref(false);
 
@@ -329,10 +390,39 @@ const filteredMembers = computed(() => {
   );
 });
 
+const joinRequestTabCount = computed(() =>
+  myInvitations.value.length + (canManageMembers.value ? pendingJoinRequests.value.length : 0)
+);
+
+const visibleTabs = computed(() => {
+  const tabs = [
+    { key: 'members', label: '成员', count: filteredMembers.value.length },
+  ];
+  if (canManageMembers.value) {
+    tabs.push(
+      { key: 'invite', label: '邀请成员', count: null },
+      { key: 'invitations', label: '待处理邀请', count: pendingInvitations.value.length },
+    );
+  }
+  tabs.push({
+    key: 'joinRequests',
+    label: '加入申请',
+    count: joinRequestTabCount.value,
+  });
+  return tabs;
+});
+
+const activeSectionKey = computed(() => {
+  const validKeys = visibleTabs.value.map(tab => tab.key);
+  return validKeys.includes(activeSection.value) ? activeSection.value : 'members';
+});
+
 watch(() => org.currentOrgId, () => {
+  activeSection.value = 'members';
   clearInvite();
   loadMembers();
   loadInvitations();
+  loadMyInvitations();
   loadJoinRequests();
 }, { immediate: true });
 
@@ -461,6 +551,39 @@ async function doApplyJoin() {
     ui.showToast('error', err.message || '申请失败');
   } finally {
     applySending.value = false;
+  }
+}
+
+async function loadMyInvitations() {
+  myInvitationsLoading.value = true;
+  try {
+    myInvitations.value = await org.listMyInvitations();
+  } catch (err) {
+    ui.showToast('error', err.message || '加载收到的邀请失败');
+    myInvitations.value = [];
+  } finally {
+    myInvitationsLoading.value = false;
+  }
+}
+
+async function acceptMyInvitation(token) {
+  try {
+    await org.acceptInvitation(token);
+    myInvitations.value = myInvitations.value.filter(item => item.token !== token);
+    ui.showToast('success', '已接受组织邀请');
+    await loadMembers();
+  } catch (err) {
+    ui.showToast('error', err.message || '接受邀请失败');
+  }
+}
+
+async function rejectMyInvitation(token) {
+  try {
+    await org.rejectInvitation(token);
+    myInvitations.value = myInvitations.value.filter(item => item.token !== token);
+    ui.showToast('success', '已拒绝组织邀请');
+  } catch (err) {
+    ui.showToast('error', err.message || '拒绝邀请失败');
   }
 }
 
