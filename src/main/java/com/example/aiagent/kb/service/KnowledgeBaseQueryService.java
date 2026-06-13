@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 public class KnowledgeBaseQueryService {
 
     private final HybridRagPipeline ragPipeline;
+    private final KnowledgeBaseService knowledgeBaseService;
 
     @Value("${kb.confidence-threshold:0.6}")
     private double confidenceThreshold;
@@ -59,21 +60,34 @@ public class KnowledgeBaseQueryService {
             // 传递 tenantId/kbId 到 Pipeline，确保向量检索和 BM25 按租户过滤
             RagResponse ragResponse = ragPipeline.execute(question, tenantId, kbId);
 
-            // 置信度评估：根据 Reranker 最高得分判断
-            double confidence = ragResponse.getCitations().isEmpty() ? 0.0
-                    : ragResponse.getCitations().get(0).getRelevanceScore();
+            // 置信度评估：根据引用片段中的最高 Reranker 得分判断
+            double confidence = computeConfidence(ragResponse);
 
-            boolean answerFound = confidence >= confidenceThreshold
-                    && !ragResponse.getCitations().isEmpty();
+            int citationCount = ragResponse.getCitations() != null ? ragResponse.getCitations().size() : 0;
+            boolean answerFound = confidence >= confidenceThreshold && citationCount > 0;
 
             String finalAnswer = answerFound
                     ? ragResponse.getAnswer()
                     : buildNoAnswerMessage(question);
 
+            int totalMs = (int) (System.currentTimeMillis() - start);
+            RagResponse.RetrievalStats stats = ragResponse.getStats();
+            knowledgeBaseService.recordRetrievalLog(
+                    tenantId, kbId, null, userId, question,
+                    buildRewrittenQuery(ragResponse),
+                    buildTopChunksJson(ragResponse),
+                    confidence,
+                    answerFound ? "ANSWERED" : "NO_ANSWER",
+                    stats != null ? safeInt(stats.getRetrievalTimeMs()) : null,
+                    stats != null ? safeInt(stats.getRerankingTimeMs()) : null,
+                    stats != null ? safeInt(stats.getGenerationTimeMs()) : null,
+                    totalMs
+            );
+
             log.info("查询完成 answerFound={} confidence={} citations={} cost={}ms",
                     answerFound, String.format("%.3f", confidence),
-                    ragResponse.getCitations().size(),
-                    System.currentTimeMillis() - start);
+                    citationCount,
+                    totalMs);
 
             return new QueryResult(finalAnswer, ragResponse, answerFound, confidence);
 
@@ -93,5 +107,51 @@ public class KnowledgeBaseQueryService {
                 "2. 联系相关负责人获取帮助",
                 question.length() > 30 ? question.substring(0, 30) + "..." : question
         );
+    }
+
+    private double computeConfidence(RagResponse ragResponse) {
+        if (ragResponse == null || ragResponse.getCitations() == null || ragResponse.getCitations().isEmpty()) {
+            return 0.0;
+        }
+        return ragResponse.getCitations().stream()
+                .mapToDouble(RagResponse.Citation::getRelevanceScore)
+                .max()
+                .orElse(0.0);
+    }
+
+    private String buildRewrittenQuery(RagResponse ragResponse) {
+        if (ragResponse == null || ragResponse.getRewrittenQueries() == null) {
+            return null;
+        }
+        return String.join("\n", ragResponse.getRewrittenQueries());
+    }
+
+    private String buildTopChunksJson(RagResponse ragResponse) {
+        if (ragResponse == null || ragResponse.getCitations() == null || ragResponse.getCitations().isEmpty()) {
+            return "[]";
+        }
+
+        StringBuilder json = new StringBuilder("[");
+        int count = Math.min(ragResponse.getCitations().size(), 5);
+        for (int i = 0; i < count; i++) {
+            RagResponse.Citation citation = ragResponse.getCitations().get(i);
+            if (i > 0) json.append(",");
+            json.append("{")
+                    .append("\"chunk_id\":\"").append(escapeJson(citation.getChunkId())).append("\",")
+                    .append("\"document_name\":\"").append(escapeJson(citation.getDocumentName())).append("\",")
+                    .append("\"score\":").append(String.format(java.util.Locale.ROOT, "%.4f", citation.getRelevanceScore()))
+                    .append("}");
+        }
+        json.append("]");
+        return json.toString();
+    }
+
+    private Integer safeInt(long value) {
+        return value > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) value;
+    }
+
+    private String escapeJson(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

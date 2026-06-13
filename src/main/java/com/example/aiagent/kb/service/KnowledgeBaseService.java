@@ -11,6 +11,7 @@ import com.example.aiagent.rag.retrieval.Bm25Retriever;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +42,11 @@ public class KnowledgeBaseService {
     /** BM25 检索器，required=false：未启用时 Bean 不存在，注入 null，不影响启动 */
     @Autowired(required = false)
     private Bm25Retriever bm25Retriever;
+
+    @Autowired(required = false)
+    private JdbcTemplate jdbcTemplate;
+
+    private static final String EMBEDDING_TABLE = "knowledge_base";
 
     // ====================================================================
     // 知识库管理
@@ -177,6 +183,7 @@ public class KnowledgeBaseService {
         if (bm25Retriever != null && bm25Retriever.isAvailable()) {
             bm25Retriever.deleteByKbId(String.valueOf(kbId));
         }
+        deleteVectorEmbeddingsByKb(tenantId, kbId);
 
         log.info("知识库删除完成 id={} 共删除文档 {} 个、切片 {} 个", kbId, deletedDocs, deletedChunks);
     }
@@ -232,8 +239,9 @@ public class KnowledgeBaseService {
 
         // 3. 清理 Lucene BM25 索引（按文档名删除该文档的切片索引）
         if (bm25Retriever != null && bm25Retriever.isAvailable()) {
-            bm25Retriever.deleteByDocumentName(doc.getName());
+            bm25Retriever.deleteByDocumentName(tenantId, doc.getKbId(), doc.getName());
         }
+        deleteVectorEmbeddingsByDocument(doc);
 
         // 4. 更新知识库 docCount（减 1，最小为 0）
         kbMapper.findById(doc.getKbId()).ifPresent(kb -> {
@@ -247,6 +255,37 @@ public class KnowledgeBaseService {
     // ====================================================================
     // 检索日志
     // ====================================================================
+
+    private void deleteVectorEmbeddingsByKb(String tenantId, Long kbId) {
+        if (jdbcTemplate == null || kbId == null) return;
+        try {
+            int deleted = jdbcTemplate.update(
+                    "DELETE FROM " + EMBEDDING_TABLE +
+                            " WHERE metadata ->> 'tenantId' = ? AND metadata ->> 'kbId' = ?",
+                    tenantId, String.valueOf(kbId));
+            log.info("已清理知识库向量索引 tenantId={} kbId={} rows={}", tenantId, kbId, deleted);
+        } catch (Exception e) {
+            log.warn("清理知识库向量索引失败 tenantId={} kbId={}，原因：{}",
+                    tenantId, kbId, e.getMessage());
+        }
+    }
+
+    private void deleteVectorEmbeddingsByDocument(Document doc) {
+        if (jdbcTemplate == null || doc == null) return;
+        try {
+            int deleted = jdbcTemplate.update(
+                    "DELETE FROM " + EMBEDDING_TABLE +
+                            " WHERE metadata ->> 'tenantId' = ?" +
+                            " AND metadata ->> 'kbId' = ?" +
+                            " AND (metadata ->> 'docId' = ? OR metadata ->> 'documentName' = ? OR metadata ->> 'sourceFile' = ?)",
+                    doc.getTenantId(), String.valueOf(doc.getKbId()), String.valueOf(doc.getId()),
+                    doc.getName(), doc.getName());
+            log.info("已清理文档向量索引 docId={} kbId={} rows={}", doc.getId(), doc.getKbId(), deleted);
+        } catch (Exception e) {
+            log.warn("清理文档向量索引失败 docId={} kbId={}，原因：{}",
+                    doc.getId(), doc.getKbId(), e.getMessage());
+        }
+    }
 
     /**
      * 异步记录检索日志（不阻塞主链路响应）
@@ -266,6 +305,16 @@ public class KnowledgeBaseService {
     public void recordRetrievalLog(String tenantId, Long kbId, String sessionId,
                                    String userId, String query,
                                    double topScore, String answerType, int totalMs) {
+        recordRetrievalLog(tenantId, kbId, sessionId, userId, query, null, null,
+                topScore, answerType, null, null, null, totalMs);
+    }
+
+    @Async
+    public void recordRetrievalLog(String tenantId, Long kbId, String sessionId,
+                                   String userId, String query, String rewrittenQuery,
+                                   String topChunks, double topScore, String answerType,
+                                   Integer retrievalMs, Integer rerankMs,
+                                   Integer generateMs, int totalMs) {
         try {
             RetrievalLog log = RetrievalLog.builder()
                     .tenantId(tenantId)
@@ -273,8 +322,13 @@ public class KnowledgeBaseService {
                     .sessionId(sessionId)
                     .userId(userId)
                     .query(query)
+                    .rewrittenQuery(rewrittenQuery)
+                    .topChunks(topChunks)
                     .topScore(BigDecimal.valueOf(topScore))
                     .answerType(answerType)
+                    .retrievalMs(retrievalMs)
+                    .rerankMs(rerankMs)
+                    .generateMs(generateMs)
                     .totalMs(totalMs)
                     .build();
 

@@ -16,6 +16,8 @@ import org.springframework.web.client.RestTemplate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -28,7 +30,7 @@ import java.util.stream.IntStream;
  *
  * <p>解决问题：RRF 初排仍有噪音，Reranker 对 (query, doc) 精细打分，大幅提升精度。
  *
- * <p>支持三种实现，通过 {@code rag.reranker.type} 切换：
+ * <p>支持多种实现，通过 {@code rag.reranker.type} 切换：
  *
  * <table>
  *   <tr><th>type</th><th>实现</th><th>特点</th></tr>
@@ -36,9 +38,10 @@ import java.util.stream.IntStream;
  *   <tr><td>{@code tfidf}</td><td>内置 TF-IDF 交叉特征</td><td>纯 Java，延迟极低，无网络依赖</td></tr>
  *   <tr><td>{@code bge}</td><td>外部 BGE Python 服务</td><td>专用模型精度最高，需额外部署</td></tr>
  *   <tr><td>{@code cohere}</td><td>Cohere Rerank API</td><td>云端按需调用，需 API Key</td></tr>
+ *   <tr><td>{@code qianfan}</td><td>百度千帆 Rerank API</td><td>国内云端精排，复用千帆 API Key</td></tr>
  * </table>
  *
- * <p>降级策略：bge/cohere 调用失败时自动降级为 tfidf，确保服务可用性。
+ * <p>降级策略：外部服务调用失败时自动降级为本地 TF-IDF，确保服务可用性。
  *
  * <p>效果：Precision@5 从 ~0.58 提升到 ~0.78（+34%）
  */
@@ -67,6 +70,23 @@ public class RerankerService {
     private String cohereModel;
 
     private static final String COHERE_RERANK_URL = "https://api.cohere.ai/v1/rerank";
+
+    // ── 百度千帆 Rerank API 配置 ────────────────────────────────
+
+    @Value("${qianfan.api-key:}")
+    private String qianfanApiKey;
+
+    @Value("${qianfan.base-url:https://qianfan.baidubce.com/v2}")
+    private String qianfanBaseUrl;
+
+    @Value("${rag.reranker.qianfan.url:}")
+    private String qianfanRerankUrl;
+
+    @Value("${rag.reranker.qianfan.model:bce-reranker-base}")
+    private String qianfanModel;
+
+    @Value("${rag.reranker.qianfan.max-documents:64}")
+    private int qianfanMaxDocuments;
 
     // ── LLM Reranker 配置 ─────────────────────────────────────────
 
@@ -97,16 +117,18 @@ public class RerankerService {
             case "tfidf"  -> rerankWithTfIdf(query, documents);
             case "bge"    -> rerankWithBge(query, documents);
             case "cohere" -> rerankWithCohere(query, documents);
+            case "qianfan" -> rerankWithQianfan(query, documents);
             default -> {
                 log.warn("未知 reranker 类型：{}，降级为 llm", rerankerType);
                 yield rerankWithLlm(query, documents);
             }
         };
+        List<Double> normalizedScores = normalizeScoreSize(scores, candidates.size());
 
         List<RetrievedChunk> result = IntStream.range(0, candidates.size())
                 .boxed()
-                .peek(i -> candidates.get(i).setRerankerScore(scores.get(i)))
-                .sorted((i, j) -> Double.compare(scores.get(j), scores.get(i)))
+                .peek(i -> candidates.get(i).setRerankerScore(normalizedScores.get(i)))
+                .sorted((i, j) -> Double.compare(normalizedScores.get(j), normalizedScores.get(i)))
                 .limit(topK)
                 .map(candidates::get)
                 .collect(Collectors.toList());
@@ -241,32 +263,35 @@ public class RerankerService {
         }
 
         return documents.stream().map(doc -> {
-            String lowerDoc = doc.toLowerCase();
-            String[] docWords = lowerDoc.split("[\\s\\p{Punct}]+");
-            int docLen = Math.max(docWords.length, 1);
+            Set<String> docTerms = tokenize(doc);
+            if (docTerms.isEmpty()) return 0.0;
 
-            double score = 0.0;
-            for (String term : queryTerms) {
-                // TF：词项在文档中出现的次数 / 文档长度
-                long count = Arrays.stream(docWords)
-                        .filter(w -> w.equals(term))
-                        .count();
-                double tf = (double) count / docLen;
-                // IDF 简化：命中加权（每个命中词贡献 1/queryTerms.size()）
-                if (count > 0) {
-                    score += (1.0 / queryTerms.size()) * (1.0 + Math.log(1 + tf));
-                }
-            }
-            // 归一化到 [0, 1]
-            return Math.min(score, 1.0);
+            long hits = queryTerms.stream()
+                    .filter(docTerms::contains)
+                    .count();
+            return (double) hits / queryTerms.size();
         }).collect(Collectors.toList());
     }
 
     private Set<String> tokenize(String text) {
         if (text == null || text.isBlank()) return Collections.emptySet();
-        return Arrays.stream(text.toLowerCase().split("[\\s\\p{Punct}]+"))
+        Set<String> terms = new LinkedHashSet<>();
+        String normalized = text.toLowerCase();
+
+        Arrays.stream(normalized.split("[\\s\\p{Punct}，。！？；：、（）《》【】]+"))
                 .filter(w -> w.length() > 1)
-                .collect(Collectors.toSet());
+                .forEach(terms::add);
+
+        List<String> cjkChars = normalized.codePoints()
+                .filter(this::isCjk)
+                .mapToObj(cp -> new String(Character.toChars(cp)))
+                .toList();
+        terms.addAll(cjkChars);
+        for (int i = 0; i < cjkChars.size() - 1; i++) {
+            terms.add(cjkChars.get(i) + cjkChars.get(i + 1));
+        }
+
+        return terms;
     }
 
     // ── [3] BGE 外部 Python 服务 ──────────────────────────────────
@@ -338,7 +363,102 @@ public class RerankerService {
         }
     }
 
+    // ── [5] 百度千帆 Rerank API ─────────────────────────────────
+
+    private List<Double> rerankWithQianfan(String query, List<String> documents) {
+        if (qianfanApiKey == null || qianfanApiKey.isBlank()) {
+            log.warn("[Qianfan-Reranker] 未配置 qianfan.api-key，降级为 TF-IDF Reranker");
+            return rerankWithTfIdf(query, documents);
+        }
+
+        try {
+            int submitCount = Math.min(documents.size(), Math.max(1, Math.min(qianfanMaxDocuments, 64)));
+            List<String> submittedDocs = documents.subList(0, submitCount).stream()
+                    .map(doc -> truncate(doc, 4096))
+                    .toList();
+
+            Map<String, Object> body = new HashMap<>();
+            body.put("model", qianfanModel);
+            body.put("query", truncate(query, 1600));
+            body.put("documents", submittedDocs);
+            body.put("top_n", submittedDocs.size());
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(qianfanApiKey);
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            Map<String, Object> responseBody = restTemplate.exchange(
+                    resolveQianfanRerankUrl(),
+                    HttpMethod.POST,
+                    new HttpEntity<>(body, headers),
+                    new ParameterizedTypeReference<Map<String, Object>>() {}
+            ).getBody();
+
+            if (responseBody == null || !responseBody.containsKey("results")) {
+                throw new IllegalStateException("千帆 Rerank 返回空结果");
+            }
+
+            List<Double> scores = new ArrayList<>(Collections.nCopies(documents.size(), 0.0));
+            Object results = responseBody.get("results");
+            if (!(results instanceof List<?> resultList)) {
+                throw new IllegalStateException("千帆 Rerank results 格式异常");
+            }
+
+            for (Object item : resultList) {
+                if (!(item instanceof Map<?, ?> result)) continue;
+                Object indexObj = result.get("index");
+                Object scoreObj = result.get("relevance_score");
+                if (!(indexObj instanceof Number indexNumber) || !(scoreObj instanceof Number scoreNumber)) {
+                    continue;
+                }
+                int index = indexNumber.intValue();
+                if (index >= 0 && index < submitCount) {
+                    scores.set(index, scoreNumber.doubleValue());
+                }
+            }
+            return scores;
+
+        } catch (Exception e) {
+            log.warn("[Qianfan-Reranker] 调用失败，降级为 TF-IDF Reranker: {}", e.getMessage());
+            return rerankWithTfIdf(query, documents);
+        }
+    }
+
     // ── 辅助方法 ──────────────────────────────────────────────────
+
+    private List<Double> normalizeScoreSize(List<Double> scores, int expectedSize) {
+        List<Double> normalized = new ArrayList<>();
+        if (scores != null) {
+            normalized.addAll(scores);
+        }
+        while (normalized.size() < expectedSize) {
+            normalized.add(0.0);
+        }
+        if (normalized.size() > expectedSize) {
+            return normalized.subList(0, expectedSize);
+        }
+        return normalized;
+    }
+
+    private String resolveQianfanRerankUrl() {
+        if (qianfanRerankUrl != null && !qianfanRerankUrl.isBlank()) {
+            return qianfanRerankUrl.trim();
+        }
+        return qianfanBaseUrl.replaceAll("/+$", "") + "/rerank";
+    }
+
+    private String truncate(String text, int maxLength) {
+        if (text == null) return "";
+        return text.length() <= maxLength ? text : text.substring(0, maxLength);
+    }
+
+    private boolean isCjk(int codePoint) {
+        Character.UnicodeBlock block = Character.UnicodeBlock.of(codePoint);
+        return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
+                || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
+                || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B
+                || block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS;
+    }
 
     /** 生成线性递减得分（RRF 原始排序的得分近似），用于降级场景 */
     private List<Double> linearDecayScores(int size) {

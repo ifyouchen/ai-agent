@@ -409,6 +409,10 @@ public class DocumentIngestService {
             // 确保 metadata 中携带 tenantId 和 kbId（向量检索过滤用）
             segment.metadata().put("tenantId", tenantId);
             segment.metadata().put("kbId", String.valueOf(kbId));
+            segment.metadata().put("docId", String.valueOf(docEntityId));
+            segment.metadata().put("documentName", fileName);
+            segment.metadata().put("sourceFile", fileName);
+            segment.metadata().put("chunkIndex", String.valueOf(i));
             segment.metadata().put("chunkId", docEntityId + "_" + i);
 
             // 写入 kb_chunk 业务表
@@ -420,6 +424,7 @@ public class DocumentIngestService {
                     .content(segment.text())
                     .contentHash(computeContentHash(segment.text()))
                     .metadata(buildChunkMetadataJson(segment))
+                    .tokenCount(estimateTokenCount(segment.text()))
                     .isActive(true)
                     .build();
             chunkMapper.insert(chunkEntity);
@@ -618,18 +623,62 @@ public class DocumentIngestService {
         StringBuilder json = new StringBuilder("{");
         boolean first = true;
 
+        first = appendJsonField(json, first, "tenant_id", metadata.getString("tenantId"));
+        first = appendJsonField(json, first, "kb_id", metadata.getString("kbId"));
+        first = appendJsonField(json, first, "doc_id", metadata.getString("docId"));
+        first = appendJsonField(json, first, "chunk_id", metadata.getString("chunkId"));
+        first = appendJsonField(json, first, "chunk_index", metadata.getString("chunkIndex"));
+
         if (metadata.getString("pageNumber") != null) {
+            if (!first) json.append(",");
             json.append("\"page\":").append(metadata.getString("pageNumber"));
             first = false;
         }
-        if (metadata.getString("documentName") != null) {
-            if (!first) json.append(",");
-            json.append("\"source_file\":\"").append(escapeJson(metadata.getString("documentName"))).append("\"");
-            first = false;
-        }
+        first = appendJsonField(json, first, "source_file", metadata.getString("sourceFile"));
+        appendJsonField(json, first, "document_name", metadata.getString("documentName"));
 
         json.append("}");
         return json.toString();
+    }
+
+    private boolean appendJsonField(StringBuilder json, boolean first, String key, String value) {
+        if (value == null || value.isBlank()) {
+            return first;
+        }
+        if (!first) json.append(",");
+        json.append("\"").append(key).append("\":\"").append(escapeJson(value)).append("\"");
+        return false;
+    }
+
+    private int estimateTokenCount(String text) {
+        if (text == null || text.isBlank()) return 0;
+        int cjkChars = 0;
+        int wordGroups = 0;
+        boolean inWord = false;
+        for (int offset = 0; offset < text.length(); ) {
+            int codePoint = text.codePointAt(offset);
+            if (isCjk(codePoint)) {
+                cjkChars++;
+                inWord = false;
+            } else if (Character.isLetterOrDigit(codePoint)) {
+                if (!inWord) {
+                    wordGroups++;
+                    inWord = true;
+                }
+            } else {
+                inWord = false;
+            }
+            offset += Character.charCount(codePoint);
+        }
+        return Math.max(1, cjkChars + wordGroups);
+    }
+
+    private boolean isCjk(int codePoint) {
+        Character.UnicodeBlock block = Character.UnicodeBlock.of(codePoint);
+        return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
+                || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
+                || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B
+                || block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS;
     }
 
     private String escapeJson(String s) {

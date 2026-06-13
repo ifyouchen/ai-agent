@@ -90,6 +90,9 @@ public class HybridRagPipeline {
     @Value("${rag.reranker.top-k:5}")
     private int rerankerTopK;
 
+    @Value("${rag.reranker.type:llm}")
+    private String rerankerType;
+
     @Value("${rag.query.rewrite.variants:2}")
     private int queryVariants;
 
@@ -496,12 +499,13 @@ public class HybridRagPipeline {
             return null;
         }
         String normalizedQuery = normalizeCacheQuery(userQuery);
-        String configVersion = "v1"
+        String configVersion = "v2"
                 + "|hyde=" + hydeEnabled
                 + "|variants=" + queryVariants
                 + "|vectorTopK=" + vectorTopK
                 + "|threshold=" + vectorThreshold
                 + "|rrfTopK=" + rrfTopK
+                + "|rerankerType=" + rerankerType
                 + "|rerankerTopK=" + rerankerTopK;
         return String.join("|",
                 tenantId != null ? tenantId : "",

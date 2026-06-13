@@ -97,8 +97,8 @@ agent:
   rag:
     max-results: 3            # RAG 检索返回最相关 N 段
     min-score: 0.7            # 相似度阈值（低于此值不返回）
-    chunk-size: 500           # 文档切片大小（字符数）
-    chunk-overlap: 50         # 切片重叠（避免信息截断）
+    chunk-size: 800           # 文档切片大小（字符数）
+    chunk-overlap: 120        # 切片重叠（避免信息截断）
     embedding-batch-size: 16  # Embedding API 单次批量上限（百度千帆 bge-large-zh 最大 16；OpenAI 可设 256）
 
 # ==================== 混合 RAG 配置 ====================
@@ -108,7 +108,7 @@ rag:
     hyde:
       enabled: true            # true=保留 HyDE 检索质量；低延迟场景可关闭
     rewrite:
-      variants: 0              # 0=仅用原始问题（HyDE 已足够，跳过多变体 LLM 调用）；2=多变体但更慢
+      variants: 2              # 0=仅用原始问题；2=多角度改写，召回更充分但会增加一次 LLM 调用
 
   cache:
     enabled: true
@@ -117,10 +117,10 @@ rag:
   # 向量检索
   retrieval:
     vector:
-      top-k: 20                # 向量检索初始召回数
-      threshold: 0.5           # 最低相似度阈值
+      top-k: 40                # 向量检索初始召回数
+      threshold: 0.45          # 最低相似度阈值
     rrf:
-      top-k: 10                # RRF 融合后保留数
+      top-k: 25                # RRF 融合后保留数
 
   # Reranker 精排
   reranker:
@@ -129,13 +129,19 @@ rag:
     #   tfidf  - 内置 TF-IDF（纯 Java，延迟极低，无网络调用，推荐流式对话场景）
     #   bge    - 外部 BGE Python 服务（精度最高，需另行部署 Python 推理服务）
     #   cohere - Cohere Rerank API（云端，需 API Key）
-    type: tfidf               # 改为 tfidf 避免 Reranker 额外占用 LLM 调用时间
-    top-k: 5                   # 最终送给 LLM 的上下文数
+    #   qianfan - 百度千帆 Rerank API（国内云端精排，复用 qianfan.api-key）
+    type: qianfan             # 国内云端精排；未配置 key 或调用失败时自动降级
+    top-k: 8                   # 最终送给 LLM 的上下文数
     llm:
       batch-size: 5            # 每批发给 LLM 评分的文档数（避免超长 Prompt）
+    qianfan:
+      model: bce-reranker-base # 千帆官方 rerank 示例模型，可按账号开通情况替换
+      max-documents: 64        # 千帆 rerank documents 官方上限
+      url: ${QIANFAN_RERANK_URL:}
 
   # 内嵌 BM25 检索（基于 Apache Lucene，无需外部服务，始终可用）
   bm25:
+    analyzer: smartcn      # smartcn=中文分词；standard=英文/空格分词
     k1: 1.2                # BM25 词频饱和参数（推荐 1.2~2.0）
     b:  0.75               # BM25 文档长度归一化参数（推荐 0.5~0.9）
     # 索引存储目录（可选持久化）：

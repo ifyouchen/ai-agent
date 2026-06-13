@@ -48,6 +48,11 @@ class RerankerServiceTest {
         injectField(rerankerService, "bgeUrl", "http://localhost:8090/rerank");
         injectField(rerankerService, "cohereApiKey", "");
         injectField(rerankerService, "cohereModel", "rerank-multilingual-v3.0");
+        injectField(rerankerService, "qianfanApiKey", "test-key");
+        injectField(rerankerService, "qianfanBaseUrl", "https://qianfan.baidubce.com/v2");
+        injectField(rerankerService, "qianfanRerankUrl", "");
+        injectField(rerankerService, "qianfanModel", "bce-reranker-base");
+        injectField(rerankerService, "qianfanMaxDocuments", 64);
         injectField(rerankerService, "llmBatchSize", 5);
     }
 
@@ -138,6 +143,34 @@ class RerankerServiceTest {
         // c2 得分更高，应排第1
         assertThat(result.get(0).getChunkId()).isEqualTo("c2");
         assertThat(result.get(1).getChunkId()).isEqualTo("c1");
+    }
+
+    @Test
+    @DisplayName("千帆返回按得分排序的 results 时应还原到原始候选并重新排序")
+    void shouldReorderByQianfanScores() {
+        injectField(rerankerService, "rerankerType", "qianfan");
+
+        List<RetrievedChunk> candidates = List.of(
+                chunk("c1", 0.9),
+                chunk("c2", 0.7)
+        );
+
+        Map<String, Object> response = Map.of(
+                "results", List.of(
+                        Map.of("index", 0, "relevance_score", 0.2),
+                        Map.of("index", 1, "relevance_score", 0.95)
+                )
+        );
+        when(restTemplate.exchange(eq("https://qianfan.baidubce.com/v2/rerank"),
+                eq(HttpMethod.POST), any(), any(ParameterizedTypeReference.class)))
+                .thenReturn(ResponseEntity.ok(response));
+
+        List<RetrievedChunk> result = rerankerService.rerank("查询", candidates, 2);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).getChunkId()).isEqualTo("c2");
+        assertThat(result.get(1).getChunkId()).isEqualTo("c1");
+        assertThat(result.get(0).getRerankerScore()).isEqualTo(0.95);
     }
 
     // ── 单个候选 ──────────────────────────────────────────

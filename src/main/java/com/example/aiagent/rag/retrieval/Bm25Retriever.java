@@ -5,6 +5,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.lucene.analysis.Analyzer;
+import org.apache.lucene.analysis.cn.smart.SmartChineseAnalyzer;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
@@ -91,6 +92,9 @@ public class Bm25Retriever {
     @Value("${rag.bm25.b:0.75}")
     private float bm25B;
 
+    @Value("${rag.bm25.analyzer:smartcn}")
+    private String bm25Analyzer;
+
     /**
      * BM25 索引存储目录（可选持久化）
      * <ul>
@@ -115,7 +119,7 @@ public class Bm25Retriever {
 
     @PostConstruct
     public void init() throws IOException {
-        analyzer = new StandardAnalyzer();
+        analyzer = createAnalyzer();
 
         // 根据配置选择存储后端：磁盘持久化（MMapDirectory）或内存（ByteBuffersDirectory）
         if (indexDir != null && !indexDir.isBlank()) {
@@ -139,8 +143,8 @@ public class Bm25Retriever {
         indexSearcher   = new IndexSearcher(directoryReader);
         indexSearcher.setSimilarity(new BM25Similarity(bm25K1, bm25B));
 
-        log.info("[BM25-Lucene] 初始化完成，k1={}, b={}，已有文档数={}",
-                bm25K1, bm25B, directoryReader.numDocs());
+        log.info("[BM25-Lucene] 初始化完成，analyzer={}，k1={}, b={}，已有文档数={}",
+                bm25Analyzer, bm25K1, bm25B, directoryReader.numDocs());
     }
 
     @PreDestroy
@@ -299,6 +303,37 @@ public class Bm25Retriever {
     }
 
     /**
+     * 删除指定租户、知识库、文档名称下的切片，避免同名文档跨知识库误删。
+     */
+    public void deleteByDocumentName(String tenantId, Long kbId, String documentName) {
+        if (documentName == null || documentName.isBlank()) return;
+
+        lock.writeLock().lock();
+        try {
+            BooleanQuery.Builder builder = new BooleanQuery.Builder();
+            builder.add(new TermQuery(new Term(FIELD_DOCUMENT_NAME + ".raw", documentName)),
+                    BooleanClause.Occur.MUST);
+            if (tenantId != null && !tenantId.isBlank()) {
+                builder.add(new TermQuery(new Term(FIELD_TENANT_ID, tenantId)),
+                        BooleanClause.Occur.MUST);
+            }
+            if (kbId != null) {
+                builder.add(new TermQuery(new Term(FIELD_KB_ID, String.valueOf(kbId))),
+                        BooleanClause.Occur.MUST);
+            }
+            indexWriter.deleteDocuments(builder.build());
+            indexWriter.commit();
+            log.info("[BM25-Lucene] 已删除文档切片，tenantId={}, kbId={}, documentName={}",
+                    tenantId, kbId, documentName);
+        } catch (IOException e) {
+            log.warn("[BM25-Lucene] 删除切片异常，tenantId={}, kbId={}, documentName={}，原因：{}",
+                    tenantId, kbId, documentName, e.getMessage());
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
      * 删除指定知识库下的所有切片
      *
      * @param kbId 知识库 ID
@@ -387,6 +422,13 @@ public class Bm25Retriever {
         }
 
         return builder.build();
+    }
+
+    private Analyzer createAnalyzer() {
+        if ("standard".equalsIgnoreCase(bm25Analyzer)) {
+            return new StandardAnalyzer();
+        }
+        return new SmartChineseAnalyzer();
     }
 
     /**
