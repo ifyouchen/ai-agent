@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.aiagent.chat.mapper.ChatShareMapper">
+
+    <resultMap id="shareRM" type="com.example.aiagent.chat.entity.ChatShare">
+        <id     property="id"           column="id"/>
+        <result property="shareId"      column="share_id"/>
+        <result property="sessionId"    column="session_id"/>
+        <result property="userId"       column="user_id"/>
+        <result property="title"        column="title"/>
+        <result property="snapshotJson" column="snapshot_json"/>
+        <result property="createdAt"    column="created_at"/>
+        <result property="expiresAt"    column="expires_at"/>
+        <result property="revokedAt"    column="revoked_at"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.example.aiagent.chat.entity.ChatShare">
+        INSERT INTO chat_share (share_id, session_id, user_id, title, snapshot_json, created_at, expires_at)
+        VALUES (#{shareId}, #{sessionId}, #{userId}, #{title}, #{snapshotJson}, NOW(), #{expiresAt})
+    </insert>
+
+    <select id="findByShareId" resultMap="shareRM">
+        SELECT id, share_id, session_id, user_id, title, snapshot_json, created_at, expires_at, revoked_at
+        FROM chat_share
+        WHERE share_id = #{shareId}
+        LIMIT 1
+    </select>
+
+    <update id="revoke">
+        UPDATE chat_share
+        SET revoked_at = NOW()
+        WHERE share_id = #{shareId}
+          AND user_id = #{userId}
+          AND revoked_at IS NULL
+    </update>
+</mapper>

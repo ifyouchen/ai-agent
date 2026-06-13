@@ -33,6 +33,12 @@
     flex-wrap: wrap;
 }
 
+.message-actions.user-actions {
+    justify-content: flex-end;
+    margin-top: 7px;
+    padding-right: 2px;
+}
+
 .msg-action-btn {
     display: inline-flex;
     align-items: center;
@@ -51,6 +57,27 @@
 .msg-action-btn.copied { background: #E6FAF4; color: var(--success); border-color: var(--success); }
 
 .feedback-btn.active   { background: var(--primary-light); color: var(--primary); }
+
+.msg-action-btn.icon-only {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #87909f;
+    justify-content: center;
+}
+
+.msg-action-btn.icon-only:hover {
+    background: #f1f4f9;
+    color: #4f67f5;
+}
+
+.msg-action-btn.icon-only.copied {
+    background: #eaf8f2;
+    color: #16a36f;
+}
 
 /* ===== 代码块复制按钮 ===== */
 .code-block-wrap {
@@ -397,6 +424,129 @@
 .topbar-btn.danger   { color: var(--error); border-color: var(--error); }
 .topbar-btn.danger:hover { background: #FFF5F5; }
 .topbar-btn.router-link-active { background: var(--primary-light); color: var(--primary); border-color: var(--primary); }
+
+/* ===== 会话分享弹窗 ===== */
+.share-dialog-overlay {
+    z-index: 500;
+}
+
+.share-dialog {
+    width: min(520px, calc(100vw - 32px));
+    border-radius: 18px;
+    border: 1px solid #e3e9f3;
+    background: #fff;
+    box-shadow: 0 22px 70px rgba(31, 44, 71, .18);
+    padding: 20px;
+}
+
+.share-dialog-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+}
+
+.share-dialog-header h3 {
+    margin: 0;
+    color: #202633;
+    font-size: 18px;
+    line-height: 1.35;
+}
+
+.share-dialog-header p {
+    margin: 6px 0 0;
+    color: #7a8495;
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+.share-boundary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 18px;
+}
+
+.share-boundary span {
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: #f4f7fb;
+    color: #667085;
+    font-size: 12px;
+}
+
+.share-primary-btn {
+    width: 100%;
+    height: 42px;
+    border: 0;
+    border-radius: 12px;
+    background: #4f67f5;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.share-primary-btn:disabled {
+    opacity: .6;
+    cursor: wait;
+}
+
+.share-link-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+}
+
+.share-link-panel label {
+    color: #667085;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.share-link-row {
+    display: flex;
+    gap: 8px;
+}
+
+.share-link-row input {
+    flex: 1;
+    min-width: 0;
+    height: 38px;
+    padding: 0 10px;
+    border: 1px solid #dfe6f1;
+    border-radius: 10px;
+    color: #303747;
+    background: #f8fafc;
+}
+
+.share-link-row button,
+.share-revoke-btn {
+    height: 38px;
+    padding: 0 13px;
+    border-radius: 10px;
+    border: 1px solid #dfe6f1;
+    background: #fff;
+    color: #4f67f5;
+    cursor: pointer;
+}
+
+.share-expire {
+    margin: 0;
+    color: #8a93a5;
+    font-size: 12px;
+}
+
+.share-revoke-btn {
+    align-self: flex-start;
+    color: #c24141;
+}
+
+.share-revoke-btn:hover {
+    background: #fff1f1;
+    border-color: #ffd6d6;
+}
 
 /* ===== 用户下拉菜单 RouterLink 样式 ===== */
 a.user-dropdown-item {

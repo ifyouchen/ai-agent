@@ -75,6 +75,79 @@ public class ChatHistoryController {
     }
 
     /**
+     * 重写某个会话的历史消息。
+     *
+     * PUT /api/v1/chat/sessions/{sessionId}/messages
+     * Body: {"messages": [{"role": "user", "content": "...", "timestamp": 1710000000000}]}
+     */
+    @PutMapping("/sessions/{sessionId}/messages")
+    public ResponseEntity<String> rewriteMessages(
+            @PathVariable String sessionId,
+            @AuthenticationPrincipal String userId,
+            @RequestBody RewriteMessagesRequest request) {
+        try {
+            chatHistoryService.rewriteMessages(sessionId, userId, request != null ? request.messages() : List.of());
+            return ResponseEntity.ok("已更新会话历史");
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(403).body(e.getMessage());
+        }
+    }
+
+    /**
+     * 创建当前会话的公开只读快照分享。
+     *
+     * POST /api/v1/chat/sessions/{sessionId}/share
+     */
+    @PostMapping("/sessions/{sessionId}/share")
+    public ResponseEntity<?> createShare(
+            @PathVariable String sessionId,
+            @AuthenticationPrincipal String userId,
+            @RequestBody(required = false) ShareRequest request) {
+        try {
+            ChatHistoryService.ShareResponse response = chatHistoryService.createShare(
+                    sessionId,
+                    userId,
+                    request != null ? request.title() : null,
+                    request != null ? request.messages() : null
+            );
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 公开读取未过期、未撤销的会话分享快照。
+     *
+     * GET /api/v1/chat/share/{shareId}
+     */
+    @GetMapping("/share/{shareId}")
+    public ResponseEntity<?> readShare(@PathVariable String shareId) {
+        try {
+            return ResponseEntity.ok(chatHistoryService.readShare(shareId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 撤销当前用户创建的分享链接。
+     *
+     * DELETE /api/v1/chat/share/{shareId}
+     */
+    @DeleteMapping("/share/{shareId}")
+    public ResponseEntity<String> revokeShare(
+            @PathVariable String shareId,
+            @AuthenticationPrincipal String userId) {
+        chatHistoryService.revokeShare(shareId, userId);
+        return ResponseEntity.ok("已撤销分享");
+    }
+
+    /**
      * 删除会话（同时删除该会话的所有消息）
      *
      * DELETE /api/v1/chat/sessions/{sessionId}
@@ -152,4 +225,6 @@ public class ChatHistoryController {
     }
 
     private record BatchDeleteRequest(List<String> sessionIds) {}
+    private record RewriteMessagesRequest(List<Map<String, Object>> messages) {}
+    private record ShareRequest(String title, List<Map<String, Object>> messages) {}
 }

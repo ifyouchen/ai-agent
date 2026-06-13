@@ -43,6 +43,8 @@
         :is-streaming="sess.currentSessionSending && msg === sess.messages[sess.messages.length - 1]"
         @regenerate="handleRegenerate"
         @feedback="handleFeedback"
+        @edit="handleEditMessage"
+        @share="handleQuickShare"
       />
     </div>
 
@@ -86,6 +88,21 @@ async function handleRegenerate(messageId) {
 
 function handleFeedback(messageId, fb) {
   sess.setFeedback(messageId, fb);
+}
+
+function handleEditMessage(messageId) {
+  sess.startEditingMessage(messageId);
+}
+
+async function handleQuickShare() {
+  try {
+    const share = await sess.createShareLink();
+    if (!share?.url) return;
+    await navigator.clipboard.writeText(share.url);
+    ui.showToast('success', '分享链接已复制');
+  } catch (err) {
+    ui.showToast('error', err.message || '创建分享失败');
+  }
 }
 
 async function handleAttachKb() {

@@ -55,6 +55,10 @@ export async function getChatMessages(sessionId) {
   return data;
 }
 
+export async function rewriteChatMessages(sessionId, messages) {
+  await http.put(`/api/v1/chat/sessions/${sessionId}/messages`, { messages });
+}
+
 export async function deleteChatSession(sessionId) {
   await http.delete(`/api/v1/chat/sessions/${sessionId}`);
 }
@@ -77,4 +81,18 @@ export async function syncChatSessions(sessions) {
 
 export async function saveMessageFeedback(messageId, feedback) {
   await http.patch(`/api/v1/chat/messages/${messageId}/feedback`, { feedback: feedback ?? null });
+}
+
+export async function createChatShare(sessionId, payload) {
+  const { data } = await http.post(`/api/v1/chat/sessions/${sessionId}/share`, payload || {});
+  return data;
+}
+
+export async function getChatShare(shareId) {
+  const { data } = await http.get(`/api/v1/chat/share/${shareId}`);
+  return data;
+}
+
+export async function revokeChatShare(shareId) {
+  await http.delete(`/api/v1/chat/share/${shareId}`);
 }

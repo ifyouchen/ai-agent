@@ -130,6 +130,42 @@
   font-size: 11px;
 }
 
+.edit-cancel-btn,
+.edit-send-btn {
+  min-width: 74px;
+  height: 40px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s, opacity .15s;
+}
+
+.edit-cancel-btn {
+  border: 1px solid #dfe5ef;
+  background: #fff;
+  color: #2d3442;
+}
+
+.edit-cancel-btn:hover {
+  background: #f6f8fc;
+}
+
+.edit-send-btn {
+  border: 1px solid #4f67f5;
+  background: #4f67f5;
+  color: #fff;
+}
+
+.edit-send-btn:hover {
+  background: #3f57e6;
+}
+
+.edit-send-btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
 @media (max-width: 768px) {
   .doc-mention-popover {
     left: 10px;

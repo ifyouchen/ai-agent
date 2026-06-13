@@ -11,6 +11,13 @@
         <div class="topbar-actions">
           <!-- 对话页专属操作按钮 -->
           <template v-if="route.path === '/chat'">
+            <button class="topbar-btn" type="button" @click="openShareDialog" title="分享当前会话快照">
+              <svg viewBox="0 0 24 24" fill="none" width="13" height="13">
+                <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <path d="M16 6 12 2 8 6M12 2v13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              分享
+            </button>
             <button class="topbar-btn" type="button" @click="sess.exportCurrentSession" title="导出对话为 Markdown">
               <svg viewBox="0 0 24 24" fill="none" width="13" height="13">
                 <path d="M12 9V21m0-12-4 4m4-4 4 4M2 7l.621-2.485A2 2 0 0 1 4.561 3h14.878a2 2 0 0 1 1.94 1.515L22 7"
@@ -36,6 +43,48 @@
     <!-- 全局 Toast + Dialog -->
     <Toast />
     <Dialog />
+
+    <Teleport to="body">
+      <div v-if="shareDialogVisible" class="modal-overlay share-dialog-overlay" @click.self="closeShareDialog">
+        <div class="share-dialog">
+          <div class="share-dialog-header">
+            <div>
+              <h3>分享会话</h3>
+              <p>创建当前内容的只读快照，不会同步后续消息。</p>
+            </div>
+            <button class="modal-close" type="button" title="关闭" @click="closeShareDialog">×</button>
+          </div>
+
+          <div class="share-boundary">
+            <span>仅包含当前对话文本</span>
+            <span>默认 7 天后失效</span>
+            <span>不分享知识库、组织或附件信息</span>
+          </div>
+
+          <button
+            v-if="!shareInfo"
+            class="share-primary-btn"
+            type="button"
+            :disabled="shareLoading"
+            @click="createShare"
+          >
+            {{ shareLoading ? '创建中…' : '创建分享链接' }}
+          </button>
+
+          <div v-else class="share-link-panel">
+            <label>分享链接</label>
+            <div class="share-link-row">
+              <input :value="shareInfo.url" readonly />
+              <button type="button" @click="copyShareLink">复制</button>
+            </div>
+            <p v-if="shareInfo.expiresAt" class="share-expire">
+              有效期至 {{ formatShareTime(shareInfo.expiresAt) }}
+            </p>
+            <button class="share-revoke-btn" type="button" @click="revokeShare">撤销这个链接</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -49,15 +98,20 @@ import { useAuthStore } from '../../stores/auth.js';
 import { useSessionStore } from '../../stores/sessions.js';
 import { useKbStore } from '../../stores/kb.js';
 import { useOrgStore } from '../../stores/org.js';
+import { useUiStore } from '../../stores/ui.js';
 import { setupCopyCodeHandler } from '../../js/utils.js';
 
 const auth  = useAuthStore();
 const sess  = useSessionStore();
 const kb    = useKbStore();
 const org   = useOrgStore();
+const ui    = useUiStore();
 const route = useRoute();
 
 const sidebarCollapsed = ref(false);
+const shareDialogVisible = ref(false);
+const shareLoading = ref(false);
+const shareInfo = ref(null);
 
 // P3-18：侧边栏收起时显示当前页标题
 const currentPageTitle = computed(() => route.meta?.title || sess.currentSessionTitle || '');
@@ -78,4 +132,56 @@ watch(() => org.currentOrgId, (newOrgId) => {
   if (newOrgId) kb.loadKbs(newOrgId, { reset: true });
   else kb.resetSelection();
 });
+
+function openShareDialog() {
+  shareInfo.value = null;
+  shareDialogVisible.value = true;
+}
+
+function closeShareDialog() {
+  shareDialogVisible.value = false;
+}
+
+async function createShare() {
+  if (shareLoading.value) return;
+  shareLoading.value = true;
+  try {
+    shareInfo.value = await sess.createShareLink();
+    if (shareInfo.value?.url) {
+      await navigator.clipboard.writeText(shareInfo.value.url);
+      ui.showToast('success', '分享链接已创建并复制');
+    }
+  } catch (err) {
+    ui.showToast('error', err.message || '创建分享失败');
+  } finally {
+    shareLoading.value = false;
+  }
+}
+
+async function copyShareLink() {
+  if (!shareInfo.value?.url) return;
+  await navigator.clipboard.writeText(shareInfo.value.url);
+  ui.showToast('success', '分享链接已复制');
+}
+
+async function revokeShare() {
+  if (!shareInfo.value?.shareId) return;
+  try {
+    await sess.revokeShare(shareInfo.value.shareId);
+    shareInfo.value = null;
+    shareDialogVisible.value = false;
+  } catch (err) {
+    ui.showToast('error', err.message || '撤销失败');
+  }
+}
+
+function formatShareTime(value) {
+  const d = new Date(value);
+  return d.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 </script>

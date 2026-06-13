@@ -84,6 +84,24 @@
             @change="handleFileChange"
           />
           <button
+            v-if="isEditing"
+            class="edit-cancel-btn"
+            type="button"
+            @click="handleCancelEdit"
+          >
+            取消
+          </button>
+          <button
+            v-if="isEditing"
+            class="edit-send-btn"
+            type="button"
+            :disabled="!inputText.trim()"
+            @click="handleSend"
+          >
+            发送
+          </button>
+          <button
+            v-if="!isEditing"
             class="attach-btn"
             type="button"
             title="上传文档到知识库"
@@ -96,7 +114,7 @@
           </button>
           <!-- 停止按钮 -->
           <button
-            v-if="sess.currentSessionSending"
+            v-if="!isEditing && sess.currentSessionSending"
             class="stop-btn"
             type="button"
             title="停止生成"
@@ -106,7 +124,7 @@
           </button>
           <!-- 发送按钮 -->
           <button
-            v-else
+            v-else-if="!isEditing"
             class="send-btn"
             type="button"
             :disabled="!inputText.trim()"
@@ -138,7 +156,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useSessionStore } from '../../stores/sessions.js';
 import { useKbStore } from '../../stores/kb.js';
 import { useOrgStore } from '../../stores/org.js';
@@ -173,6 +191,7 @@ const mentionDocs = computed(() => {
   return docs.slice(0, 8);
 });
 const mentionVisible = computed(() => mentionOpen.value);
+const isEditing = computed(() => !!sess.editingMessageId);
 
 const enterToSendHint = computed(() =>
   '给 AI Agent 发送消息'
@@ -303,6 +322,15 @@ async function handleSend() {
   const referencedDocs = getReferencedDocs(text);
   const message = buildMentionAwareMessage(text);
   const effectiveKbId = sess.currentKbId ?? (referencedDocs.length ? kb.currentKbId : null);
+  if (isEditing.value) {
+    closeMention();
+    await sess.submitEditedMessage(text, effectiveKbId, message);
+    nextTick(() => {
+      const el = inputEl.value;
+      if (el) el.style.height = 'auto';
+    });
+    return;
+  }
   inputText.value = '';
   closeMention();
   nextTick(() => {
@@ -310,6 +338,19 @@ async function handleSend() {
     if (el) el.style.height = 'auto';
   });
   await sess.sendMessage(text, effectiveKbId, message);
+}
+
+function handleCancelEdit() {
+  sess.cancelEditingMessage();
+  inputText.value = '';
+  closeMention();
+  nextTick(() => {
+    const el = inputEl.value;
+    if (el) {
+      el.style.height = 'auto';
+      el.focus();
+    }
+  });
 }
 
 function getReferencedDocs(text) {
@@ -332,6 +373,13 @@ function getDocIconClass(filename = '') {
   if (lower.endsWith('.md')) return 'md';
   return 'text';
 }
+
+watch(() => sess.editingMessageId, async (id) => {
+  if (!id) return;
+  await nextTick();
+  inputEl.value?.focus?.();
+  autoResize();
+});
 </script>
 
 <style scoped>

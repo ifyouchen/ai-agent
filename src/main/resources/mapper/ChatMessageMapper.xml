@@ -15,7 +15,12 @@
 
     <insert id="insert" parameterType="com.example.aiagent.chat.entity.ChatMessage">
         INSERT INTO chat_message (session_id, user_id, role, content, created_at)
-        VALUES (#{sessionId}, #{userId}, #{role}, #{content}, NOW())
+        VALUES (#{sessionId}, #{userId}, #{role}, #{content},
+        <choose>
+            <when test="createdAt != null">#{createdAt}</when>
+            <otherwise>NOW()</otherwise>
+        </choose>
+        )
     </insert>
 
     <select id="listBySessionId" resultMap="messageRM">

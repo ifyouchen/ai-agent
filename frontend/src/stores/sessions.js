@@ -41,6 +41,8 @@ export const useSessionStore = defineStore('sessions', () => {
   const model          = ref(QUICK_MODEL);
   const currentKbId    = ref(null);
   const messageInput   = ref('');
+  const editingMessageId = ref(null);
+  const editingOriginalText = ref('');
 
   let _saveTimer = null;
 
@@ -187,6 +189,7 @@ export const useSessionStore = defineStore('sessions', () => {
 
   // ── 会话操作 ──────────────────────────────────────────────────────────
   function newSession() {
+    cancelEditingMessage();
     const id = generateId();
     sessions.value.unshift({ id, title: '新对话', createdAt: Date.now() });
     sessionMessages[id] = [];
@@ -195,6 +198,7 @@ export const useSessionStore = defineStore('sessions', () => {
   }
 
   async function switchSession(id) {
+    cancelEditingMessage();
     if (!sessionMessages[id]) sessionMessages[id] = [];
     sessionId.value = id;
     messages.value  = sessionMessages[id];
@@ -287,6 +291,54 @@ export const useSessionStore = defineStore('sessions', () => {
     scheduleSave();
   }
 
+  function serializeMessagesForServer(msgs) {
+    return (msgs || []).slice(-MAX_MSGS).map(m => ({
+      role: m.role === 'ai' ? 'ai' : 'user',
+      content: stripHtml(m.html || '').trim(),
+      timestamp: m.timestamp || Date.now(),
+    })).filter(m => m.content);
+  }
+
+  function startEditingMessage(messageId) {
+    const msg = (sessionMessages[sessionId.value] || []).find(m => m.id === messageId && m.role === 'user');
+    if (!msg || currentSessionSending.value) return;
+    editingMessageId.value = messageId;
+    editingOriginalText.value = stripHtml(msg.html || '');
+    messageInput.value = editingOriginalText.value;
+  }
+
+  function cancelEditingMessage() {
+    editingMessageId.value = null;
+    editingOriginalText.value = '';
+  }
+
+  async function submitEditedMessage(text, kbId = null, requestText = text) {
+    const targetId = editingMessageId.value;
+    const id = sessionId.value;
+    const msgs = sessionMessages[id] || [];
+    const idx = msgs.findIndex(m => m.id === targetId && m.role === 'user');
+    if (idx < 0) {
+      cancelEditingMessage();
+      return sendMessage(text, kbId, requestText);
+    }
+
+    const previous = msgs.slice();
+    const pruned = msgs.slice(0, idx);
+    sessionMessages[id] = pruned;
+    messages.value = sessionMessages[id];
+    try {
+      await api.rewriteChatMessages(id, serializeMessagesForServer(pruned));
+      cancelEditingMessage();
+      messageInput.value = '';
+      await sendMessage(text, kbId, requestText);
+    } catch (err) {
+      sessionMessages[id] = previous;
+      messages.value = sessionMessages[id];
+      ui.showToast('error', err.message || '修改失败，请重试');
+      throw err;
+    }
+  }
+
   // ── 消息 ──────────────────────────────────────────────────────────────
   function pushMessage(targetId, role, html, extra = {}) {
     const item = { id: generateId(), role, html, timestamp: Date.now(), feedback: null, ...extra };
@@ -377,6 +429,30 @@ export const useSessionStore = defineStore('sessions', () => {
     if (reactEnabled.value)   await doReactChat(sessionId.value, text, effectiveKbId);
     else if (streamEnabled.value) await doStreamChat(sessionId.value, text, effectiveKbId);
     else                       await doSyncChat(sessionId.value, text, effectiveKbId);
+  }
+
+  async function createShareLink() {
+    const id = sessionId.value;
+    const s = sessions.value.find(s => s.id === id);
+    const snapshot = serializeMessagesForServer(sessionMessages[id] || []);
+    if (!snapshot.length) {
+      ui.showToast('warning', '空会话无法分享');
+      return null;
+    }
+    const data = await api.createChatShare(id, {
+      title: s?.title || '对话分享',
+      messages: snapshot,
+    });
+    return {
+      ...data,
+      url: `${window.location.origin}${window.location.pathname}#/share/${data.shareId}`,
+    };
+  }
+
+  async function revokeShare(shareId) {
+    if (!shareId) return;
+    await api.revokeChatShare(shareId);
+    ui.showToast('info', '已撤销分享链接');
   }
 
   async function doSyncChat(reqId, text, kbId) {
@@ -566,10 +642,12 @@ async function doStreamChat(reqId, text, kbId) {
   return {
     sessions, sessionId, messages, sessionMessages, sessionRuntime,
     reactEnabled, streamEnabled, enterToSend, model, activeModel, currentKbId, messageInput,
+    editingMessageId, editingOriginalText,
     currentSessionSending, currentSessionTitle,
     QUICK_MODEL, EXPERT_MODEL, setQuickMode, setExpertMode, toggleExpertMode,
     init, newSession, switchSession, removeSession, removeSessions, removeAllSessions, renameSession, updateSessionTitle,
     sendMessage, regenerateMessage, setFeedback,
+    startEditingMessage, cancelEditingMessage, submitEditedMessage, createShareLink, revokeShare,
     stopGeneration: id => stopSessionGeneration(id ?? sessionId.value, true),
     stopSessionGeneration, ensureRuntime,
     exportCurrentSession, scheduleSave,

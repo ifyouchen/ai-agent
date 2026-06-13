@@ -24,8 +24,10 @@ const MonitorView      = () => import('../views/MonitorView.vue');
 const AdminView        = () => import('../views/AdminView.vue');
 const ProfileView      = () => import('../views/ProfileView.vue');
 const MainLayout       = () => import('../components/layout/MainLayout.vue');
+const ShareView        = () => import('../views/ShareView.vue');
 
 const routes = [
+  { path: '/share/:shareId', component: ShareView, meta: { public: true, title: '会话分享' } },
   {
     path: '/',
     component: MainLayout,
@@ -48,6 +50,8 @@ const router = createRouter({
 
 // 全局前置守卫
 router.beforeEach((to) => {
+  if (to.meta.public) return true;
+
   // 未登录 → 跳转登录页
   if (!getToken()) {
     location.replace('/login.html');

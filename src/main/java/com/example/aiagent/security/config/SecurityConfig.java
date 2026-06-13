@@ -74,6 +74,7 @@ public class SecurityConfig {
                 .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                 // 公开接口：认证、健康检查、跨域预检
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/chat/share/**").permitAll()
                 .requestMatchers(
                     "/api/v1/auth/login",
                     "/api/v1/auth/register",

@@ -260,3 +260,21 @@ CREATE INDEX IF NOT EXISTS idx_chat_session_title ON chat_session USING gin(to_t
 
 -- 消息反馈字段（'up' | 'down' | null，前端点赞/点踩后持久化）
 ALTER TABLE chat_message ADD COLUMN IF NOT EXISTS feedback VARCHAR(10);
+
+-- ============================================================
+-- 14. 会话分享快照表（公开只读快照，不包含知识库/租户/内部消息 ID）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS chat_share (
+    id            BIGSERIAL    PRIMARY KEY,
+    share_id      VARCHAR(128) NOT NULL UNIQUE,
+    session_id    VARCHAR(128) NOT NULL,
+    user_id       VARCHAR(64)  NOT NULL,
+    title         VARCHAR(256) NOT NULL DEFAULT '对话分享',
+    snapshot_json TEXT         NOT NULL,
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    expires_at    TIMESTAMPTZ  NOT NULL,
+    revoked_at    TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_chat_share_share_id   ON chat_share(share_id);
+CREATE INDEX IF NOT EXISTS idx_chat_share_owner      ON chat_share(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_share_session_id ON chat_share(session_id);
