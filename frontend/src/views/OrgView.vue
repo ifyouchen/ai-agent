@@ -198,6 +198,7 @@
           <button class="members-modal-close" type="button" @click="membersModal.visible = false">×</button>
         </div>
         <div class="members-modal-body">
+          <!-- 成员列表 -->
           <div v-if="!membersModal.members.length" class="empty-state">
             <div class="empty-state-text">暂无成员</div>
           </div>
@@ -212,6 +213,7 @@
             <template v-else>
               <select
                 class="member-role-select"
+                :class="member.role.toLowerCase()"
                 :value="member.role"
                 @change="org.updateMemberRole(org.currentOrgId, member.userId, $event.target.value)"
               >
@@ -220,6 +222,48 @@
               </select>
               <button v-if="member.role !== 'OWNER'" class="member-remove-btn" type="button" @click="removeMemberFromModal(member.userId)">移除</button>
             </template>
+          </div>
+        </div>
+        <!-- 底部邀请区 -->
+        <div class="members-modal-footer">
+          <div class="members-modal-footer-title">
+            <svg viewBox="0 0 24 24" fill="none" width="14" height="14">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            邀请新成员
+          </div>
+          <div class="members-modal-invite">
+            <div class="members-modal-search-wrap">
+              <input
+                v-model.trim="inviteUsername"
+                type="text"
+                placeholder="输入用户名搜索..."
+                class="members-modal-input"
+                autocomplete="off"
+                @input="searchInviteUsers"
+                @blur="hideInviteSugg"
+                @focus="searchInviteUsers"
+              />
+              <div v-if="inviteSuggestions.length && inviteSuggVisible" class="members-modal-suggestions">
+                <button
+                  v-for="u in inviteSuggestions"
+                  :key="u.userId"
+                  class="members-modal-suggestion-item"
+                  type="button"
+                  @mousedown.prevent="selectInviteSugg(u)"
+                >
+                  <span class="members-modal-sug-name">{{ u.username }}</span>
+                  <span class="members-modal-sug-id">{{ u.userId }}</span>
+                </button>
+              </div>
+            </div>
+            <select v-model="inviteRole" class="members-modal-role-select">
+              <option value="MEMBER">成员</option>
+              <option value="ADMIN">管理员</option>
+            </select>
+            <button class="members-modal-add-btn" type="button" @click="doInviteFromModal">邀请</button>
           </div>
         </div>
       </div>
@@ -343,6 +387,19 @@ async function doInvite() {
     await org.inviteMember(org.currentOrgId, inviteUserId.value, inviteRole.value);
     ui.showToast('success', `已邀请 ${inviteUsername.value} 加入组织`);
     inviteUsername.value = ''; inviteUserId.value = '';
+  } catch (err) {
+    ui.showToast('error', err.message || '邀请失败');
+  }
+}
+
+async function doInviteFromModal() {
+  if (!inviteUserId.value) { ui.showToast('warning', '请先从搜索结果中选择用户'); return; }
+  try {
+    await org.inviteMember(org.currentOrgId, inviteUserId.value, inviteRole.value);
+    ui.showToast('success', `已邀请 ${inviteUsername.value} 加入组织`);
+    inviteUsername.value = ''; inviteUserId.value = '';
+    // Refresh member list
+    membersModal.members = await org.getOrgMembers(membersModal.orgId);
   } catch (err) {
     ui.showToast('error', err.message || '邀请失败');
   }

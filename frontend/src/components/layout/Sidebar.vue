@@ -126,13 +126,6 @@
             </svg>
             个人资料
           </router-link>
-          <button class="user-dropdown-item" type="button" @click="handleChangePassword">
-            <svg viewBox="0 0 24 24" fill="none" width="14" height="14">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" stroke="currentColor" stroke-width="1.8"/>
-              <path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-            </svg>
-            修改密码
-          </button>
           <button class="user-dropdown-item danger" type="button" @click="auth.logout">
             <svg viewBox="0 0 24 24" fill="none" width="14" height="14">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"
@@ -279,27 +272,6 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', closeUserMenuOnOutsideClick);
   document.removeEventListener('keydown', handleGlobalKeydown);
 });
-
-async function handleChangePassword() {
-  userMenuOpen.value = false;
-  const form = await ui.showForm({
-    title: '修改密码',
-    confirmText: '保存',
-    fields: [
-      { key: 'oldPassword', label: '当前密码', type: 'password', placeholder: '输入当前密码' },
-      { key: 'newPassword', label: '新密码',   type: 'password', placeholder: '至少 6 位' },
-    ],
-  });
-  if (!form || !form.oldPassword || !form.newPassword) return;
-  try {
-    const { changePassword } = await import('../../services/api.js');
-    await changePassword(form.oldPassword, form.newPassword);
-    ui.showToast('success', '密码修改成功，请重新登录');
-    setTimeout(() => auth.logout(), 1500);
-  } catch (err) {
-    ui.showToast('error', err.message || '修改失败');
-  }
-}
 
 // ── 模型选择 ────────────────────────────────────────────────────────
 const modelMenuOpen = ref(false);

@@ -125,14 +125,6 @@
               </svg>
               刷新
             </button>
-            <button class="kb-action-btn" type="button" title="管理知识库成员" @click="openKbMembers">
-              <svg viewBox="0 0 24 24" fill="none" width="13" height="13">
-                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              </svg>
-              成员
-            </button>
             <button class="kb-action-btn primary" type="button" @click="useKbInChat">
               <svg viewBox="0 0 24 24" fill="none" width="13" height="13">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -337,79 +329,6 @@
         </div>
       </template>
     </div>
-
-    <!-- 成员管理面板 -->
-    <div v-if="kb.kbMembersVisible" class="kb-members-panel">
-      <div class="kb-members-header">
-        <h3>知识库成员</h3>
-        <button class="kb-members-close" type="button" @click="kb.kbMembersVisible = false">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-          </svg>
-        </button>
-      </div>
-      <div class="kb-members-add">
-        <div class="kb-member-search-wrap">
-          <input
-            v-model.trim="memberUsername"
-            type="text"
-            placeholder="输入用户名搜索..."
-            class="kb-member-input"
-            autocomplete="off"
-            @input="searchMembers"
-            @blur="hideKbSugg"
-            @focus="searchMembers"
-          />
-          <div v-if="kbSuggestions.length && kbSuggVisible" class="kb-member-suggestions">
-            <button
-              v-for="u in kbSuggestions"
-              :key="u.userId"
-              class="kb-member-suggestion-item"
-              type="button"
-              @mousedown.prevent="selectKbSugg(u)"
-            >
-              <span class="kb-member-sug-name">{{ u.username }}</span>
-              <span class="kb-member-sug-id">{{ u.userId }}</span>
-            </button>
-          </div>
-        </div>
-        <select v-model="memberRole" class="kb-member-role-select">
-          <option value="VIEWER">只读（VIEWER）</option>
-          <option value="EDITOR">编辑（EDITOR）</option>
-        </select>
-        <button class="kb-member-add-btn" type="button" @click="addMember">添加</button>
-      </div>
-      <div class="kb-members-list">
-        <div v-if="!kb.kbMembers.length" class="empty-state">
-          <div class="empty-state-text">暂无成员</div>
-          <div class="empty-state-hint">搜索用户并添加成员</div>
-        </div>
-        <div v-for="member in kb.kbMembers" :key="member.userId" class="kb-member-item">
-          <span class="kb-member-id">
-            {{ member.username || member.userId }}
-            <small v-if="member.username" class="kb-member-sub-id">{{ member.userId }}</small>
-          </span>
-          <template v-if="member.role === 'OWNER'">
-            <span class="kb-member-role owner-badge">所有者</span>
-          </template>
-          <template v-else>
-            <select
-              class="kb-member-role-inline"
-              :value="member.role"
-              @change="kb.updateKbMemberRole(member.userId, $event.target.value, org.currentOrgId)"
-            >
-              <option value="VIEWER">只读</option>
-              <option value="EDITOR">编辑</option>
-            </select>
-            <button class="kb-member-remove-btn" type="button" @click="kb.removeKbMember(member.userId, org.currentOrgId)">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-              </svg>
-            </button>
-          </template>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -431,11 +350,6 @@ const router = useRouter();
 
 const fileInputEl   = ref(null);
 const dragOver      = ref(false);
-const memberUsername = ref('');
-const memberRole    = ref('VIEWER');
-const memberUserId  = ref('');
-const kbSuggestions = ref([]);
-const kbSuggVisible = ref(false);
 
 const expandedDocId = ref(null);
 const docChunksCache = reactive({});
@@ -568,43 +482,8 @@ async function handleDeleteDoc(doc) {
   }
 }
 
-async function openKbMembers() {
-  kb.kbMembersVisible = true;
-  await kb.loadKbMembers(org.currentOrgId);
-}
-
 let _searchTimer = null;
-function searchMembers() {
-  clearTimeout(_searchTimer);
-  _searchTimer = setTimeout(async () => {
-    if (!memberUsername.value.trim()) { kbSuggestions.value = []; return; }
-    kbSuggestions.value = await api.searchUsers(memberUsername.value.trim());
-    kbSuggVisible.value = true;
-  }, 200);
-}
 
-function hideKbSugg() {
-  setTimeout(() => { kbSuggVisible.value = false; }, 150);
-}
-
-function selectKbSugg(u) {
-  memberUsername.value = u.username;
-  memberUserId.value   = u.userId;
-  kbSuggestions.value  = [];
-  kbSuggVisible.value  = false;
-}
-
-async function addMember() {
-  if (!memberUserId.value) { ui.showToast('warning', '请先从搜索结果中选择用户'); return; }
-  try {
-    await kb.addKbMember(memberUserId.value, memberRole.value, org.currentOrgId);
-    ui.showToast('success', '成员已添加');
-    memberUsername.value = '';
-    memberUserId.value   = '';
-  } catch (err) {
-    ui.showToast('error', err.message || '添加失败');
-  }
-}
 
 async function runQuery() {
   if (!queryText.value || queryLoading.value) return;
