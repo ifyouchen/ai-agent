@@ -328,6 +328,12 @@ export const useSessionStore = defineStore('sessions', () => {
     messages.value = sessionMessages[id];
     try {
       await api.rewriteChatMessages(id, serializeMessagesForServer(pruned));
+      if (idx === 0) {
+        const session = sessions.value.find(s => s.id === id);
+        const nextTitle = text.slice(0, 20) + (text.length > 20 ? '…' : '');
+        if (session) session.title = nextTitle;
+        api.updateSessionTitle(id, nextTitle).catch(() => {});
+      }
       cancelEditingMessage();
       messageInput.value = '';
       await sendMessage(text, kbId, requestText);
