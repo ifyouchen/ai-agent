@@ -213,14 +213,21 @@ public class ReActAgent {
             Map<String, Object> params = parseArgs(arguments);
 
             return switch (toolName) {
-                case "queryOrderStatus"   -> businessTools.queryOrderStatus(getString(params, "orderId"));
-                case "queryUserOrders"    -> businessTools.queryUserOrders(getString(params, "userId"));
-                case "queryOrderSummary"  -> businessTools.queryOrderSummary(getString(params, "userId"));
-                case "getWeather"         -> businessTools.getWeather(getString(params, "city"));
-                case "queryUserAccount"   -> businessTools.queryUserAccount(getString(params, "userId"));
-                case "queryUserPoints"    -> businessTools.queryUserPoints(getString(params, "userId"));
-                case "calculate"          -> businessTools.calculate(getString(params, "expression"));
-                case "getCurrentDateTime" -> businessTools.getCurrentDateTime(getString(params, "timezone"));
+                case "listMyOrganizations"   -> businessTools.listMyOrganizations();
+                case "listOrgMembers"        -> businessTools.listOrgMembers(getString(params, "orgId"));
+                case "listMyKnowledgeBases"  -> businessTools.listMyKnowledgeBases(getString(params, "orgName"));
+                case "listKbDocuments"       -> {
+                    String kbIdStr = getString(params, "kbId");
+                    Long kbId;
+                    try {
+                        kbId = kbIdStr.isBlank() ? null : Long.parseLong(kbIdStr);
+                    } catch (NumberFormatException e) {
+                        yield "参数错误：kbId 应为数字，收到：" + kbIdStr;
+                    }
+                    yield businessTools.listKbDocuments(kbId);
+                }
+                case "getSystemCapabilities" -> businessTools.getSystemCapabilities();
+                case "getDeploymentGuide"    -> businessTools.getDeploymentGuide();
                 default -> "未知工具：" + toolName;
             };
         } catch (Exception e) {

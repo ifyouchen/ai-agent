@@ -1,15 +1,11 @@
 package com.example.aiagent.tool;
 
-import com.example.aiagent.tool.client.WeatherApiClient;
-import com.example.aiagent.tool.entity.Order;
-import com.example.aiagent.tool.entity.UserAccount;
-import com.example.aiagent.tool.entity.WeatherCache;
-import com.example.aiagent.tool.mapper.OrderMapper;
-import com.example.aiagent.tool.mapper.UserAccountMapper;
-import com.example.aiagent.tool.mapper.WeatherCacheMapper;
-import com.googlecode.aviator.AviatorEvaluator;
-import com.googlecode.aviator.AviatorEvaluatorInstance;
-import com.googlecode.aviator.Options;
+import com.example.aiagent.kb.entity.Document;
+import com.example.aiagent.kb.entity.KnowledgeBase;
+import com.example.aiagent.kb.mapper.DocumentMapper;
+import com.example.aiagent.kb.service.KnowledgeBaseService;
+import com.example.aiagent.kb.service.KbMemberService;
+import com.example.aiagent.security.service.OrganizationService;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.RequiredArgsConstructor;
@@ -19,548 +15,442 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
-import java.math.MathContext;
-import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * 企业级业务工具集合（Agent 可调用的工具）
- *
- * <p>工具列表：
- * <ul>
- *   <li>{@link #queryOrderStatus}     - 按订单号查询单个订单状态（含物流）</li>
- *   <li>{@link #queryUserOrders}      - 查询用户最近订单列表（最多10条）</li>
- *   <li>{@link #queryOrderSummary}    - 查询用户订单统计（各状态数量）</li>
- *   <li>{@link #getWeather}           - 查询实时天气（30分钟缓存 + OpenWeatherMap API）</li>
- *   <li>{@link #queryUserAccount}     - 查询用户账户余额和会员信息</li>
- *   <li>{@link #queryUserPoints}      - 查询用户积分详情（含等级权益说明）</li>
- *   <li>{@link #calculate}            - 安全数学计算（Aviator 沙箱引擎）</li>
- *   <li>{@link #getCurrentDateTime}   - 获取当前日期时间（无需外部依赖）</li>
- * </ul>
- *
- * <p>安全设计：
- * <ul>
- *   <li>所有工具方法均 catch 全部异常，返回友好的错误提示，不向 LLM 暴露异常堆栈</li>
- *   <li>calculate 工具使用 Aviator 沙箱，禁止反射/代码注入</li>
- *   <li>天气工具包含三级降级策略：API 调用 → 过期缓存 → 友好提示</li>
- * </ul>
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class BusinessTools {
 
-    /** 天气缓存有效期（分钟） */
-    private static final long WEATHER_CACHE_MINUTES = 30;
-
-    private static final DateTimeFormatter DATETIME_FMT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
     private static final DateTimeFormatter DATE_FMT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault());
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.of("Asia/Shanghai"));
 
-    /**
-     * Aviator 安全沙箱（全局复用，线程安全）
-     *
-     * 安全配置：
-     * - 最大循环次数 10000，防止无限循环耗尽 CPU
-     * - OPTIMIZE_LEVEL=EVAL：不优化以确保安全
-     */
-    private static final AviatorEvaluatorInstance AVIATOR = AviatorEvaluator.newInstance();
-    static {
-        AVIATOR.setOption(Options.MAX_LOOP_COUNT, 10000L);
-        AVIATOR.setOption(Options.OPTIMIZE_LEVEL, AviatorEvaluator.EVAL);
-    }
+    private final OrganizationService organizationService;
+    private final KnowledgeBaseService kbService;
+    private final KbMemberService kbMemberService;
+    private final DocumentMapper documentMapper;
 
-    private static final int MAX_EXPR_LENGTH = 500;
+    // ── 1. 组织查询 ──────────────────────────────────────────
 
-    private final OrderMapper orderMapper;
-    private final WeatherCacheMapper weatherCacheMapper;
-    private final UserAccountMapper userAccountMapper;
-    private final WeatherApiClient weatherApiClient;
-
-    // ── 1. 订单状态查询 ──────────────────────────────────────────
-
-    /**
-     * 查询单个订单状态和物流信息
-     */
-    @Tool("查询指定订单的当前状态、物流信息和预计到达时间")
-    public String queryOrderStatus(@P("订单编号，格式如 #12345 或直接输入 12345") String orderId) {
-        log.info("[Tool] 查询订单状态: {}", orderId);
+    @Tool("列出当前用户加入的所有组织，包括组织名称、类型（个人/企业）、用户在组织中的角色")
+    public String listMyOrganizations() {
+        log.info("[Tool] 查询我的组织");
         try {
-            Optional<Order> orderOpt = findOrder(orderId);
-            if (orderOpt.isEmpty()) {
-                return String.format("未找到订单 #%s，请确认订单号是否正确。如需查询订单列表，可提供您的用户ID。",
-                        orderId.replaceFirst("^#", ""));
+            String userId = getCurrentUserId();
+            if (userId == null) {
+                return "无法识别当前用户身份，请先登录。";
             }
-            return formatOrderDetail(orderOpt.get());
-        } catch (Exception e) {
-            log.error("[Tool] 查询订单异常，orderId={}", orderId, e);
-            return String.format("查询订单 %s 时发生系统错误，请稍后重试。", orderId);
-        }
-    }
 
-    /**
-     * 查询用户最近的订单列表
-     */
-    @Tool("查询指定用户最近的订单列表，返回最多10条订单记录")
-    public String queryUserOrders(@P("用户ID，如 U001") String userId) {
-        log.info("[Tool] 查询用户订单列表: {}", userId);
-        if (!hasDataPermission(userId)) {
-            log.warn("[SECURITY] 数据越权访问被拒绝：当前用户无权查询用户 {} 的订单", userId);
-            return "权限不足：只能查询您自己的订单信息。";
-        }
-        try {
-            List<Order> orders = orderMapper.findByUserId(userId, 10);
-            if (orders.isEmpty()) {
-                return String.format("用户 %s 暂无订单记录。", userId);
+            List<Map<String, Object>> orgs = organizationService.getUserOrganizationsWithDetail(userId);
+            if (orgs.isEmpty()) {
+                return "您当前尚未加入任何组织。";
             }
 
             StringBuilder sb = new StringBuilder();
-            sb.append(String.format("用户 %s 最近 %d 条订单：\n\n", userId, orders.size()));
-            for (int i = 0; i < orders.size(); i++) {
-                Order o = orders.get(i);
-                String statusDesc = getStatusDesc(o.getStatus());
-                sb.append(String.format("%d. 订单 %s\n", i + 1, o.getOrderNo()));
-                sb.append(String.format("   商品：%s  金额：¥%.2f  状态：%s\n",
-                        o.getProductName(), o.getAmount(), statusDesc));
-                if (o.getCreatedAt() != null) {
-                    sb.append(String.format("   下单时间：%s\n", DATETIME_FMT.format(o.getCreatedAt())));
+            sb.append(String.format("您共加入了 %d 个组织：\n\n", orgs.size()));
+
+            for (int i = 0; i < orgs.size(); i++) {
+                Map<String, Object> org = orgs.get(i);
+                String orgId = (String) org.get("orgId");
+                String name = (String) org.get("name");
+                String orgType = (String) org.get("orgType");
+                String role = (String) org.get("role");
+
+                String typeLabel = "PERSONAL".equals(orgType) ? "个人空间" : "企业组织";
+                String roleLabel = switch (role) {
+                    case "OWNER" -> "拥有者";
+                    case "ADMIN" -> "管理员";
+                    case "MEMBER" -> "成员";
+                    default -> role;
+                };
+
+                sb.append(String.format("%d. %s（%s）\n", i + 1, name, typeLabel));
+                sb.append(String.format("   组织ID：%s  角色：%s\n", orgId, roleLabel));
+
+                try {
+                    List<Map<String, Object>> members = organizationService.getOrgMembersWithUsername(orgId);
+                    sb.append(String.format("   成员数：%d 人\n", members.size()));
+                } catch (Exception ignored) {
                 }
                 sb.append("\n");
             }
+            sb.append("如需查看某个组织的成员列表，请提供组织ID。");
             return sb.toString().stripTrailing();
         } catch (Exception e) {
-            log.error("[Tool] 查询用户订单列表异常，userId={}", userId, e);
-            return String.format("查询用户 %s 订单列表时发生错误，请稍后重试。", userId);
+            log.error("[Tool] 查询组织异常", e);
+            return "查询组织列表时发生错误，请稍后重试。";
         }
     }
 
-    /**
-     * 查询用户订单统计汇总
-     */
-    @Tool("统计用户各状态的订单数量，包括待付款、已付款、已发货、已签收、已取消等")
-    public String queryOrderSummary(@P("用户ID，如 U001") String userId) {
-        log.info("[Tool] 查询用户订单统计: {}", userId);
-        if (!hasDataPermission(userId)) {
-            log.warn("[SECURITY] 数据越权访问被拒绝：当前用户无权查询用户 {} 的订单统计", userId);
-            return "权限不足：只能查询您自己的订单统计信息。";
-        }
+    @Tool("列出指定组织的所有成员，包括用户名和角色")
+    public String listOrgMembers(@P("组织ID，如 org_xxx 或 ent_xxx") String orgId) {
+        log.info("[Tool] 查询组织成员 orgId={}", orgId);
         try {
-            List<Map<String, Object>> groups = orderMapper.countGroupByStatus(userId);
-            if (groups.isEmpty()) {
-                return String.format("用户 %s 暂无订单记录。", userId);
+            String userId = getCurrentUserId();
+            if (userId == null) {
+                return "无法识别当前用户身份，请先登录。";
+            }
+            if (orgId == null || orgId.isBlank()) {
+                return "请提供组织ID（如 org_xxx 或 ent_xxx）。您可以先使用 listMyOrganizations 查看您加入的组织。";
             }
 
-            int total = groups.stream()
-                    .mapToInt(g -> ((Number) g.get("cnt")).intValue())
-                    .sum();
+            if (!hasOrgAccess(orgId)) {
+                return "权限不足：您不是该组织的成员，无法查看成员列表。";
+            }
+
+            List<Map<String, Object>> members = organizationService.getOrgMembersWithUsername(orgId);
+            if (members.isEmpty()) {
+                return String.format("组织 %s 暂无成员。", orgId);
+            }
 
             StringBuilder sb = new StringBuilder();
-            sb.append(String.format("用户 %s 的订单统计（共 %d 笔）：\n", userId, total));
-            for (Map<String, Object> g : groups) {
-                String status = (String) g.get("status");
-                int cnt = ((Number) g.get("cnt")).intValue();
-                sb.append(String.format("  %s：%d 笔\n", getStatusDesc(status), cnt));
+            sb.append(String.format("组织 %s 共有 %d 名成员：\n\n", orgId, members.size()));
+            for (int i = 0; i < members.size(); i++) {
+                Map<String, Object> m = members.get(i);
+                String username = (String) m.get("username");
+                String role = (String) m.get("role");
+                String joinedAt = m.get("joinedAt") != null ? m.get("joinedAt").toString() : "未知";
+
+                String roleLabel = switch (role) {
+                    case "OWNER" -> "拥有者";
+                    case "ADMIN" -> "管理员";
+                    case "MEMBER" -> "成员";
+                    default -> role;
+                };
+
+                sb.append(String.format("%d. %s（%s）- 加入时间：%s\n",
+                        i + 1, username, roleLabel, joinedAt));
+            }
+            return sb.toString().stripTrailing();
+        } catch (Exception e) {
+            log.error("[Tool] 查询组织成员异常 orgId={}", orgId, e);
+            return String.format("查询组织 %s 成员时发生错误，请稍后重试。", orgId);
+        }
+    }
+
+    // ── 2. 知识库查询 ──────────────────────────────────────────
+
+    @Tool("列出用户可访问的知识库，可按组织名称过滤。返回知识库名称、文档数量、状态")
+    public String listMyKnowledgeBases(
+            @P("组织名称过滤（可选），如不填或留空则列出所有组织的知识库") String orgName) {
+        log.info("[Tool] 查询我的知识库 orgName={}", orgName);
+        try {
+            String userId = getCurrentUserId();
+            if (userId == null) {
+                return "无法识别当前用户身份，请先登录。";
             }
 
-            // 计算待处理订单（PENDING + PAID）
-            int pending = groups.stream()
-                    .filter(g -> "PENDING".equals(g.get("status")) || "PAID".equals(g.get("status")))
-                    .mapToInt(g -> ((Number) g.get("cnt")).intValue())
-                    .sum();
-            if (pending > 0) {
-                sb.append(String.format("\n⚠️ 您有 %d 笔订单待处理（待付款或待发货）", pending));
+            List<Map<String, Object>> orgs = organizationService.getUserOrganizationsWithDetail(userId);
+            if (orgs.isEmpty()) {
+                return "您当前尚未加入任何组织，暂无知识库。";
+            }
+
+            List<Map<String, Object>> targetOrgs = orgs;
+            if (orgName != null && !orgName.isBlank()) {
+                String filter = orgName.toLowerCase();
+                targetOrgs = orgs.stream()
+                        .filter(o -> {
+                            String name = (String) o.get("name");
+                            String oid = (String) o.get("orgId");
+                            return (name != null && name.toLowerCase().contains(filter))
+                                    || (oid != null && oid.toLowerCase().contains(filter));
+                        })
+                        .toList();
+                if (targetOrgs.isEmpty()) {
+                    return String.format("未找到名称包含「%s」的组织。您可以先使用 listMyOrganizations 查看可用的组织。",
+                            orgName);
+                }
+            }
+
+            StringBuilder sb = new StringBuilder();
+            int totalKbs = 0;
+            boolean first = true;
+
+            for (Map<String, Object> org : targetOrgs) {
+                String oid = (String) org.get("orgId");
+                String name = (String) org.get("name");
+
+                try {
+                    List<KnowledgeBase> kbs = kbService.listKnowledgeBases(oid);
+                    if (kbs.isEmpty()) continue;
+
+                    if (!first) sb.append("\n");
+                    first = false;
+
+                    sb.append(String.format("【%s】共 %d 个知识库：\n", name, kbs.size()));
+                    for (KnowledgeBase kb : kbs) {
+                        String statusLabel = kb.getStatus() != null && kb.getStatus() == 1 ? "正常"
+                                : (kb.getStatus() != null ? "已归档" : "未知");
+                        sb.append(String.format("  · %s（ID: %d）- 文档数：%d，状态：%s\n",
+                                kb.getName(), kb.getId(), kb.getDocCount(), statusLabel));
+                    }
+                    totalKbs += kbs.size();
+                } catch (Exception e) {
+                    log.warn("[Tool] 查询组织 {} 的知识库失败: {}", oid, e.getMessage());
+                }
+            }
+
+            if (totalKbs == 0) {
+                return "您当前没有可访问的知识库。您可以在组织中创建知识库，或让管理员为您授权。";
+            }
+
+            sb.append(String.format("\n共 %d 个知识库。", totalKbs));
+            sb.append("\n如需查看某个知识库中的文档列表及解析状态，请提供知识库ID。");
+            return sb.toString().stripTrailing();
+        } catch (Exception e) {
+            log.error("[Tool] 查询知识库列表异常", e);
+            return "查询知识库列表时发生错误，请稍后重试。";
+        }
+    }
+
+    @Tool("列出指定知识库中的所有文档，按解析状态分组（解析成功/处理中/失败），并展示失败原因")
+    public String listKbDocuments(@P("知识库ID，数字类型，如 1、2") Long kbId) {
+        log.info("[Tool] 查询知识库文档 kbId={}", kbId);
+        try {
+            String userId = getCurrentUserId();
+            if (userId == null) {
+                return "无法识别当前用户身份，请先登录。";
+            }
+            if (kbId == null) {
+                return "请提供知识库ID（数字）。您可以先使用 listMyKnowledgeBases 查看可用的知识库。";
+            }
+
+            Optional<KnowledgeBase> kbOpt = kbService.findById(kbId);
+            if (kbOpt.isEmpty()) {
+                return String.format("知识库 %d 不存在，请确认ID是否正确。", kbId);
+            }
+            KnowledgeBase kb = kbOpt.get();
+
+            // 权限检查：先验证用户是否属于 KB 所在组织，再查 kb_member
+            boolean isOrgMember = organizationService.isMemberOf(kb.getTenantId(), userId);
+            String role = kbMemberService.checkAccess(kbId, userId,
+                    isOrgMember ? kb.getTenantId() : null);
+            if (role == null) {
+                return String.format("权限不足：您没有访问知识库「%s」（ID: %d）的权限。",
+                        kb.getName(), kbId);
+            }
+
+            List<Document> docs = kbService.getDocuments(kb.getTenantId(), kbId);
+            if (docs.isEmpty()) {
+                return String.format("知识库「%s」（ID: %d）中暂无文档。您可以在前端上传 PDF、Word、TXT 等格式的文档。",
+                        kb.getName(), kbId);
+            }
+
+            List<Document> doneDocs = new ArrayList<>();
+            List<Document> processingDocs = new ArrayList<>();
+            List<Document> failedDocs = new ArrayList<>();
+
+            for (Document doc : docs) {
+                String status = doc.getParseStatus();
+                if ("DONE".equals(status)) {
+                    doneDocs.add(doc);
+                } else if ("FAILED".equals(status)) {
+                    failedDocs.add(doc);
+                } else {
+                    processingDocs.add(doc);
+                }
+            }
+
+            StringBuilder sb = new StringBuilder();
+            sb.append(String.format("知识库「%s」（ID: %d）共有 %d 个文档：\n",
+                    kb.getName(), kbId, docs.size()));
+
+            sb.append(String.format("\n✅ 解析成功（%d 个）\n", doneDocs.size()));
+            if (doneDocs.isEmpty()) {
+                sb.append("  （无）\n");
+            } else {
+                for (Document doc : doneDocs) {
+                    sb.append(String.format("  · %s（%s）- %d 个片段，索引时间：%s\n",
+                            doc.getName(), doc.getDocType(),
+                            doc.getChunkCount(),
+                            doc.getIndexedAt() != null ? DATE_FMT.format(doc.getIndexedAt()) : "未知"));
+                }
+            }
+
+            sb.append(String.format("\n⏳ 处理中（%d 个）\n", processingDocs.size()));
+            if (processingDocs.isEmpty()) {
+                sb.append("  （无）\n");
+            } else {
+                for (Document doc : processingDocs) {
+                    String statusLabel = switch (doc.getParseStatus()) {
+                        case "PENDING" -> "等待处理";
+                        case "PARSING" -> "文档解析中";
+                        case "CHUNKING" -> "文本切片中";
+                        case "EMBEDDING" -> "向量化中";
+                        default -> doc.getParseStatus();
+                    };
+                    sb.append(String.format("  · %s（%s）- 状态：%s\n",
+                            doc.getName(), doc.getDocType(), statusLabel));
+                }
+            }
+
+            sb.append(String.format("\n❌ 解析失败（%d 个）\n", failedDocs.size()));
+            if (failedDocs.isEmpty()) {
+                sb.append("  （无）\n");
+            } else {
+                for (Document doc : failedDocs) {
+                    String error = doc.getParseError() != null && !doc.getParseError().isBlank()
+                            ? doc.getParseError() : "未知错误";
+                    if (error.length() > 200) error = error.substring(0, 200) + "...";
+                    sb.append(String.format("  · %s（%s）- 失败原因：%s\n",
+                            doc.getName(), doc.getDocType(), error));
+                }
             }
 
             return sb.toString().stripTrailing();
         } catch (Exception e) {
-            log.error("[Tool] 查询订单统计异常，userId={}", userId, e);
-            return String.format("查询用户 %s 订单统计时发生错误，请稍后重试。", userId);
+            log.error("[Tool] 查询知识库文档异常 kbId={}", kbId, e);
+            return String.format("查询知识库 %d 文档时发生错误，请稍后重试。", kbId);
         }
     }
 
-    // ── 2. 天气查询（三级降级：API → 过期缓存 → 提示） ──────────
+    // ── 3. 系统能力与部署 ──────────────────────────────────────────
 
-    /**
-     * 查询实时天气
-     */
-    @Tool("查询指定城市的实时天气，包括天气状况、气温、湿度、风速")
-    public String getWeather(@P("城市名称，中文或英文均可，如：北京、上海、深圳、Beijing") String city) {
-        log.info("[Tool] 查询天气: {}", city);
-        try {
-            // [Level 1] 查30分钟内有效缓存
-            Instant cacheThreshold = Instant.now().minus(WEATHER_CACHE_MINUTES, ChronoUnit.MINUTES);
-            Optional<WeatherCache> cached = weatherCacheMapper.findByCityAndUpdatedAtAfter(city, cacheThreshold);
-            if (cached.isPresent()) {
-                log.debug("[Tool] 命中天气缓存，city={}", city);
-                return formatWeather(city, cached.get(), false);
-            }
+    @Tool("获取当前AI助手系统支持的所有功能与能力说明")
+    public String getSystemCapabilities() {
+        return """
+                我是基于 Spring Boot + LangChain4j 构建的企业级 AI 助手，支持以下能力：
 
-            // [Level 2] 调用 OpenWeatherMap API
-            WeatherApiClient.WeatherResult result = weatherApiClient.fetchWeather(city);
-            if (result != null) {
-                WeatherCache cache = weatherCacheMapper.findByCity(city)
-                        .orElseGet(() -> WeatherCache.builder().city(city).build());
-                cache.setWeatherDesc(result.getDescription());
-                cache.setTemperature(BigDecimal.valueOf(result.getTemperature()));
-                cache.setHumidity(result.getHumidity());
-                cache.setWind(BigDecimal.valueOf(result.getWindSpeed()));
-                cache.setUpdatedAt(Instant.now());
-                weatherCacheMapper.insertOrUpdate(cache);
+                ## 对话模式
+                · 同步对话：POST /api/v1/chat，等待完整回复
+                · 流式对话：GET /api/v1/chat/stream，逐字实时推送
+                · ReAct 推理：复杂任务自动拆解、多步工具调用
 
-                return String.format("%s 当前天气：%s，气温 %.1f°C，湿度 %d%%，风速 %.1f m/s",
-                        city, result.getDescription(),
-                        result.getTemperature(), result.getHumidity(), result.getWindSpeed());
-            }
+                ## 知识库（RAG）
+                · 上传 PDF/Word/TXT 等文档，上传即可问答
+                · 混合检索引擎：HyDE 查询改写 → 向量检索 → BM25 检索 → RRF 融合 → Reranker 精排
+                · 4 种 Reranker 可选：LLM / TF-IDF / BGE / Cohere
+                · 答案自动标注来源文档和段落，支持置信度评估
 
-            // [Level 3] API 失败 → 尝试返回过期缓存（降级兜底）
-            Optional<WeatherCache> stale = weatherCacheMapper.findByCity(city);
-            if (stale.isPresent()) {
-                log.warn("[Tool] 天气 API 不可用，返回过期缓存，city={}", city);
-                return formatWeather(city, stale.get(), true);
-            }
+                ## 组织管理
+                · 多租户隔离：每个用户自动创建个人空间，支持创建企业组织
+                · 成员管理：邀请/移除成员，OWNER/ADMIN/MEMBER 角色体系
+                · 知识库可跨组织授权（kb_member 细粒度权限）
 
-            // [Level 4] 完全降级
-            return String.format("%s 的天气数据暂时不可用（API 无响应且无缓存数据）。"
-                    + "请配置 weather.api.key 或稍后重试。", city);
+                ## 安全防护
+                · JWT 无状态认证（Bearer Token）
+                · Prompt 注入检测（覆盖中英文 7 种攻击模式）
+                · 输出内容脱敏（手机号/身份证/银行卡号/密码）
+                · 用户级限流（每分钟+每日双维度，Redis 令牌桶）
+                · 操作审计（登录/对话/安全拦截事件异步记录）
 
-        } catch (Exception e) {
-            log.error("[Tool] 查询天气异常，city={}", city, e);
-            return String.format("查询 %s 天气时发生错误，请稍后重试。", city);
-        }
+                ## 可观测性
+                · Token 成本追踪（每次 LLM 调用 Token 数和 USD 费用入库）
+                · 成本报表 API（按用户/模型/天统计）
+                · 7 类 Prometheus 指标（调用次数/P99延迟/错误率等）
+                · 全链路 TraceId 贯穿，支持 Zipkin 上报
+                · 智能告警（钉钉/企微/邮件/Webhook 多渠道通知）
+
+                ## 可用工具
+                · 组织查询：查看我加入的组织、查看组织成员
+                · 知识库查询：查看我的知识库、查看知识库文档及解析状态
+                · 部署指南：获取系统部署方案和快速开始指引
+
+                如需了解部署方案，请说「如何部署」或「部署指南」。
+                """;
     }
 
-    // ── 3. 用户账户查询 ──────────────────────────────────────────
+    @Tool("获取系统的部署方案、环境配置和快速开始指引")
+    public String getDeploymentGuide() {
+        return """
+                ## 部署方案
 
-    /**
-     * 查询用户账户余额和会员信息
-     */
-    @Tool("查询用户的账户余额、会员等级和基本账户信息")
-    public String queryUserAccount(@P("用户ID，如 U001") String userId) {
-        log.info("[Tool] 查询用户账户: {}", userId);
-        if (!hasDataPermission(userId)) {
-            log.warn("[SECURITY] 数据越权访问被拒绝：当前用户无权查询用户 {} 的账户", userId);
-            return "权限不足：只能查询您自己的账户信息。";
-        }
-        try {
-            Optional<UserAccount> opt = userAccountMapper.findByUserId(userId);
-            if (opt.isEmpty()) {
-                // 尝试按用户名查询（兼容性处理）
-                opt = userAccountMapper.findByUsername(userId);
-            }
-            if (opt.isEmpty()) {
-                return String.format("未找到用户 %s 的账户，请确认用户ID是否正确。", userId);
-            }
+                ### 前置要求
+                - JDK 21+（必须）
+                - Maven 3.8+
+                - Node.js 20+（前端独立启动）
+                - Docker 24+
+                - DeepSeek API Key（platform.deepseek.com 注册申请）
 
-            UserAccount account = opt.get();
-            String membershipDesc = getMembershipDesc(account.getMembershipLevel());
-            String membershipBenefits = getMembershipBenefits(account.getMembershipLevel());
+                ### 第一步：启动依赖服务
+                ```
+                git clone <your-repo-url>
+                cd ai-agent
+                docker-compose up -d postgres redis
+                docker-compose ps   # 确认 Status 为 healthy
+                ```
 
-            return String.format(
-                    "用户 %s（%s）账户信息：\n"
-                    + "  账户余额：¥%.2f\n"
-                    + "  会员等级：%s\n"
-                    + "  等级权益：%s\n"
-                    + "  当前积分：%,d 分",
-                    account.getUserId(),
-                    account.getUsername(),
-                    account.getBalance(),
-                    membershipDesc,
-                    membershipBenefits,
-                    account.getPoints());
-        } catch (Exception e) {
-            log.error("[Tool] 查询用户账户异常，userId={}", userId, e);
-            return String.format("查询用户 %s 账户时发生错误，请稍后重试。", userId);
-        }
-    }
+                ### 第二步：配置环境变量
+                ```
+                export DEEPSEEK_API_KEY=sk-xxx          # 必填
+                export SPRING_PROFILES_ACTIVE=deepseek  # 必填
+                export JWT_SECRET=<至少32字符的随机字符串>  # 必填
+                # 可选
+                export PG_HOST=localhost
+                export PG_PASSWORD=postgres
+                export REDIS_HOST=localhost
+                ```
 
-    /**
-     * 查询用户积分详情
-     */
-    @Tool("查询用户当前积分余额及积分等级权益说明")
-    public String queryUserPoints(@P("用户ID，如 U001") String userId) {
-        log.info("[Tool] 查询用户积分: {}", userId);
-        if (!hasDataPermission(userId)) {
-            log.warn("[SECURITY] 数据越权访问被拒绝：当前用户无权查询用户 {} 的积分", userId);
-            return "权限不足：只能查询您自己的积分信息。";
-        }
-        try {
-            Optional<UserAccount> opt = userAccountMapper.findByUserId(userId);
-            if (opt.isEmpty()) {
-                return String.format("未找到用户 %s 的账户。", userId);
-            }
+                ### 第三步：启动后端
+                ```
+                java -version   # 确认显示 21.x.x
+                mvn spring-boot:run  # Flyway 自动建表
+                ```
 
-            UserAccount account = opt.get();
-            int points = account.getPoints();
-            String nextLevel = getNextLevelInfo(account.getMembershipLevel(), points);
+                ### 第四步：启动前端
+                ```
+                cd frontend
+                npm install
+                npm run dev   # http://localhost:5173
+                ```
 
-            return String.format(
-                    "用户 %s（%s）积分信息：\n"
-                    + "  当前积分：%,d 分\n"
-                    + "  当前等级：%s\n"
-                    + "  %s",
-                    account.getUserId(),
-                    account.getUsername(),
-                    points,
-                    getMembershipDesc(account.getMembershipLevel()),
-                    nextLevel);
-        } catch (Exception e) {
-            log.error("[Tool] 查询用户积分异常，userId={}", userId, e);
-            return String.format("查询用户 %s 积分时发生错误，请稍后重试。", userId);
-        }
-    }
+                ### 生产部署
+                ```
+                export SPRING_PROFILES_ACTIVE=deepseek,prod
+                java -Xmx2g -jar ai-agent-1.0.0.jar
+                ```
 
-    // ── 4. 获取当前日期时间 ──────────────────────────────────────
+                ### 可选：启用 Elasticsearch BM25
+                ```
+                docker-compose --profile bm25 up -d elasticsearch
+                export ES_ENABLED=true
+                ```
 
-    /**
-     * 获取当前日期和时间（无需网络，直接返回系统时间）
-     */
-    @Tool("获取当前的日期和时间，用于回答'今天是几号'、'现在几点'等问题")
-    public String getCurrentDateTime(@P("时区，默认 Asia/Shanghai，可传入如 Asia/Tokyo、UTC 等") String timezone) {
-        try {
-            ZoneId zone;
-            try {
-                zone = (timezone != null && !timezone.isBlank())
-                        ? ZoneId.of(timezone) : ZoneId.of("Asia/Shanghai");
-            } catch (Exception e) {
-                zone = ZoneId.of("Asia/Shanghai");
-            }
+                ### 常见问题
+                - WeakKeyException → JWT_SECRET 至少 32 字符
+                - 编译报 Text Block / record 语法错误 → 需要 Java 21
+                - 知识库上传后查询不到 → 确认 pgvector 扩展已安装
+                - 切换对话模型 → 设置 SPRING_PROFILES_ACTIVE=deepseek 或 claude
+                - Embedding 统一使用 DeepSeek，切换模型无需重建知识库
 
-            DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy年MM月dd日 HH:mm:ss (EEEE)")
-                    .withZone(zone)
-                    .withLocale(Locale.CHINESE);
-
-            return "当前时间：" + fmt.format(Instant.now())
-                    + "（时区：" + zone.getId() + "）";
-        } catch (Exception e) {
-            return "当前时间：" + DateTimeFormatter
-                    .ofPattern("yyyy-MM-dd HH:mm:ss")
-                    .withZone(ZoneId.of("Asia/Shanghai"))
-                    .format(Instant.now());
-        }
-    }
-
-    // ── 5. 安全数学计算 ──────────────────────────────────────────
-
-    /**
-     * 执行数学计算（Aviator 安全沙箱）
-     *
-     * 支持：四则运算、幂运算（**）、取模（%）、math.sqrt/abs/pow/log
-     * 安全：禁止反射/system/runtime 等危险操作
-     */
-    @Tool("执行数学计算，支持加减乘除、幂运算(**)、取模(%)、math.sqrt/abs/pow/log 等函数")
-    public String calculate(@P("数学表达式，如：1+2*3、math.sqrt(144)、2**10、(100-20)/0.8") String expression) {
-        log.info("[Tool] 执行计算: {}", expression);
-
-        if (expression == null || expression.isBlank()) return "表达式不能为空";
-        if (expression.length() > MAX_EXPR_LENGTH) {
-            return "表达式过长（最多 " + MAX_EXPR_LENGTH + " 字符）";
-        }
-
-        // 安全关键词拦截
-        String lower = expression.toLowerCase();
-        for (String forbidden : new String[]{"system", "runtime", "process", "reflect",
-                "classloader", "exec(", "forname", "import", "class."}) {
-            if (lower.contains(forbidden)) {
-                log.warn("[Tool] 计算表达式包含危险关键词：{}", forbidden);
-                return "表达式包含不允许的内容：" + forbidden;
-            }
-        }
-
-        try {
-            Object raw = AVIATOR.execute(expression);
-            String result = formatCalcResult(raw);
-            log.info("[Tool] 计算完成: {} = {}", expression, result);
-            return String.format("计算结果：%s = %s", expression, result);
-
-        } catch (com.googlecode.aviator.exception.ExpressionSyntaxErrorException e) {
-            log.warn("[Tool] 表达式语法错误: {} -> {}", expression, e.getMessage());
-            return "表达式语法错误：" + e.getMessage()
-                    + "\n提示：支持 +、-、*、/、**（幂）、%（取模）及 math.sqrt/abs/pow/log 函数";
-        } catch (com.googlecode.aviator.exception.ExpressionRuntimeException e) {
-            log.warn("[Tool] 表达式运行时错误: {} -> {}", expression, e.getMessage());
-            return "计算错误（如除以零）：" + e.getMessage();
-        } catch (Exception e) {
-            log.error("[Tool] 计算异常: {}", expression, e);
-            return "计算失败：" + e.getMessage();
-        }
+                ### 环境变量清单
+                DEEPSEEK_API_KEY / ANTHROPIC_API_KEY（LLM）
+                JWT_SECRET（安全）
+                PG_HOST / PG_PORT / PG_DB / PG_USER / PG_PASSWORD（数据库）
+                REDIS_HOST / REDIS_PASSWORD（Redis）
+                ES_ENABLED / ES_HOST（可选 Elasticsearch）
+                ALERT_DINGTALK_ENABLED / ALERT_DINGTALK_WEBHOOK 等（可选告警）
+                """;
     }
 
     // ── 私有辅助方法 ──────────────────────────────────────────────
 
-    /**
-     * 数据权限校验：只允许用户查询自己的数据，ADMIN 角色可查所有用户数据
-     *
-     * <p>从 Spring Security 上下文获取当前登录用户（由 JwtAuthFilter 注入），
-     * 若请求的 userId 与当前用户不符且非 ADMIN，则返回 false。
-     *
-     * @param requestedUserId 被查询的用户ID
-     * @return true 表示有权限，false 表示无权限
-     */
-    private boolean hasDataPermission(String requestedUserId) {
+    private String getCurrentUserId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated()) {
-            return false;
+            return null;
         }
+        return String.valueOf(auth.getPrincipal());
+    }
 
-        // ADMIN 角色可查询任意用户数据
-        boolean isAdmin = auth.getAuthorities().stream()
+    private boolean isAdmin() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) return false;
+        return auth.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .anyMatch(a -> "ROLE_ADMIN".equals(a) || "ADMIN".equals(a));
-        if (isAdmin) {
-            return true;
-        }
-
-        // 普通用户：只能查自己的数据
-        String currentUserId = String.valueOf(auth.getPrincipal());
-        return currentUserId.equals(requestedUserId);
     }
 
-    private Optional<Order> findOrder(String orderId) {
-        // 先用原始格式查
-        Optional<Order> result = orderMapper.findByOrderNo(orderId);
-        if (result.isPresent()) return result;
-        // 兼容带 # 和不带 # 两种格式
-        if (!orderId.startsWith("#")) {
-            result = orderMapper.findByOrderNo("#" + orderId);
-        } else {
-            result = orderMapper.findByOrderNo(orderId.substring(1));
-        }
-        return result;
+    private boolean hasOrgAccess(String orgId) {
+        if (isAdmin()) return true;
+        String userId = getCurrentUserId();
+        if (userId == null) return false;
+        return organizationService.isMemberOf(orgId, userId);
     }
 
-    private String formatOrderDetail(Order order) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(String.format("订单 %s 详情：\n", order.getOrderNo()));
-        sb.append(String.format("  商品名称：%s\n", order.getProductName()));
-        sb.append(String.format("  订单金额：¥%.2f\n", order.getAmount()));
-        sb.append(String.format("  订单状态：%s\n", getStatusDesc(order.getStatus())));
-
-        if (order.getCreatedAt() != null) {
-            sb.append(String.format("  下单时间：%s\n", DATETIME_FMT.format(order.getCreatedAt())));
-        }
-
-        if (order.getShippingNo() != null) {
-            sb.append(String.format("  快递公司：%s\n",
-                    order.getShippingCompany() != null ? order.getShippingCompany() : "待确认"));
-            sb.append(String.format("  快递单号：%s\n", order.getShippingNo()));
-        }
-
-        if (order.getExpectedArrival() != null) {
-            sb.append(String.format("  预计到达：%s\n", order.getExpectedArrival()));
-        }
-
-        // 状态对应的操作提示
-        String tip = switch (order.getStatus()) {
-            case "PENDING"   -> "💡 提示：订单待付款，请尽快完成支付。";
-            case "PAID"      -> "💡 提示：订单已付款，等待商家发货。";
-            case "SHIPPED"   -> "💡 提示：商品已发货，可用快递单号查询物流详情。";
-            case "DELIVERED" -> "✅ 商品已签收，如有问题请联系客服。";
-            case "CANCELLED" -> "❌ 订单已取消。如需重新购买，请下新订单。";
-            case "REFUNDED"  -> "💰 退款已完成，金额将在1-3个工作日退回原支付账户。";
-            default -> "";
-        };
-        if (!tip.isBlank()) sb.append("\n").append(tip);
-
-        return sb.toString().stripTrailing();
-    }
-
-    private String formatWeather(String city, WeatherCache w, boolean isStale) {
-        String result = String.format("%s：%s，气温 %.1f°C，湿度 %d%%，风速 %.1f m/s",
-                city,
-                w.getWeatherDesc() != null ? w.getWeatherDesc() : "未知",
-                w.getTemperature() != null ? w.getTemperature().doubleValue() : 0.0,
-                w.getHumidity() != null ? w.getHumidity() : 0,
-                w.getWind() != null ? w.getWind().doubleValue() : 0.0);
-        if (isStale && w.getUpdatedAt() != null) {
-            result += String.format("（数据来自 %s 的缓存，可能不是最新）",
-                    DATE_FMT.format(w.getUpdatedAt()));
-        }
-        return result;
-    }
-
-    private String getStatusDesc(String status) {
-        return switch (status) {
-            case "PENDING"   -> "待付款";
-            case "PAID"      -> "已付款（待发货）";
-            case "SHIPPED"   -> "已发货（运输中）";
-            case "DELIVERED" -> "已签收";
-            case "CANCELLED" -> "已取消";
-            case "REFUNDED"  -> "已退款";
-            default          -> status;
-        };
-    }
-
-    private String getMembershipDesc(String level) {
-        return switch (level) {
-            case "NORMAL"   -> "普通会员";
-            case "SILVER"   -> "白银会员";
-            case "GOLD"     -> "黄金会员";
-            case "PLATINUM" -> "铂金会员";
-            case "DIAMOND"  -> "钻石会员";
-            default         -> level;
-        };
-    }
-
-    private String getMembershipBenefits(String level) {
-        return switch (level) {
-            case "NORMAL"   -> "基础服务";
-            case "SILVER"   -> "95折优惠 + 专属客服";
-            case "GOLD"     -> "9折优惠 + 免费快递 + 优先发货";
-            case "PLATINUM" -> "85折优惠 + 专属客服 + 生日双倍积分 + 免费退换货";
-            case "DIAMOND"  -> "8折优惠 + 7×24 专属客服 + 每月积分礼包 + 全程免费退换货";
-            default         -> "标准服务";
-        };
-    }
-
-    private String getNextLevelInfo(String currentLevel, int points) {
-        return switch (currentLevel) {
-            case "NORMAL"   -> points < 1000
-                    ? String.format("距离白银会员还需 %,d 积分（再积累 %,d 分）",
-                        1000, 1000 - points)
-                    : "积分已满足白银会员，下次登录后自动升级。";
-            case "SILVER"   -> points < 5000
-                    ? String.format("距离黄金会员还需 %,d 积分（再积累 %,d 分）",
-                        5000, 5000 - points)
-                    : "积分已满足黄金会员，下次登录后自动升级。";
-            case "GOLD"     -> points < 20000
-                    ? String.format("距离铂金会员还需 %,d 积分（再积累 %,d 分）",
-                        20000, 20000 - points)
-                    : "积分已满足铂金会员，下次登录后自动升级。";
-            case "PLATINUM" -> points < 100000
-                    ? String.format("距离钻石会员还需 %,d 积分（再积累 %,d 分）",
-                        100000, 100000 - points)
-                    : "积分已满足钻石会员，下次登录后自动升级。";
-            case "DIAMOND"  -> "您已是最高等级钻石会员，享有全部会员权益！";
-            default         -> "请联系客服了解积分规则。";
-        };
-    }
-
-    /**
-     * 格式化计算结果（整数去小数点，浮点保留有效精度，去末尾零）
-     */
-    private String formatCalcResult(Object raw) {
-        if (raw == null) return "null";
-        if (raw instanceof BigDecimal bd) {
-            return bd.stripTrailingZeros().toPlainString();
-        }
-        if (raw instanceof Double d) {
-            if (d == Math.floor(d) && !Double.isInfinite(d)) {
-                return String.valueOf(d.longValue());
-            }
-            BigDecimal bd = new BigDecimal(d, new MathContext(10));
-            return bd.stripTrailingZeros().toPlainString();
-        }
-        if (raw instanceof Long || raw instanceof Integer) {
-            return String.valueOf(raw);
-        }
-        return raw.toString();
-    }
 }

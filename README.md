@@ -24,7 +24,7 @@
 | 安全认证 | Spring Security + JWT (JJWT) + BCrypt | 0.12.6 |
 | 可观测性 | Micrometer + Prometheus + Zipkin | — |
 | 告警通知 | 钉钉 / 企微 / 邮件 / 自定义 Webhook | — |
-| 表达式引擎 | Aviator（沙箱数学计算） | 5.4.3 |
+| 成员认证 | JWT + Spring Security | — |
 
 ---
 
@@ -69,14 +69,12 @@ AI 在对话时**自动决策**何时调用，无需用户触发：
 
 | 工具 | 说明 |
 |------|------|
-| `queryOrderStatus` | 查询订单状态和物流 |
-| `queryUserOrders` | 查询用户最近 10 条订单 |
-| `queryOrderSummary` | 统计各状态订单数量 |
-| `getWeather` | 查城市天气（30 分钟缓存 + 三级降级）|
-| `queryUserAccount` | 查账户余额和会员等级 |
-| `queryUserPoints` | 查积分余额和升级进度 |
-| `calculate` | 安全数学计算（Aviator 沙箱）|
-| `getCurrentDateTime` | 获取当前日期时间（支持时区）|
+| `listMyOrganizations` | 查看我加入的所有组织及角色 |
+| `listOrgMembers` | 查看指定组织的成员列表 |
+| `listMyKnowledgeBases` | 查看我的知识库（按组织分组）|
+| `listKbDocuments` | 查看知识库中文档及解析状态（成功/失败/处理中）|
+| `getSystemCapabilities` | 获取系统支持的所有功能说明 |
+| `getDeploymentGuide` | 获取系统部署方案和快速开始指引 |
 
 ---
 
@@ -204,10 +202,10 @@ POST /api/v1/chat
 
 ```json
 // 请求
-{"sessionId": "s001", "message": "帮我查一下订单 #12345 的物流"}
+{"sessionId": "s001", "message": "我加入了哪些组织？"}
 
 // 响应
-{"sessionId": "s001", "reply": "您的订单 #12345 已发货...", "durationMs": 1823}
+{"sessionId": "s001", "reply": "您共加入了2个组织：个人空间（拥有者）...", "durationMs": 1523}
 ```
 
 #### 流式对话（SSE）
@@ -233,27 +231,27 @@ POST /api/v1/chat/react
 
 ```json
 // 请求
-{"sessionId": "s001", "message": "查询用户 U001 的所有订单并统计总金额"}
+{"sessionId": "s001", "message": "查看我的知识库中有哪些文档"}
 
 // 响应（包含完整推理过程）
 {
-  "answer": "用户 U001 共有 3 笔订单，总金额 ¥1,580.00",
+  "answer": "您的知识库「产品手册」共有5个文档：✅ 解析成功4个，❌ 失败1个...",
   "iterations": 2,
-  "durationMs": 4521,
+  "durationMs": 3521,
   "steps": [
     {
       "iteration": 1,
-      "thought": "需要先查询 U001 的订单列表",
-      "toolName": "queryUserOrders",
-      "toolArgs": "{\"userId\":\"U001\"}",
-      "observation": "找到 3 笔订单：¥580、¥600、¥400"
+      "thought": "需要先查看用户有哪些知识库",
+      "toolName": "listMyKnowledgeBases",
+      "toolArgs": "{}",
+      "observation": "找到1个知识库：产品手册（ID:1）"
     },
     {
       "iteration": 2,
-      "thought": "已有数据，计算总金额",
-      "toolName": "calculate",
-      "toolArgs": "{\"expression\":\"580+600+400\"}",
-      "observation": "计算结果：1580"
+      "thought": "查看知识库1中的文档及解析状态",
+      "toolName": "listKbDocuments",
+      "toolArgs": "{\"kbId\":\"1\"}",
+      "observation": "5个文档：4个解析成功，1个失败..."
     }
   ]
 }
@@ -523,10 +521,7 @@ ai-agent/
 │   │   └── service/TokenUsageService  # 成本统计 / 报表
 │   │
 │   ├── tool/                          # Function Calling 工具
-│   │   ├── BusinessTools.java         # 8 个工具方法（@Tool 注解）
-│   │   ├── client/WeatherApiClient    # OpenWeatherMap + 三级降级
-│   │   ├── entity/                    # Order / UserAccount / WeatherCache
-│   │   └── mapper/                    # MyBatis Mapper（3 个）
+│   │   └── BusinessTools.java         # 6 个工具方法（组织/知识库/系统能力）
 │   │
 │   └── memory/
 │       └── RedisChatMemoryStore       # Redis 持久化对话记忆（滑动 TTL）
@@ -559,14 +554,14 @@ ai-agent/
 
 | 表名 | 说明 |
 |------|------|
-| `biz_user_account` | 用户表（含 password_hash、roles、会员等级、积分）|
 | `kb_knowledge_base` | 知识库（多租户隔离，tenant_id 字段）|
 | `kb_document` | 上传文档（含 parse_status、file_hash 增量检测）|
 | `kb_chunk` | 文档切片（含 content_hash，支持增量更新）|
 | `kb_retrieval_log` | 检索日志（含各阶段耗时，用于 RAG 效果分析）|
 | `llm_token_usage` | LLM 调用 Token 数和 USD 费用（含 TraceId）|
-| `biz_order` | 示例业务：订单 |
-| `biz_weather_cache` | 天气缓存（30 分钟有效期）|
+| `biz_organization` | 组织（个人空间/企业组织）|
+| `biz_org_member` | 组织成员关系 |
+| `kb_member` | 知识库成员授权 |
 
 Flyway 在首次启动时自动执行建表脚本，无需手动操作。
 

@@ -186,13 +186,6 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
-        <!-- Aviator 表达式引擎（calculate 工具使用，沙箱安全计算） -->
-        <dependency>
-            <groupId>com.googlecode.aviator</groupId>
-            <artifactId>aviator</artifactId>
-            <version>5.4.3</version>
-        </dependency>
-
         <!-- Spring Boot Mail（邮件告警通知） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

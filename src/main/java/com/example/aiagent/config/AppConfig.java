@@ -5,6 +5,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.task.DelegatingSecurityContextTaskExecutor;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.concurrent.Executor;
@@ -17,6 +19,13 @@ import java.util.concurrent.ThreadPoolExecutor;
 @EnableAsync        // 启用 @Async（TokenUsageService 异步写 PostgreSQL 需要）
 @EnableScheduling   // 启用 @Scheduled（AlertService 定时告警需要）
 public class AppConfig {
+
+    static {
+        // 使子线程自动继承父线程的 SecurityContext，解决 SSE/ReAct 流式推理时
+        // BusinessTools 等 @Tool 方法在 worker 线程上拿不到认证信息的问题
+        SecurityContextHolder.setStrategyName(
+                SecurityContextHolder.MODE_INHERITABLETHREADLOCAL);
+    }
 
     /**
      * RestTemplate Bean
@@ -92,7 +101,8 @@ public class AppConfig {
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
         executor.initialize();
-        return executor;
+        // 包装 SecurityContext 传播：ReAct SSE worker 线程自动继承请求线程的认证信息
+        return new DelegatingSecurityContextTaskExecutor(executor);
     }
 
     /**
