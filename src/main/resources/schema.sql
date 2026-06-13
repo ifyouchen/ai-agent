@@ -254,6 +254,27 @@ CREATE INDEX IF NOT EXISTS idx_chat_message_user_id    ON chat_message(user_id);
 -- ============================================================
 ALTER TABLE biz_user_account ADD COLUMN IF NOT EXISTS nickname VARCHAR(50);
 ALTER TABLE biz_user_account ADD COLUMN IF NOT EXISTS email    VARCHAR(100);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_biz_user_account_email_unique
+    ON biz_user_account (LOWER(email))
+    WHERE email IS NOT NULL AND email <> '';
+
+-- ============================================================
+-- 注册邮箱验证码表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS email_verification_code (
+    id         BIGSERIAL    PRIMARY KEY,
+    email      VARCHAR(100) NOT NULL,
+    purpose    VARCHAR(32)  NOT NULL,
+    code_hash  VARCHAR(128) NOT NULL,
+    expires_at TIMESTAMPTZ  NOT NULL,
+    used_at    TIMESTAMPTZ,
+    attempts   INT          NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_email_code_email_purpose
+    ON email_verification_code(email, purpose, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_email_code_expires_at
+    ON email_verification_code(expires_at);
 
 -- 会话标题检索加速
 CREATE INDEX IF NOT EXISTS idx_chat_session_title ON chat_session USING gin(to_tsvector('simple', title));

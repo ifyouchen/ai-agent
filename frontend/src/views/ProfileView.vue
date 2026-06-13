@@ -4,11 +4,14 @@
       <!-- 顶部头像区 -->
       <div class="profile-hero">
         <div class="profile-avatar-wrap">
-          <Avatar :name="auth.displayName" :size="80" style="width:80px;height:80px;font-size:32px;border-radius:50%;" />
+          <Avatar class="profile-avatar-main" :name="auth.displayName" :size="72" />
           <div class="profile-names">
             <h2 class="profile-username">{{ auth.user?.username }}</h2>
-            <p class="profile-userid">ID：{{ auth.user?.userId }}</p>
-            <span class="profile-roles">{{ rolesLabel }}</span>
+            <p class="profile-subtitle">{{ form.nickname || auth.user?.email || '已登录' }}</p>
+            <div class="profile-badges">
+              <span class="profile-roles">{{ rolesLabel }}</span>
+              <span class="profile-userid">ID：{{ auth.user?.userId }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -90,55 +93,16 @@
           </div>
         </div>
       </div>
-
-      <!-- 用量统计卡片 -->
-      <div class="profile-card">
-        <div class="profile-card-header">
-          <h3 class="profile-card-title">
-            <div class="profile-card-title-icon">
-              <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
-                <path d="M12 20V10M18 20V4M6 20v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-              </svg>
-            </div>
-            我的用量
-          </h3>
-          <button class="profile-toggle-btn" type="button" @click="usageVisible = !usageVisible">
-            <svg v-if="!usageVisible" viewBox="0 0 24 24" fill="none" width="14" height="14">
-              <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            <svg v-else viewBox="0 0 24 24" fill="none" width="14" height="14">
-              <path d="m18 15-6-6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            {{ usageVisible ? '收起' : '查看用量' }}
-          </button>
-        </div>
-        <div v-if="usageVisible" class="usage-section">
-          <div class="usage-cards">
-            <div class="usage-card">
-              <div class="usage-card-value">${{ todayCost }}</div>
-              <div class="usage-card-label">今日消费（USD）</div>
-            </div>
-          </div>
-          <div class="usage-chart-title">近 7 天费用趋势</div>
-          <div class="usage-chart-wrap">
-            <div v-if="!dailyData.length" class="usage-empty">暂无消费记录</div>
-            <canvas v-else ref="usageChartEl" height="140"></canvas>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
-import { Chart, LineController, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler } from 'chart.js';
+import { computed, onMounted, reactive, ref } from 'vue';
 import Avatar from '../components/ui/Avatar.vue';
 import { useAuthStore } from '../stores/auth.js';
 import { useUiStore } from '../stores/ui.js';
 import * as api from '../services/api.js';
-
-Chart.register(LineController, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler);
 
 const auth = useAuthStore();
 const ui   = useUiStore();
@@ -148,56 +112,6 @@ const saving  = ref(false);
 const pwdVisible = ref(false);
 const pwdSaving  = ref(false);
 const pwd = reactive({ old: '', new: '', confirm: '' });
-
-const usageVisible = ref(false);
-const todayCost    = ref('—');
-const dailyData    = ref([]);
-const usageChartEl = ref(null);
-let   usageChart   = null;
-
-watch(usageVisible, async (v) => {
-  if (!v) return;
-  try {
-    const [todayRes, dailyRes] = await Promise.all([
-      api.getMyTodayCost(),
-      api.getMyDailyReport(7),
-    ]);
-    const cost = todayRes.totalCostUsd ?? todayRes.costUsd ?? 0;
-    const c = Number(cost);
-    todayCost.value = c === 0 ? '0.00' : c >= 0.01 ? c.toFixed(2) : c >= 0.0001 ? c.toFixed(4) : c.toExponential(2);
-    dailyData.value = dailyRes || [];
-    await nextTick();
-    renderUsageChart();
-  } catch { /* 静默失败 */ }
-});
-
-function renderUsageChart() {
-  if (!usageChartEl.value || !dailyData.value.length) return;
-  usageChart?.destroy();
-  usageChart = new Chart(usageChartEl.value, {
-    type: 'line',
-    data: {
-      labels: dailyData.value.map(r => (r.day || '').slice(5)),
-      datasets: [{
-        label: '费用（USD）',
-        data: dailyData.value.map(r => Number(r.costUsd ?? 0)),
-        backgroundColor: '#4D6BFE18',
-        borderColor: '#4D6BFE',
-        borderWidth: 2,
-        pointRadius: 3,
-        fill: true,
-        tension: 0.3,
-      }],
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: {
-        y: { beginAtZero: true, ticks: { callback: v => '$' + Number(v).toFixed(4) } },
-      },
-    },
-  });
-}
 
 const rolesLabel = computed(() => {
   const roles = auth.user?.roles || [];

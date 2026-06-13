@@ -19,6 +19,9 @@ public interface SysUserMapper {
     /** 检查用户名是否已存在 */
     boolean existsByUsername(@Param("username") String username);
 
+    /** 检查邮箱是否已存在 */
+    boolean existsByEmail(@Param("email") String email);
+
     /** 注册新用户 */
     void insert(SysUser user);
 

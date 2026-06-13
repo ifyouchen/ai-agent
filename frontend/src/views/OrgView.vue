@@ -1,282 +1,213 @@
 <template>
   <div class="org-view">
-    <!-- 顶部标题 -->
-    <div class="org-header">
-      <h2 class="org-title">
-        <div class="org-title-icon">
-          <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          </svg>
+    <aside class="org-sidebar-panel">
+      <div class="org-sidebar-header">
+        <div>
+          <h2 class="org-title">组织管理</h2>
+          <p class="org-subtitle">切换空间、邀请成员和维护权限</p>
         </div>
-        组织管理
-        <svg v-if="org.orgLoading" class="inline-spinner" viewBox="0 0 24 24" fill="none" width="14" height="14">
-          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
-        </svg>
-      </h2>
-      <button class="org-create-btn" type="button" @click="handleCreateOrg">
-        <svg viewBox="0 0 24 24" fill="none" width="14" height="14">
-          <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="2"/>
-          <path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-        创建企业组织
-      </button>
-    </div>
-
-    <!-- 统计概览 -->
-    <div class="org-stats">
-      <div class="org-stat-card">
-        <div class="org-stat-value">{{ org.organizations.length }}</div>
-        <div class="org-stat-label">我的组织</div>
-        <div class="org-stat-sublabel">{{ enterpriseCount }} 个企业 · {{ personalCount }} 个个人</div>
-      </div>
-      <div class="org-stat-card">
-        <div class="org-stat-value">{{ enterpriseCount }}</div>
-        <div class="org-stat-label">企业组织</div>
-        <div class="org-stat-sublabel">可邀请成员协作</div>
-      </div>
-      <div class="org-stat-card">
-        <div class="org-stat-value">{{ personalCount }}</div>
-        <div class="org-stat-label">个人空间</div>
-        <div class="org-stat-sublabel">私有隔离空间</div>
-      </div>
-    </div>
-
-    <!-- 组织列表 -->
-    <div class="org-list-title">
-      <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-      </svg>
-      组织列表
-      <span style="font-size:12px; color:var(--text-muted); font-weight:400; margin-left:4px;">点击切换当前组织</span>
-    </div>
-
-    <div class="org-list">
-      <!-- 加载中 -->
-      <div v-if="org.orgLoading && !org.organizations.length" class="empty-state">
-        <svg class="inline-spinner" viewBox="0 0 24 24" fill="none" width="20" height="20">
-          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
-        </svg>
-        <div class="empty-state-text">加载中…</div>
-      </div>
-
-      <!-- 空状态 -->
-      <div v-else-if="!org.orgLoading && !org.organizations.length" class="empty-state">
-        <div class="empty-state-icon">
-          <svg viewBox="0 0 24 24" fill="none" width="32" height="32">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <button class="org-icon-btn primary" type="button" title="创建企业组织" @click="handleCreateOrg">
+          <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
+            <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           </svg>
-        </div>
-        <div class="empty-state-text">暂无组织</div>
-        <div class="empty-state-hint">创建企业组织以开始协作</div>
-        <button class="org-create-btn" type="button" @click="handleCreateOrg" style="margin-top:4px;">
-          <svg viewBox="0 0 24 24" fill="none" width="14" height="14">
-            <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="2"/>
-            <path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-          创建企业组织
         </button>
       </div>
 
-      <!-- 组织卡片 -->
-      <div
-        v-for="item in org.organizations"
-        :key="item.orgId"
-        class="org-card"
-        :class="{ active: item.orgId === org.currentOrgId }"
-        @click="handleSelectOrg(item.orgId)"
-      >
-        <div class="org-card-icon" :class="item.orgType === 'PERSONAL' ? 'personal' : 'enterprise'">
-          <span v-if="item.orgType === 'PERSONAL'">个人</span>
-          <svg v-else viewBox="0 0 24 24" fill="none" width="20" height="20">
-            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <div class="org-list">
+        <div v-if="org.orgLoading && !org.organizations.length" class="org-loading">
+          <svg class="inline-spinner" viewBox="0 0 24 24" fill="none" width="18" height="18">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
           </svg>
+          加载组织中
         </div>
-        <div class="org-card-info">
-          <div class="org-card-name">
-            {{ item.orgType === 'PERSONAL' ? '个人空间' : (item.name || item.orgId) }}
-            <span class="org-card-role-badge" :class="item.role.toLowerCase()">{{ orgRoleLabel(item.role) }}</span>
-          </div>
-          <div class="org-card-meta">
-            {{ item.orgType === 'PERSONAL' ? '私有空间' : '企业组织' }}
-            <span v-if="item.orgId === org.currentOrgId">· 当前选中</span>
-          </div>
-        </div>
-        <span v-if="item.orgId === org.currentOrgId" class="org-active-badge">当前</span>
-        <div v-if="item.orgType === 'ENTERPRISE'" class="org-card-actions" @click.stop>
-          <button v-if="item.role === 'OWNER'" class="org-card-action-btn" type="button" title="编辑组织" @click.stop="handleEditOrg(item)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-          <button v-if="item.role !== 'OWNER'" class="org-card-action-btn danger" type="button" title="退出组织" @click.stop="handleLeaveOrg(item)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-          <button v-if="item.role === 'OWNER'" class="org-card-action-btn danger" type="button" title="删除组织" @click.stop="handleDeleteOrg(item)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-    </div>
 
-    <!-- 当前组织操作区 -->
-    <div v-if="org.currentOrgId" class="org-actions-panel">
-      <div class="org-actions-title">
-        <svg viewBox="0 0 24 24" fill="none" width="16" height="16" style="margin-right:6px;">
-          <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          <path d="M12 1v6m0 6v6m4.22-10.22 4.24-4.24M6.34 6.34 2.1 2.1m18.8 18.8-4.24-4.24M6.34 17.66l-4.24 4.24M23 12h-6m-6 0H1m20.22 4.22-4.24-4.24M6.34 17.66l-4.24 4.24" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-        {{ org.currentOrg?.orgType === 'ENTERPRISE' ? (org.currentOrg?.name || '组织') : '个人空间' }} 操作
+        <div v-else-if="!org.orgLoading && !org.organizations.length" class="org-empty">
+          <div class="org-empty-title">暂无组织</div>
+          <button class="org-create-inline" type="button" @click="handleCreateOrg">创建企业组织</button>
+        </div>
+
+        <button
+          v-for="item in org.organizations"
+          :key="item.orgId"
+          class="org-list-item"
+          :class="{ active: item.orgId === org.currentOrgId }"
+          type="button"
+          @click="handleSelectOrg(item.orgId)"
+        >
+          <span class="org-list-icon" :class="item.orgType === 'PERSONAL' ? 'personal' : 'enterprise'">
+            <svg v-if="item.orgType === 'PERSONAL'" viewBox="0 0 24 24" fill="none" width="18" height="18">
+              <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/>
+              <path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <svg v-else viewBox="0 0 24 24" fill="none" width="18" height="18">
+              <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-8h6v8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span class="org-list-main">
+            <span class="org-list-name">{{ displayOrgName(item) }}</span>
+            <span class="org-list-meta">{{ orgTypeLabel(item.orgType) }} · {{ orgRoleLabel(item.role) }}</span>
+          </span>
+          <span v-if="item.orgId === org.currentOrgId" class="org-current-dot"></span>
+        </button>
+      </div>
+    </aside>
+
+    <main class="org-detail-panel">
+      <div v-if="!org.currentOrg" class="org-detail-empty">
+        <div class="org-empty-title">请选择组织</div>
+        <p>从左侧选择一个组织查看详情和成员。</p>
       </div>
 
-      <template v-if="org.currentOrg?.orgType === 'ENTERPRISE'">
-        <div class="org-invite-wrap">
-          <div class="org-member-search-wrap">
-            <input
-              v-model.trim="inviteUsername"
-              type="text"
-              placeholder="输入用户名搜索..."
-              class="org-member-input"
-              autocomplete="off"
-              @input="searchInviteUsers"
-              @blur="hideInviteSugg"
-              @focus="searchInviteUsers"
-            />
-            <div v-if="inviteSuggestions.length && inviteSuggVisible" class="org-member-suggestions">
-              <button
-                v-for="u in inviteSuggestions"
-                :key="u.userId"
-                class="org-member-suggestion-item"
-                type="button"
-                @mousedown.prevent="selectInviteSugg(u)"
-              >
-                <span class="org-member-sug-name">{{ u.username }}</span>
-                <span class="org-member-sug-id">{{ u.userId }}</span>
+      <template v-else>
+        <section class="org-detail-header">
+          <div class="org-detail-heading">
+            <div class="org-detail-icon" :class="org.currentOrg.orgType === 'PERSONAL' ? 'personal' : 'enterprise'">
+              <svg v-if="org.currentOrg.orgType === 'PERSONAL'" viewBox="0 0 24 24" fill="none" width="22" height="22">
+                <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/>
+                <path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <svg v-else viewBox="0 0 24 24" fill="none" width="22" height="22">
+                <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-8h6v8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div>
+              <h3>{{ displayOrgName(org.currentOrg) }}</h3>
+              <p>{{ orgTypeLabel(org.currentOrg.orgType) }} · 我的角色：{{ orgRoleLabel(org.currentOrg.role) }}</p>
+            </div>
+          </div>
+          <div class="org-detail-actions">
+            <button v-if="canEditOrg" class="org-text-btn" type="button" @click="handleEditOrg(org.currentOrg)">
+              编辑
+            </button>
+            <button v-if="canLeaveOrg" class="org-text-btn danger" type="button" @click="handleLeaveOrg(org.currentOrg)">
+              退出
+            </button>
+            <button v-if="canDeleteOrg" class="org-text-btn danger" type="button" @click="handleDeleteOrg(org.currentOrg)">
+              删除
+            </button>
+          </div>
+        </section>
+
+        <section v-if="org.currentOrg.orgType === 'PERSONAL'" class="org-notice">
+          个人空间仅自己可见，不支持邀请成员。需要协作时请创建企业组织。
+        </section>
+
+        <template v-else>
+          <section v-if="canManageMembers" class="org-invite-panel">
+            <div class="section-heading">
+              <h4>邀请成员</h4>
+              <span>搜索用户后选择角色加入当前组织</span>
+            </div>
+            <div class="org-invite-row">
+              <div class="org-member-search-wrap">
+                <input
+                  v-model.trim="inviteUsername"
+                  type="text"
+                  placeholder="输入用户名搜索"
+                  class="org-member-input"
+                  autocomplete="off"
+                  @input="searchInviteUsers"
+                  @blur="hideInviteSugg"
+                  @focus="searchInviteUsers"
+                />
+                <div v-if="inviteSuggestions.length && inviteSuggVisible" class="org-member-suggestions">
+                  <button
+                    v-for="u in inviteSuggestions"
+                    :key="u.userId"
+                    class="org-member-suggestion-item"
+                    type="button"
+                    @mousedown.prevent="selectInviteSugg(u)"
+                  >
+                    <span class="org-member-sug-name">{{ u.username }}</span>
+                    <span class="org-member-sug-id">{{ u.userId }}</span>
+                  </button>
+                </div>
+              </div>
+              <div class="role-segmented" aria-label="邀请角色">
+                <button
+                  v-for="role in editableRoles"
+                  :key="role.value"
+                  type="button"
+                  :class="{ active: inviteRole === role.value }"
+                  @click="inviteRole = role.value"
+                >
+                  {{ role.label }}
+                </button>
+              </div>
+              <button class="org-primary-btn" type="button" :disabled="!inviteUserId" @click="doInvite">
+                邀请
               </button>
             </div>
-          </div>
-          <select v-model="inviteRole" class="org-member-role-select">
-            <option value="MEMBER">成员</option>
-            <option value="ADMIN">管理员</option>
-          </select>
-          <button class="org-member-add-btn" type="button" @click="doInvite">邀请</button>
-        </div>
-        <div class="org-action-btns">
-          <button class="org-action-btn" type="button" @click="showMembers">
-            <svg viewBox="0 0 24 24" fill="none" width="14" height="14">
-              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            查看成员
-          </button>
-        </div>
-      </template>
-      <template v-else>
-        <p class="org-personal-hint">
-          个人空间为私有隔离空间，不支持邀请成员。<br>如需多人协作，请创建企业组织。
-        </p>
-      </template>
-    </div>
+          </section>
 
-    <!-- 成员弹窗 -->
-    <div v-if="membersModal.visible" class="members-modal-overlay" @click.self="membersModal.visible = false">
-      <div class="members-modal">
-        <div class="members-modal-header">
-          <h3>{{ membersModal.title }}</h3>
-          <button class="members-modal-close" type="button" @click="membersModal.visible = false">×</button>
-        </div>
-        <div class="members-modal-body">
-          <!-- 成员列表 -->
-          <div v-if="!membersModal.members.length" class="empty-state">
-            <div class="empty-state-text">暂无成员</div>
-          </div>
-          <div v-for="member in membersModal.members" :key="member.userId" class="member-list-item">
-            <div class="member-info">
-              <div class="member-name">{{ member.username || member.userId }}</div>
-              <div v-if="member.username" class="member-id">{{ member.userId }}</div>
+          <section class="org-members-panel">
+            <div class="section-heading">
+              <h4>成员</h4>
+              <span>{{ members.length }} 人</span>
             </div>
-            <template v-if="member.role === 'OWNER'">
-              <span class="member-role-badge owner">所有者</span>
-            </template>
-            <template v-else>
-              <select
-                class="member-role-select"
-                :class="member.role.toLowerCase()"
-                :value="member.role"
-                @change="org.updateMemberRole(org.currentOrgId, member.userId, $event.target.value)"
-              >
-                <option value="MEMBER">成员</option>
-                <option value="ADMIN">管理员</option>
-              </select>
-              <button v-if="member.role !== 'OWNER'" class="member-remove-btn" type="button" @click="removeMemberFromModal(member.userId)">移除</button>
-            </template>
-          </div>
-        </div>
-        <!-- 底部邀请区 -->
-        <div class="members-modal-footer">
-          <div class="members-modal-footer-title">
-            <svg viewBox="0 0 24 24" fill="none" width="14" height="14">
-              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            邀请新成员
-          </div>
-          <div class="members-modal-invite">
-            <div class="members-modal-search-wrap">
-              <input
-                v-model.trim="inviteUsername"
-                type="text"
-                placeholder="输入用户名搜索..."
-                class="members-modal-input"
-                autocomplete="off"
-                @input="searchInviteUsers"
-                @blur="hideInviteSugg"
-                @focus="searchInviteUsers"
-              />
-              <div v-if="inviteSuggestions.length && inviteSuggVisible" class="members-modal-suggestions">
+
+            <div v-if="membersLoading" class="org-loading members-loading">
+              <svg class="inline-spinner" viewBox="0 0 24 24" fill="none" width="18" height="18">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
+              </svg>
+              加载成员中
+            </div>
+
+            <div v-else-if="!members.length" class="org-empty compact">
+              <div class="org-empty-title">暂无成员</div>
+            </div>
+
+            <div v-else class="member-list">
+              <div v-for="member in members" :key="member.userId" class="member-row">
+                <div class="member-avatar">{{ memberInitial(member) }}</div>
+                <div class="member-main">
+                  <div class="member-name">
+                    {{ member.username || member.userId }}
+                    <span v-if="member.userId === auth.user?.userId" class="self-badge">你</span>
+                  </div>
+                  <div class="member-id">{{ member.userId }}</div>
+                </div>
+
+                <span v-if="member.role === 'OWNER'" class="member-role-badge owner">所有者</span>
+                <div v-else-if="canManageMembers" class="member-role-actions">
+                  <button
+                    v-for="role in editableRoles"
+                    :key="role.value"
+                    class="member-role-chip"
+                    :class="{ active: member.role === role.value }"
+                    type="button"
+                    @click="updateMemberRoleInline(member, role.value)"
+                  >
+                    {{ role.label }}
+                  </button>
+                </div>
+                <span v-else class="member-role-badge">{{ orgRoleLabel(member.role) }}</span>
+
                 <button
-                  v-for="u in inviteSuggestions"
-                  :key="u.userId"
-                  class="members-modal-suggestion-item"
+                  v-if="canManageMembers && member.role !== 'OWNER'"
+                  class="member-remove-btn"
                   type="button"
-                  @mousedown.prevent="selectInviteSugg(u)"
+                  @click="removeMemberInline(member)"
                 >
-                  <span class="members-modal-sug-name">{{ u.username }}</span>
-                  <span class="members-modal-sug-id">{{ u.userId }}</span>
+                  移除
                 </button>
               </div>
             </div>
-            <select v-model="inviteRole" class="members-modal-role-select">
-              <option value="MEMBER">成员</option>
-              <option value="ADMIN">管理员</option>
-            </select>
-            <button class="members-modal-add-btn" type="button" @click="doInviteFromModal">邀请</button>
-          </div>
-        </div>
-      </div>
-    </div>
+          </section>
+        </template>
+      </template>
+    </main>
   </div>
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { useAuthStore } from '../stores/auth.js';
 import { useOrgStore } from '../stores/org.js';
 import { useUiStore } from '../stores/ui.js';
 import * as api from '../services/api.js';
 
+const auth = useAuthStore();
 const org = useOrgStore();
 const ui  = useUiStore();
 
@@ -285,28 +216,55 @@ const inviteUserId      = ref('');
 const inviteRole        = ref('MEMBER');
 const inviteSuggestions = ref([]);
 const inviteSuggVisible = ref(false);
+const members           = ref([]);
+const membersLoading    = ref(false);
 
-const membersModal = reactive({
-  visible: false,
-  title:   '',
-  orgId:   null,
-  members: [],
-});
+const editableRoles = [
+  { value: 'MEMBER', label: '成员' },
+  { value: 'ADMIN', label: '管理员' },
+];
 
-const enterpriseCount = computed(() =>
-  org.organizations.filter(o => o.orgType === 'ENTERPRISE').length
+const canManageMembers = computed(() =>
+  org.currentOrg?.orgType === 'ENTERPRISE'
+  && ['OWNER', 'ADMIN'].includes(org.currentOrg?.role)
 );
 
-const personalCount = computed(() =>
-  org.organizations.filter(o => o.orgType === 'PERSONAL').length
+const canEditOrg = computed(() =>
+  org.currentOrg?.orgType === 'ENTERPRISE' && org.currentOrg?.role === 'OWNER'
 );
+
+const canDeleteOrg = computed(() =>
+  org.currentOrg?.orgType === 'ENTERPRISE' && org.currentOrg?.role === 'OWNER'
+);
+
+const canLeaveOrg = computed(() =>
+  org.currentOrg?.orgType === 'ENTERPRISE' && org.currentOrg?.role !== 'OWNER'
+);
+
+watch(() => org.currentOrgId, () => {
+  clearInvite();
+  loadMembers();
+}, { immediate: true });
+
+function displayOrgName(item) {
+  if (!item) return '';
+  return item.orgType === 'PERSONAL' ? '个人空间' : (item.name || item.orgId);
+}
+
+function orgTypeLabel(type) {
+  return type === 'PERSONAL' ? '个人空间' : '企业组织';
+}
 
 function orgRoleLabel(role) {
   const map = { OWNER: '所有者', ADMIN: '管理员', MEMBER: '成员' };
   return map[role] || role || '';
 }
 
-function handleSelectOrg(orgId) {
+function memberInitial(member) {
+  return String(member.username || member.userId || 'U').slice(0, 1).toUpperCase();
+}
+
+async function handleSelectOrg(orgId) {
   org.selectOrg(orgId);
 }
 
@@ -372,7 +330,9 @@ function searchInviteUsers() {
   }, 200);
 }
 
-function hideInviteSugg() { setTimeout(() => { inviteSuggVisible.value = false; }, 150); }
+function hideInviteSugg() {
+  setTimeout(() => { inviteSuggVisible.value = false; }, 150);
+}
 
 function selectInviteSugg(u) {
   inviteUsername.value    = u.username;
@@ -386,42 +346,63 @@ async function doInvite() {
   try {
     await org.inviteMember(org.currentOrgId, inviteUserId.value, inviteRole.value);
     ui.showToast('success', `已邀请 ${inviteUsername.value} 加入组织`);
-    inviteUsername.value = ''; inviteUserId.value = '';
+    clearInvite();
+    await loadMembers();
   } catch (err) {
     ui.showToast('error', err.message || '邀请失败');
   }
 }
 
-async function doInviteFromModal() {
-  if (!inviteUserId.value) { ui.showToast('warning', '请先从搜索结果中选择用户'); return; }
+async function loadMembers() {
+  if (!org.currentOrgId || org.currentOrg?.orgType !== 'ENTERPRISE') {
+    members.value = [];
+    return;
+  }
+  membersLoading.value = true;
   try {
-    await org.inviteMember(org.currentOrgId, inviteUserId.value, inviteRole.value);
-    ui.showToast('success', `已邀请 ${inviteUsername.value} 加入组织`);
-    inviteUsername.value = ''; inviteUserId.value = '';
-    // Refresh member list
-    membersModal.members = await org.getOrgMembers(membersModal.orgId);
+    members.value = await org.getOrgMembers(org.currentOrgId);
   } catch (err) {
-    ui.showToast('error', err.message || '邀请失败');
+    ui.showToast('error', err.message || '加载成员失败');
+    members.value = [];
+  } finally {
+    membersLoading.value = false;
   }
 }
 
-async function showMembers() {
-  const item = org.currentOrg;
-  if (!item) return;
-  membersModal.visible = true;
-  membersModal.title   = `${item.name || '组织'} 的成员`;
-  membersModal.orgId   = item.orgId;
-  membersModal.members = await org.getOrgMembers(item.orgId);
+async function updateMemberRoleInline(member, role) {
+  if (member.role === role) return;
+  try {
+    await org.updateMemberRole(org.currentOrgId, member.userId, role);
+    member.role = role;
+    ui.showToast('success', '成员角色已更新');
+  } catch (err) {
+    ui.showToast('error', err.message || '角色更新失败');
+  }
 }
 
-async function removeMemberFromModal(userId) {
+async function removeMemberInline(member) {
+  const confirmed = await ui.showConfirm({
+    title: '移除成员',
+    message: `确认移除「${member.username || member.userId}」？`,
+    confirmText: '移除',
+    variant: 'danger',
+  });
+  if (!confirmed) return;
   try {
-    await org.removeMember(membersModal.orgId, userId);
-    membersModal.members = await org.getOrgMembers(membersModal.orgId);
+    await org.removeMember(org.currentOrgId, member.userId);
+    members.value = members.value.filter(item => item.userId !== member.userId);
     ui.showToast('success', '成员已移除');
   } catch (err) {
     ui.showToast('error', err.message || '移除失败');
   }
+}
+
+function clearInvite() {
+  inviteUsername.value = '';
+  inviteUserId.value = '';
+  inviteRole.value = 'MEMBER';
+  inviteSuggestions.value = [];
+  inviteSuggVisible.value = false;
 }
 </script>
 

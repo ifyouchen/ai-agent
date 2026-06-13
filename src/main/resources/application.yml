@@ -5,22 +5,6 @@ spring:
     multipart:
       max-file-size: 50MB        # 单个文件最大大小
       max-request-size: 100MB    # 整个请求最大大小（支持多文件上传）
-  mail:
-    host:
-    port: 587
-    username:
-    password:
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
-            required: true
-          connectiontimeout: 5000
-          timeout: 5000
-          writetimeout: 5000
-
   data:
     redis:
       host: localhost
@@ -189,6 +173,12 @@ security:
   rate-limit:
     per-minute: 10
     per-day: 500
+
+auth:
+  email:
+    code-ttl-minutes: 10
+    resend-cooldown-seconds: 60
+    max-attempts: 5
 
 # 知识库置信度阈值
 kb:

@@ -36,14 +36,20 @@
         WHERE username = #{username}
     </select>
 
+    <select id="existsByEmail" resultType="boolean">
+        SELECT COUNT(1) > 0
+        FROM biz_user_account
+        WHERE LOWER(email) = LOWER(#{email})
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO biz_user_account (
             user_id, username, password_hash, roles, enabled, default_org_id,
-            balance, membership_level, points,
+            nickname, email, balance, membership_level, points,
             created_at, updated_at
         ) VALUES (
             #{userId}, #{username}, #{passwordHash}, #{roles}, #{enabled}, #{defaultOrgId},
-            0, 'NORMAL', 0,
+            #{nickname}, #{email}, 0, 'NORMAL', 0,
             NOW(), NOW()
         )
     </insert>

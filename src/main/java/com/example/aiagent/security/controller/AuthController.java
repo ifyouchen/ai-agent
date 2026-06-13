@@ -1,6 +1,7 @@
 package com.example.aiagent.security.controller;
 
 import com.example.aiagent.security.dto.AuthResponse;
+import com.example.aiagent.security.dto.EmailCodeRequest;
 import com.example.aiagent.security.dto.LoginRequest;
 import com.example.aiagent.security.dto.RegisterRequest;
 import com.example.aiagent.security.mapper.SysUserMapper;
@@ -28,8 +29,9 @@ import java.util.Map;
 /**
  * 认证接口
  *
- * POST /api/v1/auth/login     → 登录，返回 JWT
- * POST /api/v1/auth/register  → 注册，返回 JWT
+     * POST /api/v1/auth/login     → 登录，返回 JWT
+     * POST /api/v1/auth/register  → 注册，返回 JWT
+     * POST /api/v1/auth/email-code → 发送注册邮箱验证码
  *
  * 这两个接口在 SecurityConfig 中设置为 permitAll()，无需 Token 即可访问。
  */
@@ -75,9 +77,25 @@ public class AuthController {
     }
 
     /**
+     * 发送注册邮箱验证码。
+     */
+    @PostMapping("/email-code")
+    public ResponseEntity<?> sendEmailCode(@Valid @RequestBody EmailCodeRequest request) {
+        try {
+            authService.sendRegisterEmailCode(request.email());
+            return ResponseEntity.ok(Map.of("message", "验证码已发送"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
      * 用户注册
      *
-     * 请求体：{"username": "alice", "password": "secret123"}
+     * 请求体：{"username": "alice", "password": "secret123", "email": "alice@example.com", "emailCode": "123456"}
      * 响应体：同登录，注册成功直接返回 Token（免二次登录）
      */
     @PostMapping("/register")
@@ -88,7 +106,10 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
 
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
+            HttpStatus status = isRegisterConflict(e.getMessage())
+                    ? HttpStatus.CONFLICT
+                    : HttpStatus.BAD_REQUEST;
+            return ResponseEntity.status(status)
                     .body(Map.of("error", e.getMessage()));
         }
     }
@@ -174,6 +195,10 @@ public class AuthController {
             return forwarded.split(",")[0].trim();
         }
         return request.getRemoteAddr();
+    }
+
+    private boolean isRegisterConflict(String message) {
+        return message != null && (message.contains("用户名已存在") || message.contains("邮箱已被注册"));
     }
 }
 

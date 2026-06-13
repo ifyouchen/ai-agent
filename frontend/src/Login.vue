@@ -88,6 +88,40 @@
             <div v-if="fieldErrors.regUsername" class="form-error visible">{{ fieldErrors.regUsername }}</div>
           </div>
           <div class="form-group">
+            <label class="form-label" for="regEmail">邮箱</label>
+            <input
+              id="regEmail"
+              v-model.trim="registerForm.email"
+              class="form-input"
+              :class="{ error: fieldErrors.regEmail }"
+              type="email"
+              placeholder="用于接收注册验证码"
+              autocomplete="email"
+            >
+            <div v-if="fieldErrors.regEmail" class="form-error visible">{{ fieldErrors.regEmail }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="regEmailCode">邮箱验证码</label>
+            <div class="verification-row">
+              <input
+                id="regEmailCode"
+                v-model.trim="registerForm.emailCode"
+                class="form-input verification-input"
+                :class="{ error: fieldErrors.regEmailCode }"
+                type="text"
+                inputmode="numeric"
+                maxlength="6"
+                placeholder="6 位验证码"
+                autocomplete="one-time-code"
+              >
+              <button class="code-btn" type="button" :disabled="!canSendCode || codeSending || codeCountdown > 0" @click="sendCode">
+                <span v-if="codeSending" class="spinner code-spinner"></span>
+                {{ codeButtonText }}
+              </button>
+            </div>
+            <div v-if="fieldErrors.regEmailCode" class="form-error visible">{{ fieldErrors.regEmailCode }}</div>
+          </div>
+          <div class="form-group">
             <label class="form-label" for="regPassword">密码</label>
             <input
               id="regPassword"
@@ -124,8 +158,8 @@
 
 <script setup>
 // P3-16：合并 LoginPage.js 逻辑，移除外部 script 引用
-import { defineComponent, h, onMounted, reactive, ref } from 'vue';
-import { getToken, login, register } from './services/api.js';
+import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { getToken, login, register, sendEmailCode } from './services/api.js';
 
 const LogoMark = defineComponent({
   setup: () => () => h('svg', { viewBox: '0 0 32 32', fill: 'currentColor' }, [
@@ -145,10 +179,24 @@ const loading     = ref(false);
 const globalError = ref('');
 const fieldErrors = reactive({});
 const loginForm   = reactive({ username: '', password: '' });
-const registerForm = reactive({ username: '', password: '', confirm: '' });
+const registerForm = reactive({ username: '', email: '', emailCode: '', password: '', confirm: '' });
+const codeSending = ref(false);
+const codeCountdown = ref(0);
+let codeTimer = null;
+
+const canSendCode = computed(() => isValidEmail(registerForm.email));
+const codeButtonText = computed(() => {
+  if (codeSending.value) return '发送中';
+  if (codeCountdown.value > 0) return `${codeCountdown.value}s`;
+  return '发送验证码';
+});
 
 onMounted(() => {
   if (getToken()) location.replace('/index.html');
+});
+
+onUnmounted(() => {
+  if (codeTimer) clearInterval(codeTimer);
 });
 
 function switchTab(tab) {
@@ -175,12 +223,35 @@ async function submitRegister() {
   if (!validateRegister()) return;
   loading.value = true;
   try {
-    await register({ username: registerForm.username, password: registerForm.password });
+    await register({
+      username: registerForm.username,
+      password: registerForm.password,
+      email: registerForm.email,
+      emailCode: registerForm.emailCode,
+    });
     location.replace('/index.html');
   } catch (error) {
     globalError.value = error.message || '注册失败，用户名可能已存在';
   } finally {
     loading.value = false;
+  }
+}
+
+async function sendCode() {
+  globalError.value = '';
+  delete fieldErrors.regEmail;
+  if (!isValidEmail(registerForm.email)) {
+    fieldErrors.regEmail = '请输入正确的邮箱地址';
+    return;
+  }
+  codeSending.value = true;
+  try {
+    await sendEmailCode(registerForm.email);
+    startCodeCountdown();
+  } catch (error) {
+    globalError.value = error.message || '验证码发送失败，请稍后重试';
+  } finally {
+    codeSending.value = false;
   }
 }
 
@@ -191,8 +262,14 @@ function validateLogin() {
 }
 
 function validateRegister() {
-  if (!registerForm.username || !/^[a-zA-Z0-9]{4,32}$/.test(registerForm.username)) {
-    fieldErrors.regUsername = '用户名需为 4-32 位字母或数字';
+  if (!registerForm.username || !/^[a-zA-Z0-9_-]{3,32}$/.test(registerForm.username)) {
+    fieldErrors.regUsername = '用户名需为 3-32 位字母、数字、下划线或连字符';
+  }
+  if (!isValidEmail(registerForm.email)) {
+    fieldErrors.regEmail = '请输入正确的邮箱地址';
+  }
+  if (!/^\d{6}$/.test(registerForm.emailCode || '')) {
+    fieldErrors.regEmailCode = '请输入 6 位邮箱验证码';
   }
   if (!registerForm.password || registerForm.password.length < 6) {
     fieldErrors.regPassword = '密码不能少于 6 位';
@@ -206,6 +283,23 @@ function validateRegister() {
 function clearErrors() {
   globalError.value = '';
   Object.keys(fieldErrors).forEach(k => delete fieldErrors[k]);
+}
+
+function isValidEmail(email) {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email || '');
+}
+
+function startCodeCountdown() {
+  if (codeTimer) clearInterval(codeTimer);
+  codeCountdown.value = 60;
+  codeTimer = setInterval(() => {
+    codeCountdown.value -= 1;
+    if (codeCountdown.value <= 0) {
+      clearInterval(codeTimer);
+      codeTimer = null;
+      codeCountdown.value = 0;
+    }
+  }, 1000);
 }
 </script>
 

@@ -12,6 +12,11 @@ export async function register(payload) {
   return data;
 }
 
+export async function sendEmailCode(email) {
+  const { data } = await http.post('/api/v1/auth/email-code', { email });
+  return data;
+}
+
 export async function searchUsers(keyword) {
   if (!keyword?.trim()) return [];
   const { data } = await http.get('/api/v1/auth/users/search', { params: { keyword: keyword.trim() } });

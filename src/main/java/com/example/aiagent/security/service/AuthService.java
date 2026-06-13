@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 /**
@@ -34,6 +35,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final OrganizationService organizationService;
+    private final EmailVerificationService emailVerificationService;
 
     /**
      * 用户登录
@@ -69,6 +71,11 @@ public class AuthService {
         if (sysUserMapper.existsByUsername(request.username())) {
             throw new IllegalArgumentException("用户名已存在：" + request.username());
         }
+        String normalizedEmail = request.email().strip().toLowerCase(Locale.ROOT);
+        if (sysUserMapper.existsByEmail(normalizedEmail)) {
+            throw new IllegalArgumentException("邮箱已被注册：" + normalizedEmail);
+        }
+        emailVerificationService.verifyRegisterCode(normalizedEmail, request.emailCode());
 
         String userId = UUID.randomUUID().toString().replace("-", "");
 
@@ -82,6 +89,7 @@ public class AuthService {
                 .roles("ROLE_USER")
                 .enabled(1)
                 .defaultOrgId(personalOrg.getOrgId())
+                .email(normalizedEmail)
                 .build();
 
         sysUserMapper.insert(user);
@@ -93,6 +101,10 @@ public class AuthService {
 
         return AuthResponse.of(token, jwtService.getExpirationSeconds(),
                 userId, request.username(), roles);
+    }
+
+    public void sendRegisterEmailCode(String email) {
+        emailVerificationService.sendRegisterCode(email);
     }
 
     /**
