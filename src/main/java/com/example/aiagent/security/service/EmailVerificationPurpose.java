@@ -5,8 +5,7 @@ package com.example.aiagent.security.service;
  */
 public enum EmailVerificationPurpose {
     REGISTER("注册账号"),
-    RESET_PASSWORD("重置密码"),
-    CHANGE_PASSWORD("修改密码");
+    RESET_PASSWORD("重置密码");
 
     private final String displayName;
 

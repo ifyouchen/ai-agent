@@ -118,8 +118,6 @@ public class AuthService {
             emailVerificationService.sendRegisterCode(email);
         } else if ("reset_password".equals(p)) {
             emailVerificationService.sendResetPasswordCode(email);
-        } else if ("change_password".equals(p)) {
-            emailVerificationService.sendChangePasswordCode(email);
         } else {
             emailVerificationService.sendRegisterCode(email);
         }
@@ -171,19 +169,12 @@ public class AuthService {
      *
      * @param userId      当前用户 ID
      * @param newPassword 新密码（明文，将被 BCrypt 加密）
-     * @param emailCode   邮箱验证码
-     * @throws IllegalArgumentException 验证码错误或新密码不符合规则
+     * @throws IllegalArgumentException 新密码不符合规则
      */
     @Transactional
-    public void changePassword(String userId, String newPassword, String emailCode) {
+    public void changePassword(String userId, String newPassword) {
         SysUser user = sysUserMapper.findByUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
-
-        if (user.getEmail() == null || user.getEmail().isBlank()) {
-            throw new IllegalArgumentException("当前账号未绑定邮箱，无法通过邮箱验证修改密码");
-        }
-
-        emailVerificationService.verifyChangePasswordCode(user.getEmail(), emailCode);
 
         if (newPassword == null || newPassword.length() < 6) {
             throw new IllegalArgumentException("新密码长度不能少于 6 位");

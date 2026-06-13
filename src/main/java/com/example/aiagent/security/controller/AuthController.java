@@ -81,7 +81,7 @@ public class AuthController {
     /**
      * 发送邮箱验证码。
      *
-     * <p>purpose 支持 register（默认）、reset_password、change_password。
+     * <p>purpose 支持 register（默认）、reset_password。
      */
     @PostMapping("/email-code")
     public ResponseEntity<?> sendEmailCode(@Valid @RequestBody EmailCodeRequest request) {
@@ -212,7 +212,7 @@ public class AuthController {
     /**
      * 修改密码
      * PUT /api/v1/auth/profile/password
-     * Body: {"newPassword": "...", "emailCode": "123456"}
+     * Body: {"newPassword": "..."}
      */
     @PutMapping("/profile/password")
     public ResponseEntity<?> changePassword(
@@ -220,16 +220,15 @@ public class AuthController {
             @RequestBody Map<String, String> request) {
 
         String newPwd = request.get("newPassword");
-        String emailCode = request.get("emailCode");
 
-        if (newPwd == null || emailCode == null) {
+        if (newPwd == null) {
             log.warn("[AUTH] 修改密码失败 userId={} reason=参数缺失", userId);
-            return ResponseEntity.badRequest().body(Map.of("error", "新密码和邮箱验证码不能为空"));
+            return ResponseEntity.badRequest().body(Map.of("error", "新密码不能为空"));
         }
 
         log.info("[AUTH] 修改密码 userId={}", userId);
         try {
-            authService.changePassword(userId, newPwd, emailCode);
+            authService.changePassword(userId, newPwd);
             log.info("[AUTH] 修改密码成功 userId={}", userId);
             return ResponseEntity.ok(Map.of("message", "密码修改成功，请重新登录"));
         } catch (IllegalArgumentException e) {

@@ -237,45 +237,6 @@
   color: var(--text-light);
 }
 
-.verification-row {
-  display: flex;
-  gap: 10px;
-  align-items: stretch;
-}
-
-.verification-input {
-  flex: 1;
-  min-width: 0;
-}
-
-.code-btn {
-  min-width: 108px;
-  padding: 0 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--primary-light);
-  color: var(--primary);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background .15s, border-color .15s, color .15s;
-  font-family: inherit;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-.code-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--primary) 12%, transparent);
-  border-color: var(--primary);
-}
-.code-btn:disabled {
-  color: var(--text-light);
-  background: var(--surface-soft, #f8fafc);
-  border-color: var(--border-light);
-  cursor: not-allowed;
-}
-
 .profile-input::placeholder {
   color: var(--text-light);
 }

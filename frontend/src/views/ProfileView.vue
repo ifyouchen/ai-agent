@@ -79,30 +79,6 @@
         <div v-if="pwdVisible" class="password-section">
           <div class="profile-form">
             <label class="profile-field">
-              <span class="profile-label">邮箱验证码</span>
-              <div class="verification-row">
-                <input
-                  v-model.trim="pwd.emailCode"
-                  type="text"
-                  class="profile-input verification-input"
-                  inputmode="numeric"
-                  maxlength="6"
-                  placeholder="6 位验证码"
-                />
-                <button
-                  class="code-btn"
-                  type="button"
-                  :disabled="!canSendCode || codeSending || codeCountdown > 0"
-                  @click="sendChangePasswordCode"
-                >
-                  <svg v-if="codeSending" class="inline-spinner" viewBox="0 0 24 24" fill="none" width="14" height="14">
-                    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
-                  </svg>
-                  {{ codeButtonText }}
-                </button>
-              </div>
-            </label>
-            <label class="profile-field">
               <span class="profile-label">新密码</span>
               <input v-model="pwd.new" type="password" class="profile-input" placeholder="至少 6 位" />
             </label>
@@ -121,7 +97,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, onUnmounted } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import Avatar from '../components/ui/Avatar.vue';
 import { useAuthStore } from '../stores/auth.js';
 import { useUiStore } from '../stores/ui.js';
@@ -134,18 +110,9 @@ const form    = reactive({ nickname: '' });
 const saving  = ref(false);
 const pwdVisible = ref(false);
 const pwdSaving  = ref(false);
-const pwd = reactive({ new: '', confirm: '', emailCode: '' });
-const codeSending = ref(false);
-const codeCountdown = ref(0);
-let codeTimer = null;
+const pwd = reactive({ new: '', confirm: '' });
 
-const canSendCode = computed(() => isValidEmail(auth.user?.email));
 const emailDisplay = computed(() => auth.user?.email || '未绑定邮箱');
-const codeButtonText = computed(() => {
-  if (codeSending.value) return '发送中';
-  if (codeCountdown.value > 0) return `${codeCountdown.value}s`;
-  return '发送验证码';
-});
 
 const rolesLabel = computed(() => {
   const roles = auth.user?.roles || [];
@@ -172,12 +139,11 @@ async function saveProfile() {
 
 async function changePassword() {
   if (!pwd.new) { ui.showToast('warning', '请填写新密码'); return; }
-  if (!/^\d{6}$/.test(pwd.emailCode || '')) { ui.showToast('warning', '请输入 6 位邮箱验证码'); return; }
   if (pwd.new !== pwd.confirm) { ui.showToast('warning', '两次输入的新密码不一致'); return; }
   if (pwd.new.length < 6) { ui.showToast('warning', '新密码长度不能少于 6 位'); return; }
   pwdSaving.value = true;
   try {
-    await api.changePassword(pwd.new, pwd.emailCode);
+    await api.changePassword(pwd.new);
     ui.showToast('success', '密码修改成功，请重新登录');
     setTimeout(() => auth.logout(), 1500);
   } catch (err) {
@@ -186,44 +152,6 @@ async function changePassword() {
     pwdSaving.value = false;
   }
 }
-
-async function sendChangePasswordCode() {
-  if (!isValidEmail(auth.user?.email)) {
-    ui.showToast('warning', '当前账号未绑定有效邮箱');
-    return;
-  }
-  codeSending.value = true;
-  try {
-    await api.sendEmailCode(auth.user.email, 'change_password');
-    startCodeCountdown();
-    ui.showToast('success', '验证码已发送');
-  } catch (err) {
-    ui.showToast('error', err.message || '验证码发送失败');
-  } finally {
-    codeSending.value = false;
-  }
-}
-
-function startCodeCountdown() {
-  if (codeTimer) clearInterval(codeTimer);
-  codeCountdown.value = 60;
-  codeTimer = setInterval(() => {
-    codeCountdown.value -= 1;
-    if (codeCountdown.value <= 0) {
-      clearInterval(codeTimer);
-      codeTimer = null;
-      codeCountdown.value = 0;
-    }
-  }, 1000);
-}
-
-function isValidEmail(email) {
-  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email || '');
-}
-
-onUnmounted(() => {
-  if (codeTimer) clearInterval(codeTimer);
-});
 </script>
 
 <style scoped>

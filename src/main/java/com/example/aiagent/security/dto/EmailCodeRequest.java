@@ -7,14 +7,14 @@ import jakarta.validation.constraints.Pattern;
 /**
  * 邮箱验证码请求 DTO。
  *
- * <p>purpose 支持 register（默认）、reset_password、change_password。
+ * <p>purpose 支持 register（默认）、reset_password。
  */
 public record EmailCodeRequest(
         @NotBlank(message = "邮箱不能为空")
         @Email(message = "邮箱格式不正确")
         String email,
 
-        @Pattern(regexp = "^(register|reset_password|change_password)$",
-                message = "purpose 必须是 register、reset_password 或 change_password")
+        @Pattern(regexp = "^(register|reset_password)$",
+                message = "purpose 必须是 register 或 reset_password")
         String purpose
 ) {}

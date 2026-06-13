@@ -60,21 +60,12 @@ public class EmailVerificationService {
         sendCode(email, EmailVerificationPurpose.RESET_PASSWORD);
     }
 
-    @Transactional
-    public void sendChangePasswordCode(String email) {
-        sendCode(email, EmailVerificationPurpose.CHANGE_PASSWORD);
-    }
-
     public void verifyRegisterCode(String email, String code) {
         verifyCode(email, code, EmailVerificationPurpose.REGISTER);
     }
 
     public void verifyResetPasswordCode(String email, String code) {
         verifyCode(email, code, EmailVerificationPurpose.RESET_PASSWORD);
-    }
-
-    public void verifyChangePasswordCode(String email, String code) {
-        verifyCode(email, code, EmailVerificationPurpose.CHANGE_PASSWORD);
     }
 
     // ─────────────── 核心实现 ───────────────
