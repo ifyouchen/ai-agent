@@ -232,12 +232,19 @@ public class ReActChatController {
      * GET /api/v1/chat/react/stream?sessionId=user-123&message=...&token=&lt;jwt&gt;
      *
      * SSE 事件类型：
-     *   status      - 当前阶段提示 JSON：{message}
-     *   step        - 每步推理（工具调用）JSON：{iteration, thought, toolName, toolArgs, observation}
-     *   answer      - 最终答案 JSON：{answer, iterations, durationMs}
-     *   react-error - 业务错误 JSON：{message, code}
-     *   error       - 兼容旧前端的错误文本
-     *   done        - 结束标识
+     *   status          - 当前阶段提示 JSON：{message}
+     *   reasoning-start - 可见推理摘要开始 JSON：{iteration}
+     *   reasoning-token - 可见推理摘要 token JSON：{iteration, token}
+     *   reasoning-done  - 可见推理摘要完成 JSON：{iteration, text}
+     *   tool-call       - 工具调用 JSON：{iteration, toolName, toolArgs}
+     *   tool-result     - 工具结果 JSON：{iteration, toolName, observation}
+     *   answer-start    - 最终答案开始 JSON：{iteration}
+     *   answer-token    - 最终答案 token 文本
+     *   answer          - 最终完整答案 JSON：{answer, iterations, durationMs}
+     *   step            - 兼容旧前端的完整步骤 JSON
+     *   react-error     - 业务错误 JSON：{message, code}
+     *   error           - 兼容旧前端的错误文本
+     *   done            - 结束标识
      * </pre>
      */
     @GetMapping(value = "/react/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -321,36 +328,61 @@ public class ReActChatController {
             }
             try {
                 sendReactStatus(emitter, completed, "模型推理中");
-                ReActAgent.ReActResult result = reActAgent.executeWithCallback(
+                ReActAgent.ReActResult result = reActAgent.executeStreamingWithCallback(
                         sanitizedMessage, sessionId, model,
                         ragContext != null ? ragContext.tenantId() : null,
                         ragContext != null ? ragContext.kbId() : null,
-                        (step, isFinal) -> {
-                            try {
-                                if (isFinal) {
-                                    // 最终答案通过 answer 事件推送
-                                    long dur = System.currentTimeMillis() - startMs;
-                                    String answerJson = MAPPER.writeValueAsString(Map.of(
-                                            "answer", step.thought() != null ? step.thought() : "",
-                                            "iterations", step.iteration(),
-                                            "durationMs", dur
-                                    ));
-                                    sendSseEvent(emitter, completed, "answer", answerJson);
-                                } else {
-                                    // 推理步骤通过 step 事件推送
-                                    String stepJson = MAPPER.writeValueAsString(Map.of(
-                                            "iteration",   step.iteration(),
-                                            "thought",     step.thought()      != null ? step.thought()      : "",
-                                            "toolName",    step.toolName()     != null ? step.toolName()     : "",
-                                            "toolArgs",    step.toolArgs()     != null ? step.toolArgs()     : "",
-                                            "observation", step.observation()  != null ? step.observation()  : ""
-                                    ));
-                                    sendSseEvent(emitter, completed, "step", stepJson);
-                                }
-                            } catch (IOException e) {
-                                // 客户端断开，静默关闭，不用 completeWithError
-                                log.debug("[ReAct-Stream] SSE 推送失败，客户端可能已断开: {}", e.getMessage());
-                                completeOnce(emitter, completed);
+                        new ReActAgent.ReActStreamCallback() {
+                            @Override
+                            public void onReasoningStart(int iteration) {
+                                sendReactJsonEvent(emitter, completed, "reasoning-start",
+                                        Map.of("iteration", iteration));
+                            }
+
+                            @Override
+                            public void onReasoningToken(int iteration, String token) {
+                                sendReactJsonEvent(emitter, completed, "reasoning-token", Map.of(
+                                        "iteration", iteration,
+                                        "token", token != null ? token : ""
+                                ));
+                            }
+
+                            @Override
+                            public void onReasoningDone(int iteration, String text) {
+                                sendReactJsonEvent(emitter, completed, "reasoning-done", Map.of(
+                                        "iteration", iteration,
+                                        "text", text != null ? text : ""
+                                ));
+                            }
+
+                            @Override
+                            public void onToolCall(ReActAgent.ReActStep step) {
+                                sendReactJsonEvent(emitter, completed, "tool-call", Map.of(
+                                        "iteration", step.iteration(),
+                                        "toolName", step.toolName() != null ? step.toolName() : "",
+                                        "toolArgs", step.toolArgs() != null ? step.toolArgs() : ""
+                                ));
+                            }
+
+                            @Override
+                            public void onToolResult(ReActAgent.ReActStep step) {
+                                sendReactJsonEvent(emitter, completed, "tool-result", Map.of(
+                                        "iteration", step.iteration(),
+                                        "toolName", step.toolName() != null ? step.toolName() : "",
+                                        "observation", step.observation() != null ? step.observation() : ""
+                                ));
+                                sendLegacyStepEvent(emitter, completed, step);
+                            }
+
+                            @Override
+                            public void onAnswerStart(int iteration) {
+                                sendReactJsonEvent(emitter, completed, "answer-start",
+                                        Map.of("iteration", iteration));
+                            }
+
+                            @Override
+                            public void onAnswerToken(String token) {
+                                sendSseEvent(emitter, completed, "answer-token", token != null ? token : "");
                             }
                         });
 
@@ -367,6 +399,11 @@ public class ReActChatController {
                             MAPPER.writeValueAsString(Map.of("answer", outputCheck.filteredContent())));
                 }
                 String aiText = outputCheck.filteredContent();
+                sendReactJsonEvent(emitter, completed, "answer", Map.of(
+                        "answer", aiText,
+                        "iterations", result.iterations(),
+                        "durationMs", result.durationMs()
+                ));
                 reActAgent.rememberExchange(sessionId, sanitizedMessage, aiText);
                 chatHistoryService.saveSession(sessionId, userId,
                         sanitizedMessage.substring(0, Math.min(sanitizedMessage.length(), 20)), kbId);
@@ -413,6 +450,26 @@ public class ReActChatController {
             log.debug("[ReAct-Stream] status 序列化失败: {}", e.getMessage());
             completeOnce(emitter, completed);
         }
+    }
+
+    private void sendReactJsonEvent(SseEmitter emitter, AtomicBoolean completed,
+                                    String eventName, Map<String, ?> payload) {
+        try {
+            sendSseEvent(emitter, completed, eventName, MAPPER.writeValueAsString(payload));
+        } catch (IOException e) {
+            log.debug("[ReAct-Stream] {} 序列化失败: {}", eventName, e.getMessage());
+            completeOnce(emitter, completed);
+        }
+    }
+
+    private void sendLegacyStepEvent(SseEmitter emitter, AtomicBoolean completed, ReActAgent.ReActStep step) {
+        sendReactJsonEvent(emitter, completed, "step", Map.of(
+                "iteration", step.iteration(),
+                "thought", step.thought() != null ? step.thought() : "",
+                "toolName", step.toolName() != null ? step.toolName() : "",
+                "toolArgs", step.toolArgs() != null ? step.toolArgs() : "",
+                "observation", step.observation() != null ? step.observation() : ""
+        ));
     }
 
     private void sendReactErrorAndComplete(SseEmitter emitter, AtomicBoolean completed, String message) {

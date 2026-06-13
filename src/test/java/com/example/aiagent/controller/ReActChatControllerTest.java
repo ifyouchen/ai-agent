@@ -30,6 +30,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
@@ -75,13 +76,13 @@ class ReActChatControllerTest {
     void reactStreamSendsReactErrorWhenAgentThrows() throws Exception {
         stubPreflight();
         when(chatRagContextService.resolve(USER_ID, null, null)).thenReturn(null);
-        when(reActAgent.executeWithCallback(
+        when(reActAgent.executeStreamingWithCallback(
                 eq("hello"),
                 eq("sess-1"),
                 eq("deepseek-v4-pro"),
                 isNull(String.class),
                 isNull(Long.class),
-                any(ReActAgent.StepCallback.class)))
+                any(ReActAgent.ReActStreamCallback.class)))
                 .thenThrow(new RuntimeException("""
                         {"error":{"code":"account_overdue","message":"Access denied due to overdue account"}}
                         """));
@@ -124,6 +125,47 @@ class ReActChatControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("event:react-error")))
                 .andExpect(content().string(containsString("\"code\":\"kb_forbidden\"")));
+    }
+
+    @Test
+    @DisplayName("ReAct 流式推理会发送推理、工具和答案 token 事件")
+    void reactStreamSendsTokenLevelEvents() throws Exception {
+        stubPreflight();
+        when(chatRagContextService.resolve(USER_ID, null, null)).thenReturn(null);
+        when(outputContentFilter.filter("最终答案"))
+                .thenReturn(new OutputContentFilter.FilterResult("最终答案", java.util.List.of(), false));
+
+        doAnswer(invocation -> {
+            ReActAgent.ReActStreamCallback callback = invocation.getArgument(5);
+            callback.onReasoningStart(1);
+            callback.onReasoningToken(1, "需要");
+            callback.onReasoningDone(1, "需要查工具");
+            ReActAgent.ReActStep step = new ReActAgent.ReActStep(
+                    1, "需要查工具", "listKbDocuments", "{}", "文档列表");
+            callback.onToolCall(step);
+            callback.onToolResult(step);
+            callback.onAnswerStart(1);
+            callback.onAnswerToken("最终");
+            callback.onAnswerToken("答案");
+            return new ReActAgent.ReActResult("最终答案", java.util.List.of(step), 1, 123);
+        }).when(reActAgent).executeStreamingWithCallback(
+                eq("hello"),
+                eq("sess-1"),
+                eq("deepseek-v4-pro"),
+                isNull(String.class),
+                isNull(Long.class),
+                any(ReActAgent.ReActStreamCallback.class));
+
+        MvcResult result = performReactStream();
+
+        mockMvc.perform(asyncDispatch(result))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("event:reasoning-token")))
+                .andExpect(content().string(containsString("event:tool-call")))
+                .andExpect(content().string(containsString("event:tool-result")))
+                .andExpect(content().string(containsString("event:answer-token")))
+                .andExpect(content().string(containsString("event:answer")))
+                .andExpect(content().string(containsString("event:done")));
     }
 
     private MockMvc buildMockMvc(Executor executor) {

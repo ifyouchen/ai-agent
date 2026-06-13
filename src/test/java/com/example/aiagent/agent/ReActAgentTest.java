@@ -8,7 +8,9 @@ import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.StreamingResponseHandler;
 import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.output.Response;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,6 +28,8 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,6 +38,9 @@ class ReActAgentTest {
 
     @Mock
     ChatLanguageModel chatModel;
+
+    @Mock
+    StreamingChatLanguageModel streamingChatModel;
 
     @Mock
     BusinessTools businessTools;
@@ -53,6 +60,7 @@ class ReActAgentTest {
     void setUp() {
         reActAgent = new ReActAgent(
                 chatModel,
+                streamingChatModel,
                 businessTools,
                 hybridRagPipeline,
                 deepSeekModelFactory,
@@ -144,6 +152,53 @@ class ReActAgentTest {
         assertThat(result.answer()).isEqualTo("最终答案");
         assertThat(finalSteps).hasSize(1);
         assertThat(finalSteps.getFirst().thought()).isEqualTo("最终答案");
+    }
+
+    @Test
+    @DisplayName("全链路 ReAct 流式执行会推送推理 token 和答案 token")
+    void executeStreamingWithCallbackPushesReasoningAndAnswerTokens() {
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            StreamingResponseHandler<AiMessage> handler = invocation.getArgument(2);
+            handler.onNext("需要");
+            handler.onNext("分析");
+            handler.onComplete(Response.from(AiMessage.from("需要分析")));
+            return null;
+        }).when(streamingChatModel).generate(anyList(), anyList(), any(StreamingResponseHandler.class));
+
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            StreamingResponseHandler<AiMessage> handler = invocation.getArgument(1);
+            handler.onNext("最终");
+            handler.onNext("答案");
+            handler.onComplete(Response.from(AiMessage.from("最终答案")));
+            return null;
+        }).when(streamingChatModel).generate(anyList(), any(StreamingResponseHandler.class));
+
+        List<String> reasoningTokens = new java.util.ArrayList<>();
+        List<String> answerTokens = new java.util.ArrayList<>();
+
+        ReActAgent.ReActResult result = reActAgent.executeStreamingWithCallback(
+                "问题",
+                "session-1",
+                "deepseek-v4-pro",
+                null,
+                null,
+                new ReActAgent.ReActStreamCallback() {
+                    @Override
+                    public void onReasoningToken(int iteration, String token) {
+                        reasoningTokens.add(token);
+                    }
+
+                    @Override
+                    public void onAnswerToken(String token) {
+                        answerTokens.add(token);
+                    }
+                });
+
+        assertThat(result.answer()).isEqualTo("最终答案");
+        assertThat(reasoningTokens).containsExactly("需要", "分析");
+        assertThat(answerTokens).containsExactly("最终", "答案");
     }
 
     @Test

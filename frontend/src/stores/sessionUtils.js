@@ -29,8 +29,10 @@ export function storageKey(userId) {
   return `ai_agent_sessions_${userId}`;
 }
 
-export function renderReactBubble(steps, answer, durationMs) {
+export function renderReactBubble(steps, answer, durationMs, answerStreaming = false) {
   const secs = durationMs ? Math.max(1, Math.round(durationMs / 1000)) : '';
+  const hasAnswer = answer !== null && typeof answer !== 'undefined';
+  const answerText = hasAnswer ? String(answer) : '';
   const stepsHtml = (steps || []).map(step => `
     <div class="react-step">
       <div class="react-step-label">第 ${step.iteration} 步${step.toolName ? ` · ${escapeHtml(step.toolName)}` : ''}</div>
@@ -38,17 +40,19 @@ export function renderReactBubble(steps, answer, durationMs) {
       ${step.toolName ? `<div class="react-tool"><span>工具调用</span>${escapeHtml(step.toolName)}(${escapeHtml(step.toolArgs || '')})</div>` : ''}
       ${step.observation ? `<div class="react-obs"><span>观察结果</span>${escapeHtml(trimText(step.observation, 260))}</div>` : ''}
     </div>`).join('');
-  const label = answer
+  const label = hasAnswer
     ? `已思考${secs ? `（用时 ${secs} 秒）` : ''}`
     : `思考中${steps?.length ? `（已完成 ${steps.length} 步）` : ''}…`;
-  const stepsBlock = (steps?.length || !answer) ? `
-    <details class="react-steps-container"${answer ? '' : ' open'}>
+  const stepsBlock = (steps?.length || !hasAnswer) ? `
+    <details class="react-steps-container"${hasAnswer ? '' : ' open'}>
       <summary class="react-steps-summary">
         <span class="react-steps-title">${label}</span>
         ${steps?.length ? `<span class="react-steps-count">${steps.length} 步</span>` : ''}
       </summary>
-      <div class="react-steps">${stepsHtml}${!answer ? '<div class="react-step react-step-pending"><span class="typing-dots">●●●</span></div>' : ''}</div>
+      <div class="react-steps">${stepsHtml}${!hasAnswer ? '<div class="react-step react-step-pending"><span class="typing-dots">●●●</span></div>' : ''}</div>
     </details>` : '';
-  const answerBlock = answer ? `<div class="react-answer">${formatMarkdown(answer)}</div>` : '';
+  const answerBlock = hasAnswer
+    ? `<div class="react-answer">${answerText ? formatMarkdown(answerText) : ''}${answerStreaming ? '<span class="typing-cursor"></span>' : ''}</div>`
+    : '';
   return stepsBlock + answerBlock;
 }

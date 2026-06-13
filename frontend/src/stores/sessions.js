@@ -606,8 +606,18 @@ async function doStreamChat(reqId, text, kbId) {
     rt.eventSource = es;
     let lastEventAt = Date.now();
     let receivedAnswer = false;
+    let answerStreaming = false;
+    let answerText = '';
     let finished = false;
     let watchdogId = null;
+    let rafPending = false;
+    let rafId = null;
+    let pendingDurationMs = null;
+    let pendingForceAnswer = false;
+
+    function isActive() {
+      return rt.eventSource === es && rt.requestId === rid && !rt.cancelled;
+    }
 
     function touchEvent(status = null) {
       lastEventAt = Date.now();
@@ -615,16 +625,87 @@ async function doStreamChat(reqId, text, kbId) {
     }
 
     function setWaitingStatus(status = currentStatus) {
-      if (receivedAnswer || rt.reactSteps?.length) return;
+      if (receivedAnswer || answerStreaming || answerText || rt.reactSteps?.length) return;
       bubble.html = renderReactThinking(status, startMs);
     }
 
+    function scrollToBottom() {
+      nextTick(() => {
+        const el = document.querySelector('.chat-messages');
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    }
+
+    function cancelPendingRender() {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = null;
+      rafPending = false;
+      pendingDurationMs = null;
+      pendingForceAnswer = false;
+    }
+
+    function renderProgress(durationMs = Date.now() - startMs, forceAnswer = false) {
+      if (!isActive()) return;
+      const visibleAnswer = (answerStreaming || answerText || forceAnswer) ? answerText : null;
+      bubble.html = renderReactBubble(
+        rt.reactSteps,
+        visibleAnswer,
+        durationMs,
+        answerStreaming && !receivedAnswer
+      );
+      scrollToBottom();
+    }
+
+    function scheduleRender(durationMs = Date.now() - startMs, forceAnswer = false) {
+      pendingDurationMs = durationMs;
+      pendingForceAnswer = pendingForceAnswer || forceAnswer;
+      if (rafPending) return;
+      rafPending = true;
+      rafId = requestAnimationFrame(() => {
+        rafPending = false;
+        rafId = null;
+        const nextDurationMs = pendingDurationMs ?? Date.now() - startMs;
+        const nextForceAnswer = pendingForceAnswer;
+        pendingDurationMs = null;
+        pendingForceAnswer = false;
+        renderProgress(nextDurationMs, nextForceAnswer);
+      });
+    }
+
+    function ensureReactStep(iteration) {
+      const stepNo = Number(iteration) || (rt.reactSteps.length + 1);
+      let step = rt.reactSteps.find(item => Number(item.iteration) === stepNo);
+      if (!step) {
+        step = { iteration: stepNo, thought: '', toolName: '', toolArgs: '', observation: '' };
+        rt.reactSteps.push(step);
+        rt.reactSteps.sort((a, b) => Number(a.iteration) - Number(b.iteration));
+      }
+      return step;
+    }
+
+    function mergeReactStep(data) {
+      const step = ensureReactStep(data.iteration);
+      if (Object.prototype.hasOwnProperty.call(data, 'thought')) step.thought = String(data.thought || '');
+      if (Object.prototype.hasOwnProperty.call(data, 'toolName')) step.toolName = String(data.toolName || '');
+      if (Object.prototype.hasOwnProperty.call(data, 'toolArgs')) step.toolArgs = String(data.toolArgs || '');
+      if (Object.prototype.hasOwnProperty.call(data, 'observation')) step.observation = String(data.observation || '');
+      return step;
+    }
+
+    function renderReactError(message) {
+      cancelPendingRender();
+      const progress = (rt.reactSteps?.length || answerText)
+        ? renderReactBubble(rt.reactSteps, answerText || '', Date.now() - startMs, false)
+        : '';
+      bubble.html = `${progress}<div class="react-answer"><span class="error-msg">${escapeHtml(message)}</span></div>`;
+      bubble.durationMs = Date.now() - startMs;
+    }
+
     function failReact(raw, fallback, toastMessage = '深度推理失败，请重试') {
-      if (finished || rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
+      if (finished || !isActive()) return;
       const msg = mapReactErrorMessage(raw, fallback);
       es.close();
-      bubble.html = `<span class="error-msg">${escapeHtml(msg)}</span>`;
-      bubble.durationMs = Date.now() - startMs;
+      renderReactError(msg);
       ui.showToast('error', toastMessage);
       finishReact();
     }
@@ -646,70 +727,133 @@ async function doStreamChat(reqId, text, kbId) {
     }, REACT_WAITING_UPDATE_MS);
 
     es.addEventListener('status', ev => {
-      if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
+      if (!isActive()) return;
       const data = parseReactPayload(ev.data);
       touchEvent(data.message || '思考中…');
       setWaitingStatus(currentStatus);
     });
+    es.addEventListener('reasoning-start', ev => {
+      if (!isActive()) return;
+      const data = parseReactPayload(ev.data);
+      touchEvent();
+      ensureReactStep(data.iteration);
+      scheduleRender();
+    });
+    es.addEventListener('reasoning-token', ev => {
+      if (!isActive()) return;
+      const data = parseReactPayload(ev.data);
+      touchEvent();
+      const step = ensureReactStep(data.iteration);
+      step.thought = `${step.thought || ''}${data.token || ''}`;
+      scheduleRender();
+    });
+    es.addEventListener('reasoning-done', ev => {
+      if (!isActive()) return;
+      const data = parseReactPayload(ev.data);
+      touchEvent();
+      const step = ensureReactStep(data.iteration);
+      if (Object.prototype.hasOwnProperty.call(data, 'text')) {
+        step.thought = String(data.text || '');
+      }
+      scheduleRender();
+    });
+    es.addEventListener('tool-call', ev => {
+      if (!isActive()) return;
+      const data = parseReactPayload(ev.data);
+      touchEvent();
+      const step = ensureReactStep(data.iteration);
+      step.toolName = String(data.toolName || '');
+      step.toolArgs = String(data.toolArgs || '');
+      scheduleRender();
+    });
+    es.addEventListener('tool-result', ev => {
+      if (!isActive()) return;
+      const data = parseReactPayload(ev.data);
+      touchEvent();
+      const step = ensureReactStep(data.iteration);
+      step.toolName = String(data.toolName || step.toolName || '');
+      step.observation = String(data.observation || '');
+      scheduleRender();
+    });
     es.addEventListener('step', ev => {
-      if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
+      if (!isActive()) return;
       touchEvent();
       try {
         const step = JSON.parse(ev.data);
-        rt.reactSteps.push(step);
-        bubble.html = renderReactBubble(rt.reactSteps, null, Date.now() - startMs);
+        mergeReactStep(step);
+        scheduleRender();
       } catch {}
     });
+    es.addEventListener('answer-start', ev => {
+      if (!isActive()) return;
+      touchEvent();
+      answerStreaming = true;
+      scheduleRender(Date.now() - startMs, true);
+    });
+    es.addEventListener('answer-token', ev => {
+      if (!isActive()) return;
+      touchEvent();
+      answerStreaming = true;
+      answerText += ev.data || '';
+      rt.reactAnswer = answerText;
+      scheduleRender(Date.now() - startMs, true);
+    });
     es.addEventListener('answer', ev => {
-      if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
+      if (!isActive()) return;
       touchEvent();
       try {
         const data = JSON.parse(ev.data);
         const answer = data.answer || '';
         receivedAnswer = !!String(answer).trim();
-        rt.reactAnswer = answer;
-        bubble.html = renderReactBubble(rt.reactSteps, answer, data.durationMs);
+        answerStreaming = false;
+        answerText = answer;
+        rt.reactAnswer = answerText;
+        cancelPendingRender();
+        renderProgress(data.durationMs, true);
         bubble.durationMs = data.durationMs;
       } catch {}
     });
     es.addEventListener('replace-answer', ev => {
-      if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
+      if (!isActive()) return;
       touchEvent();
       try {
         const data = JSON.parse(ev.data);
         const answer = data.answer || '';
         receivedAnswer = !!String(answer).trim();
-        rt.reactAnswer = answer;
-        bubble.html = renderReactBubble(rt.reactSteps, answer, Date.now() - startMs);
+        answerStreaming = false;
+        answerText = answer;
+        rt.reactAnswer = answerText;
+        cancelPendingRender();
+        renderProgress(Date.now() - startMs, true);
       } catch {}
     });
     es.addEventListener('react-error', ev => {
+      if (!isActive()) return;
       touchEvent();
       failReact(ev.data, '深度推理失败，请稍后重试');
     });
     es.addEventListener('done', () => {
-      if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
+      if (!isActive()) return;
       touchEvent();
       es.close();
+      cancelPendingRender();
       if (!receivedAnswer) {
-        bubble.html = '<span class="error-msg">推理已结束但没有返回答案，请重试</span>';
-        bubble.durationMs = Date.now() - startMs;
+        renderReactError('推理已结束但没有返回答案，请重试');
         ui.showToast('error', '深度推理未返回答案');
       }
       finishReact();
     });
     es.addEventListener('error', ev => {
-      if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
+      if (!isActive()) return;
       if (typeof ev.data === 'undefined') return;
       touchEvent();
       failReact(ev.data, '深度推理失败，请稍后重试');
     });
     es.onerror = () => {
-      if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
+      if (!isActive()) return;
       es.close();
       if (!receivedAnswer) {
-        bubble.html = '<span class="error-msg">深度推理连接中断，后端可能已异常退出，请重试</span>';
-        bubble.durationMs = Date.now() - startMs;
+        renderReactError('深度推理连接中断，后端可能已异常退出，请重试');
         ui.showToast('error', '深度推理连接失败');
       }
       finishReact();
@@ -719,6 +863,7 @@ async function doStreamChat(reqId, text, kbId) {
       if (finished) return;
       finished = true;
       if (watchdogId) window.clearInterval(watchdogId);
+      cancelPendingRender();
       if (rt.requestId === rid) {
         rt.sending = false; rt.eventSource = null; rt.bubble = null;
         rt.reactSteps = null; rt.reactAnswer = null;

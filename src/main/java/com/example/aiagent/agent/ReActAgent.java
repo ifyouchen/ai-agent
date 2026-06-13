@@ -15,7 +15,9 @@ import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.StreamingResponseHandler;
 import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.output.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +28,9 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.function.Consumer;
 
 /**
  * ReAct（Reason + Act）多步推理 Agent
@@ -61,6 +66,7 @@ import java.util.Map;
 public class ReActAgent {
 
     private final ChatLanguageModel chatModel;
+    private final StreamingChatLanguageModel streamingChatModel;
     private final BusinessTools businessTools;
     private final HybridRagPipeline hybridRagPipeline;
     private final ObjectProvider<DeepSeekModelFactory> deepSeekModelFactory;
@@ -84,7 +90,7 @@ public class ReActAgent {
             ## 工作模式
             对于复杂任务，你需要按以下循环思考和行动：
 
-            **Thought（思考）**：分析当前状态，决定下一步需要做什么
+            **Thought（思考摘要）**：只输出给用户可见的简短推理摘要，分析当前状态，决定下一步需要做什么；不要展开完整隐式思维链
             **Action（行动）**：调用合适的工具获取信息
             **Observation（观察）**：分析工具返回的结果
 
@@ -104,6 +110,22 @@ public class ReActAgent {
             ## 会话上下文
             如果用户使用"再详细点"、"你再好好回复下"、"它/这个/上面"等承接表达，
             必须结合当前会话历史理解指代，不要声称自己没有上一轮对话记忆。
+            """;
+
+    private static final String FINAL_ANSWER_PROMPT = """
+            请基于以上会话、知识库片段、推理摘要和工具观察，直接生成面向用户的最终答案。
+            要求：
+            - 不要继续调用工具。
+            - 不要输出 Thought/Action/Observation 标签。
+            - 如果知识库片段不足以支持回答，请明确说明当前知识库未找到相关信息。
+            """;
+
+    private static final String STREAMING_REACT_PROTOCOL_PROMPT = """
+            当前使用流式 ReAct 协议：
+            - 每轮只输出 1-3 句给用户可见的推理摘要，并通过工具调用表达需要的行动。
+            - 不要输出完整隐式思维链。
+            - 不要在推理轮输出最终答案；若信息已足够，只说明“信息已足够，可以生成最终答案”，然后停止工具调用。
+            - 最终答案由后续 answer 阶段单独生成。
             """;
 
     /**
@@ -361,9 +383,164 @@ public class ReActAgent {
         return new ReActResult(finalAnswer, steps, iteration, durationMs);
     }
 
+    /**
+     * 执行全链路 ReAct token 流式推理。
+     *
+     * <p>该路径把可见推理摘要、工具调用、工具结果和最终答案拆成语义化事件，
+     * 由 Controller 转换为 SSE 推送给前端。这里返回的是最终汇总结果，便于持久化和审计。
+     */
+    public ReActResult executeStreamingWithCallback(String userQuery, String sessionId, String modelName,
+                                                    String tenantId, Long kbId,
+                                                    ReActStreamCallback streamCallback) {
+        StreamingChatLanguageModel activeModel = streamingChatModel(modelName);
+        ReActStreamCallback callback = streamCallback != null ? streamCallback : new ReActStreamCallback() {};
+        log.info("[ReAct-TokenStream] 开始多步推理 sessionId={} model={} tenantId={} kbId={} query='{}'",
+                sessionId, modelName, tenantId, kbId, userQuery);
+        long startMs = System.currentTimeMillis();
+
+        List<ChatMessage> messages = buildInitialMessages(sessionId, userQuery, tenantId, kbId);
+        messages.add(1, SystemMessage.from(STREAMING_REACT_PROTOCOL_PROMPT));
+        List<ToolSpecification> toolSpecs = getToolSpecs();
+        List<ReActStep> steps = new ArrayList<>();
+
+        int iteration = 0;
+        while (iteration < MAX_ITERATIONS) {
+            iteration++;
+            int currentIteration = iteration;
+            log.debug("[ReAct-TokenStream] 第 {} 轮推理...", currentIteration);
+
+            callback.onReasoningStart(currentIteration);
+            StringBuilder reasoningBuffer = new StringBuilder();
+            Response<AiMessage> response = streamGenerate(activeModel, messages, toolSpecs, token -> {
+                reasoningBuffer.append(token);
+                callback.onReasoningToken(currentIteration, token);
+            });
+
+            AiMessage aiMessage = response != null && response.content() != null
+                    ? response.content()
+                    : AiMessage.from("");
+            messages.add(aiMessage);
+
+            String streamedReasoning = reasoningBuffer.toString();
+            String thought = !streamedReasoning.isBlank()
+                    ? streamedReasoning
+                    : aiMessage.text() != null ? aiMessage.text() : "";
+            callback.onReasoningDone(currentIteration, thought);
+
+            List<ToolExecutionRequest> toolRequests = aiMessage.toolExecutionRequests();
+            if (toolRequests == null || toolRequests.isEmpty()) {
+                log.info("[ReAct-TokenStream] 第 {} 轮无工具调用，进入最终答案生成", currentIteration);
+                break;
+            }
+
+            for (ToolExecutionRequest req : toolRequests) {
+                String toolName = req.name();
+                String toolArgs = req.arguments();
+                log.info("[ReAct-TokenStream] 第 {} 轮 → 调用工具: {} 参数: {}",
+                        currentIteration, toolName, toolArgs);
+
+                ReActStep pendingStep = new ReActStep(currentIteration, thought, toolName, toolArgs, null);
+                callback.onToolCall(pendingStep);
+
+                String toolResult;
+                try {
+                    toolResult = invokeTool(toolName, toolArgs);
+                } catch (Exception e) {
+                    toolResult = "工具调用失败：" + e.getMessage();
+                    log.warn("[ReAct-TokenStream] 工具 {} 调用失败: {}", toolName, e.getMessage());
+                }
+
+                log.info("[ReAct-TokenStream] 工具 {} 返回: {}",
+                        toolName, toolResult.length() > 200 ? toolResult.substring(0, 200) + "..." : toolResult);
+
+                messages.add(ToolExecutionResultMessage.from(req, toolResult));
+
+                ReActStep step = new ReActStep(currentIteration, thought, toolName, toolArgs, toolResult);
+                steps.add(step);
+                callback.onToolResult(step);
+            }
+        }
+
+        if (iteration >= MAX_ITERATIONS) {
+            log.warn("[ReAct-TokenStream] 达到最大迭代次数 {}，强制生成最终答案", MAX_ITERATIONS);
+        }
+
+        messages.add(UserMessage.from(FINAL_ANSWER_PROMPT));
+        int answerIteration = Math.max(iteration, 1);
+        callback.onAnswerStart(answerIteration);
+        StringBuilder answerBuffer = new StringBuilder();
+        Response<AiMessage> finalResponse = streamGenerate(activeModel, messages, null, token -> {
+            answerBuffer.append(token);
+            callback.onAnswerToken(token);
+        });
+
+        String streamedAnswer = answerBuffer.toString();
+        AiMessage finalMessage = finalResponse != null ? finalResponse.content() : null;
+        String finalAnswer = !streamedAnswer.isBlank()
+                ? streamedAnswer
+                : finalMessage != null && finalMessage.text() != null ? finalMessage.text() : "";
+
+        long durationMs = System.currentTimeMillis() - startMs;
+        log.info("[ReAct-TokenStream] 推理完成 iterations={} durationMs={}", iteration, durationMs);
+        return new ReActResult(finalAnswer, steps, iteration, durationMs);
+    }
+
+    private Response<AiMessage> streamGenerate(StreamingChatLanguageModel activeModel,
+                                               List<ChatMessage> messages,
+                                               List<ToolSpecification> toolSpecs,
+                                               Consumer<String> tokenConsumer) {
+        CompletableFuture<Response<AiMessage>> future = new CompletableFuture<>();
+        StreamingResponseHandler<AiMessage> handler = new StreamingResponseHandler<>() {
+            @Override
+            public void onNext(String token) {
+                if (token != null && !token.isEmpty()) {
+                    tokenConsumer.accept(token);
+                }
+            }
+
+            @Override
+            public void onComplete(Response<AiMessage> response) {
+                future.complete(response);
+            }
+
+            @Override
+            public void onError(Throwable error) {
+                future.completeExceptionally(error);
+            }
+        };
+
+        try {
+            if (toolSpecs == null) {
+                activeModel.generate(messages, handler);
+            } else {
+                activeModel.generate(messages, toolSpecs, handler);
+            }
+        } catch (Throwable e) {
+            future.completeExceptionally(e);
+        }
+
+        try {
+            return future.join();
+        } catch (CompletionException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw new RuntimeException(cause);
+        }
+    }
+
     private ChatLanguageModel chatModel(String modelName) {
         DeepSeekModelFactory factory = deepSeekModelFactory.getIfAvailable();
         return factory != null ? factory.chatModel(modelName) : chatModel;
+    }
+
+    private StreamingChatLanguageModel streamingChatModel(String modelName) {
+        DeepSeekModelFactory factory = deepSeekModelFactory.getIfAvailable();
+        return factory != null ? factory.streamingModel(modelName) : streamingChatModel;
     }
 
     private List<ChatMessage> buildInitialMessages(String sessionId, String userQuery,
@@ -470,6 +647,27 @@ public class ReActAgent {
     @FunctionalInterface
     public interface StepCallback {
         void onStep(ReActStep step, boolean isFinal);
+    }
+
+    /**
+     * 全链路 ReAct 流式回调接口。
+     *
+     * <p>默认空实现，调用方可以只关心自己需要转发的事件。
+     */
+    public interface ReActStreamCallback {
+        default void onReasoningStart(int iteration) {}
+
+        default void onReasoningToken(int iteration, String token) {}
+
+        default void onReasoningDone(int iteration, String text) {}
+
+        default void onToolCall(ReActStep step) {}
+
+        default void onToolResult(ReActStep step) {}
+
+        default void onAnswerStart(int iteration) {}
+
+        default void onAnswerToken(String token) {}
     }
 
     /**
