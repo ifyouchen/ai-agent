@@ -14,6 +14,10 @@ export function escapeHtml(str) {
   return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+export function renderStreamingText(text) {
+  return escapeHtml(text).replace(/\n/g, '<br>');
+}
+
 export function trimText(str, max) {
   const s = String(str ?? '');
   return s.length > max ? s.slice(0, max) + '…' : s;
@@ -51,8 +55,11 @@ export function renderReactBubble(steps, answer, durationMs, answerStreaming = f
       </summary>
       <div class="react-steps">${stepsHtml}${!hasAnswer ? '<div class="react-step react-step-pending"><span class="typing-dots">●●●</span></div>' : ''}</div>
     </details>` : '';
+  const answerHtml = answerStreaming
+    ? renderStreamingText(answerText)
+    : (answerText ? formatMarkdown(answerText) : '');
   const answerBlock = hasAnswer
-    ? `<div class="react-answer">${answerText ? formatMarkdown(answerText) : ''}${answerStreaming ? '<span class="typing-cursor"></span>' : ''}</div>`
+    ? `<div class="react-answer">${answerHtml}${answerStreaming ? '<span class="typing-cursor"></span>' : ''}</div>`
     : '';
   return stepsBlock + answerBlock;
 }

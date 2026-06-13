@@ -18,6 +18,7 @@ import dev.langchain4j.store.embedding.filter.MetadataFilterBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -25,6 +26,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
@@ -69,6 +74,10 @@ public class HybridRagPipeline {
     @Autowired(required = false)
     private Bm25Retriever bm25Retriever;
 
+    @Autowired(required = false)
+    @Qualifier("ragRetrievalExecutor")
+    private Executor ragRetrievalExecutor;
+
     @Value("${rag.retrieval.vector.top-k:20}")
     private int vectorTopK;
 
@@ -83,6 +92,18 @@ public class HybridRagPipeline {
 
     @Value("${rag.query.rewrite.variants:2}")
     private int queryVariants;
+
+    @Value("${rag.query.hyde.enabled:true}")
+    private boolean hydeEnabled;
+
+    @Value("${rag.cache.enabled:true}")
+    private boolean ragCacheEnabled;
+
+    @Value("${rag.cache.ttl-seconds:300}")
+    private long ragCacheTtlSeconds;
+
+    private static final int MAX_CACHE_ENTRIES = 512;
+    private final ConcurrentMap<String, CacheEntry> retrieveOnlyCache = new ConcurrentHashMap<>();
 
     // ── 带租户隔离的检索入口 ─────────────────────────────────
 
@@ -102,6 +123,13 @@ public class HybridRagPipeline {
         log.info("=== 开始混合 RAG 检索（不生成答案），查询：'{}'，tenantId={}，kbId={} ===",
                 userQuery, tenantId, kbId);
         long start = System.currentTimeMillis();
+        String cacheKey = cacheKey(userQuery, tenantId, kbId);
+        List<RetrievedChunk> cached = getCachedRetrieval(cacheKey);
+        if (cached != null) {
+            log.info("=== 混合 RAG 检索命中缓存，返回 {} 个片段，耗时 {}ms ===",
+                    cached.size(), System.currentTimeMillis() - start);
+            return cached;
+        }
 
         // Step 1：查询改写
         // HyDE：用假设文档做向量检索，效果比直接用问题更好
@@ -123,6 +151,7 @@ public class HybridRagPipeline {
 
         // Step 4：Reranker 精排
         List<RetrievedChunk> reranked = rerankerService.rerank(userQuery, rrfResults, rerankerTopK);
+        putCachedRetrieval(cacheKey, reranked);
 
         log.info("=== 混合 RAG 检索完成，返回 {} 个片段，耗时 {}ms ===",
                 reranked.size(), System.currentTimeMillis() - start);
@@ -255,6 +284,10 @@ public class HybridRagPipeline {
     }
 
     private String safeGenerateHypotheticalDocument(String userQuery) {
+        if (!hydeEnabled) {
+            log.debug("[Step 1] HyDE 已关闭，直接使用原始问题做向量检索");
+            return userQuery;
+        }
         try {
             String hydeDoc = queryRewriter.generateHypotheticalDocument(userQuery);
             return (hydeDoc == null || hydeDoc.isBlank()) ? userQuery : hydeDoc;
@@ -304,18 +337,11 @@ public class HybridRagPipeline {
         List<RetrievedChunk> hydeResults = safeVectorSearch(
                 hydeDoc, vectorTopK, tenantId, kbId, "HyDE", vectorHealthy);
 
+        List<String> multiQueries = deduplicateHydeQuery(hydeDoc, rewrittenQueries);
+
         // 如果第一跳向量检索已经因为外部服务失败而不可用，直接交给 BM25 兜底，避免重复打失败接口。
         List<RetrievedChunk> multiQueryResults = vectorHealthy.get()
-                ? rewrittenQueries.parallelStream()
-                    .flatMap(q -> safeVectorSearch(
-                            q,
-                            Math.max(vectorTopK / Math.max(rewrittenQueries.size(), 1), 1),
-                            tenantId,
-                            kbId,
-                            "multi-query",
-                            vectorHealthy
-                    ).stream())
-                    .collect(Collectors.toList())
+                ? retrieveMultiQueryCandidates(multiQueries, tenantId, kbId, vectorHealthy)
                 : List.of();
 
         // 合并向量检索结果，去重保留最高分
@@ -325,6 +351,37 @@ public class HybridRagPipeline {
         List<RetrievedChunk> allVectorResults = new ArrayList<>(vectorMap.values());
         allVectorResults.sort((a, b) -> Double.compare(b.getVectorScore(), a.getVectorScore()));
         return allVectorResults;
+    }
+
+    private List<String> deduplicateHydeQuery(String hydeDoc, List<String> rewrittenQueries) {
+        if (rewrittenQueries == null || rewrittenQueries.isEmpty()) {
+            return List.of();
+        }
+        String normalizedHyde = normalizeCacheQuery(hydeDoc);
+        return rewrittenQueries.stream()
+                .filter(query -> query != null && !query.isBlank())
+                .filter(query -> !normalizeCacheQuery(query).equals(normalizedHyde))
+                .toList();
+    }
+
+    private List<RetrievedChunk> retrieveMultiQueryCandidates(List<String> rewrittenQueries,
+                                                              String tenantId,
+                                                              Long kbId,
+                                                              AtomicBoolean vectorHealthy) {
+        if (rewrittenQueries == null || rewrittenQueries.isEmpty()) {
+            return List.of();
+        }
+        Executor executor = ragRetrievalExecutor != null ? ragRetrievalExecutor : Runnable::run;
+        int perQueryTopK = Math.max(vectorTopK / Math.max(rewrittenQueries.size(), 1), 1);
+        List<CompletableFuture<List<RetrievedChunk>>> futures = rewrittenQueries.stream()
+                .map(query -> CompletableFuture.supplyAsync(
+                        () -> safeVectorSearch(query, perQueryTopK, tenantId, kbId, "multi-query", vectorHealthy),
+                        executor))
+                .toList();
+
+        return futures.stream()
+                .flatMap(future -> future.join().stream())
+                .collect(Collectors.toList());
     }
 
     private List<RetrievedChunk> safeVectorSearch(String query,
@@ -399,6 +456,64 @@ public class HybridRagPipeline {
         }
     }
 
+    private List<RetrievedChunk> getCachedRetrieval(String cacheKey) {
+        if (!ragCacheEnabled || cacheKey == null) {
+            return null;
+        }
+        CacheEntry entry = retrieveOnlyCache.get(cacheKey);
+        if (entry == null) {
+            return null;
+        }
+        long now = System.currentTimeMillis();
+        if (entry.expiresAtMs() <= now) {
+            retrieveOnlyCache.remove(cacheKey, entry);
+            return null;
+        }
+        return new ArrayList<>(entry.chunks());
+    }
+
+    private void putCachedRetrieval(String cacheKey, List<RetrievedChunk> chunks) {
+        if (!ragCacheEnabled || cacheKey == null || chunks == null || ragCacheTtlSeconds <= 0) {
+            return;
+        }
+        if (retrieveOnlyCache.size() >= MAX_CACHE_ENTRIES) {
+            evictExpiredCacheEntries();
+            if (retrieveOnlyCache.size() >= MAX_CACHE_ENTRIES) {
+                retrieveOnlyCache.clear();
+            }
+        }
+        long expiresAt = System.currentTimeMillis() + ragCacheTtlSeconds * 1000L;
+        retrieveOnlyCache.put(cacheKey, new CacheEntry(List.copyOf(chunks), expiresAt));
+    }
+
+    private void evictExpiredCacheEntries() {
+        long now = System.currentTimeMillis();
+        retrieveOnlyCache.entrySet().removeIf(entry -> entry.getValue().expiresAtMs() <= now);
+    }
+
+    private String cacheKey(String userQuery, String tenantId, Long kbId) {
+        if (!ragCacheEnabled) {
+            return null;
+        }
+        String normalizedQuery = normalizeCacheQuery(userQuery);
+        String configVersion = "v1"
+                + "|hyde=" + hydeEnabled
+                + "|variants=" + queryVariants
+                + "|vectorTopK=" + vectorTopK
+                + "|threshold=" + vectorThreshold
+                + "|rrfTopK=" + rrfTopK
+                + "|rerankerTopK=" + rerankerTopK;
+        return String.join("|",
+                tenantId != null ? tenantId : "",
+                kbId != null ? String.valueOf(kbId) : "",
+                configVersion,
+                normalizedQuery);
+    }
+
+    private String normalizeCacheQuery(String query) {
+        return query == null ? "" : query.strip().replaceAll("\\s+", " ").toLowerCase();
+    }
+
     private Integer parseIntSafely(String value) {
         if (value == null) return null;
         try { return Integer.parseInt(value); } catch (NumberFormatException e) { return null; }
@@ -408,4 +523,6 @@ public class HybridRagPipeline {
         if (value == null) return null;
         try { return Long.parseLong(value); } catch (NumberFormatException e) { return null; }
     }
+
+    private record CacheEntry(List<RetrievedChunk> chunks, long expiresAtMs) {}
 }

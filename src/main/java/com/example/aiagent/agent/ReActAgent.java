@@ -23,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -404,6 +405,8 @@ public class ReActAgent {
         List<ReActStep> steps = new ArrayList<>();
 
         int iteration = 0;
+        boolean usedTools = false;
+        String finalAnswer = null;
         while (iteration < MAX_ITERATIONS) {
             iteration++;
             int currentIteration = iteration;
@@ -429,10 +432,18 @@ public class ReActAgent {
 
             List<ToolExecutionRequest> toolRequests = aiMessage.toolExecutionRequests();
             if (toolRequests == null || toolRequests.isEmpty()) {
-                log.info("[ReAct-TokenStream] 第 {} 轮无工具调用，进入最终答案生成", currentIteration);
+                if (!usedTools && isDirectAnswerCandidate(thought)) {
+                    log.info("[ReAct-TokenStream] 第 {} 轮无工具调用，复用模型输出作为最终答案", currentIteration);
+                    finalAnswer = thought;
+                    callback.onAnswerStart(currentIteration);
+                    callback.onAnswerToken(thought);
+                } else {
+                    log.info("[ReAct-TokenStream] 第 {} 轮无工具调用，进入最终答案生成", currentIteration);
+                }
                 break;
             }
 
+            usedTools = true;
             for (ToolExecutionRequest req : toolRequests) {
                 String toolName = req.name();
                 String toolArgs = req.arguments();
@@ -465,24 +476,44 @@ public class ReActAgent {
             log.warn("[ReAct-TokenStream] 达到最大迭代次数 {}，强制生成最终答案", MAX_ITERATIONS);
         }
 
-        messages.add(UserMessage.from(FINAL_ANSWER_PROMPT));
-        int answerIteration = Math.max(iteration, 1);
-        callback.onAnswerStart(answerIteration);
-        StringBuilder answerBuffer = new StringBuilder();
-        Response<AiMessage> finalResponse = streamGenerate(activeModel, messages, null, token -> {
-            answerBuffer.append(token);
-            callback.onAnswerToken(token);
-        });
+        if (finalAnswer == null) {
+            messages.add(UserMessage.from(FINAL_ANSWER_PROMPT));
+            int answerIteration = Math.max(iteration, 1);
+            callback.onAnswerStart(answerIteration);
+            StringBuilder answerBuffer = new StringBuilder();
+            Response<AiMessage> finalResponse = streamGenerate(activeModel, messages, null, token -> {
+                answerBuffer.append(token);
+                callback.onAnswerToken(token);
+            });
 
-        String streamedAnswer = answerBuffer.toString();
-        AiMessage finalMessage = finalResponse != null ? finalResponse.content() : null;
-        String finalAnswer = !streamedAnswer.isBlank()
-                ? streamedAnswer
-                : finalMessage != null && finalMessage.text() != null ? finalMessage.text() : "";
+            String streamedAnswer = answerBuffer.toString();
+            AiMessage finalMessage = finalResponse != null ? finalResponse.content() : null;
+            finalAnswer = !streamedAnswer.isBlank()
+                    ? streamedAnswer
+                    : finalMessage != null && finalMessage.text() != null ? finalMessage.text() : "";
+        }
 
         long durationMs = System.currentTimeMillis() - startMs;
         log.info("[ReAct-TokenStream] 推理完成 iterations={} durationMs={}", iteration, durationMs);
         return new ReActResult(finalAnswer, steps, iteration, durationMs);
+    }
+
+    private boolean isDirectAnswerCandidate(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String normalized = text.strip();
+        if (normalized.length() < 12) {
+            return false;
+        }
+        String lower = normalized.toLowerCase();
+        return !lower.contains("thought")
+                && !lower.contains("action")
+                && !lower.contains("observation")
+                && !normalized.contains("信息已足够")
+                && !normalized.contains("最终答案")
+                && !normalized.contains("生成最终")
+                && !normalized.contains("可以生成");
     }
 
     private Response<AiMessage> streamGenerate(StreamingChatLanguageModel activeModel,
@@ -589,6 +620,11 @@ public class ReActAgent {
         updatedMemory.add(UserMessage.from(userQuery != null ? userQuery : ""));
         updatedMemory.add(AiMessage.from(answer != null ? answer : ""));
         redisChatMemoryStore.updateMessages(sessionId, trimMemory(updatedMemory));
+    }
+
+    @Async
+    public void rememberExchangeAsync(String sessionId, String userQuery, String answer) {
+        rememberExchange(sessionId, userQuery, answer);
     }
 
     private List<ChatMessage> trimMemory(List<ChatMessage> messages) {

@@ -21,6 +21,7 @@ import {
   escapeHtml,
   generateId,
   renderReactBubble,
+  renderStreamingText,
   storageKey,
   stripHtml,
 } from './sessionUtils.js';
@@ -81,6 +82,7 @@ export const useSessionStore = defineStore('sessions', () => {
 
   // ── 会话持久化 ────────────────────────────────────────────────────────
   function scheduleSave() {
+    if (Object.values(sessionRuntime).some(rt => rt?.suppressSave)) return;
     clearTimeout(_saveTimer);
     _saveTimer = setTimeout(saveSessions, SAVE_DEBOUNCE);
   }
@@ -379,7 +381,7 @@ export const useSessionStore = defineStore('sessions', () => {
     if (!sessionRuntime[id]) {
       sessionRuntime[id] = {
         sending: false, eventSource: null, bubble: null, text: '',
-        requestId: 0, cancelled: false,
+        requestId: 0, cancelled: false, suppressSave: false,
         reactSteps: null, reactAnswer: null, reactStartMs: 0,
       };
     }
@@ -401,8 +403,10 @@ export const useSessionStore = defineStore('sessions', () => {
       }
       rt.bubble.html = `${html}<div class="stopped-msg">已停止生成</div>`;
     }
+    rt.suppressSave = false;
     rt.sending = false; rt.eventSource = null; rt.bubble = null;
     rt.text = ''; rt.reactSteps = null; rt.reactAnswer = null;
+    scheduleSave();
     if (showNotice) ui.showToast('info', '已停止当前会话的生成');
   }
 
@@ -528,7 +532,7 @@ async function doStreamChat(reqId, text, kbId) {
       ? '<div class="stream-hint"><span class="typing-dots">●●●</span><span class="stream-hint-label">知识库检索中…</span></div>'
       : '<span class="typing-dots">●●●</span>';
     const bubble = pushMessage(reqId, 'ai', initHtml);
-    rt.bubble = bubble; rt.text = '';
+    rt.bubble = bubble; rt.text = ''; rt.suppressSave = true;
     let fullText = '', firstToken = true;
     const es = api.chatStream(reqId, text, kbId, activeModel.value, org.currentOrgId);
     rt.eventSource = es;
@@ -537,7 +541,7 @@ async function doStreamChat(reqId, text, kbId) {
     const doRender = () => {
       rafPending = false;
       if (rt.requestId !== rid || rt.cancelled) return;
-      bubble.html = formatMarkdown(fullText) + '<span class="typing-cursor"></span>';
+      bubble.html = renderStreamingText(fullText) + '<span class="typing-cursor"></span>';
       nextTick(() => {
         const el = document.querySelector('.chat-messages');
         if (el) el.scrollTop = el.scrollHeight;
@@ -588,6 +592,7 @@ async function doStreamChat(reqId, text, kbId) {
     function finishStream() {
       document.removeEventListener('visibilitychange', onVisible);
       if (rt.requestId === rid) {
+        rt.suppressSave = false;
         rt.sending = false; rt.eventSource = null; rt.bubble = null; rt.text = '';
         scheduleSave();
       }
@@ -601,7 +606,7 @@ async function doStreamChat(reqId, text, kbId) {
     const startMs = Date.now();
     let currentStatus = '思考中…';
     const bubble = pushMessage(reqId, 'ai', renderReactThinking(currentStatus, startMs));
-    rt.bubble = bubble; rt.reactSteps = []; rt.reactAnswer = null; rt.reactStartMs = startMs;
+    rt.bubble = bubble; rt.reactSteps = []; rt.reactAnswer = null; rt.reactStartMs = startMs; rt.suppressSave = true;
     const es = api.chatReactStream(reqId, text, kbId, activeModel.value, org.currentOrgId);
     rt.eventSource = es;
     let lastEventAt = Date.now();
@@ -865,6 +870,7 @@ async function doStreamChat(reqId, text, kbId) {
       if (watchdogId) window.clearInterval(watchdogId);
       cancelPendingRender();
       if (rt.requestId === rid) {
+        rt.suppressSave = false;
         rt.sending = false; rt.eventSource = null; rt.bubble = null;
         rt.reactSteps = null; rt.reactAnswer = null;
         scheduleSave();

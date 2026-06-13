@@ -30,6 +30,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 /**
@@ -62,6 +64,9 @@ class HybridRagPipelineTest {
         injectField(pipeline, "rrfTopK", 10);
         injectField(pipeline, "rerankerTopK", 5);
         injectField(pipeline, "queryVariants", 2);
+        injectField(pipeline, "hydeEnabled", true);
+        injectField(pipeline, "ragCacheEnabled", false);
+        injectField(pipeline, "ragCacheTtlSeconds", 300L);
     }
 
     // ── 完整 Pipeline 执行 ────────────────────────────────
@@ -157,6 +162,63 @@ class HybridRagPipelineTest {
         assertThat(results).hasSize(1);
         assertThat(results.get(0).getDocumentName()).isEqualTo("资质.md");
         verify(bm25Retriever).retrieve(eq(query), anyInt(), eq(tenantId), eq(kbId));
+    }
+
+    @Test
+    @DisplayName("HyDE 关闭时应跳过假设文档生成并避免重复检索原始问题")
+    void shouldSkipHydeWhenDisabled() {
+        String query = "低延迟查询";
+        injectField(pipeline, "hydeEnabled", false);
+        injectField(pipeline, "queryVariants", 0);
+
+        when(embeddingModel.embed(eq(query)))
+                .thenReturn(Response.from(Embedding.from(new float[]{0.1f, 0.2f})));
+        when(embeddingStore.search(any()))
+                .thenReturn(new EmbeddingSearchResult<>(Collections.emptyList()));
+        when(rrfFusionRanker.fuse(any(), anyInt())).thenReturn(Collections.emptyList());
+        when(rerankerService.rerank(eq(query), any(), anyInt())).thenReturn(Collections.emptyList());
+
+        List<RetrievedChunk> results = pipeline.retrieveOnly(query, "tenant-a", 1L);
+
+        assertThat(results).isEmpty();
+        verify(queryRewriter, never()).generateHypotheticalDocument(anyString());
+        verify(embeddingModel, times(1)).embed(eq(query));
+    }
+
+    @Test
+    @DisplayName("retrieveOnly 相同租户、知识库和查询应命中短 TTL 缓存")
+    void shouldCacheRetrieveOnlyResultsByTenantKbAndQuery() {
+        String query = "缓存查询";
+        String tenantId = "tenant-a";
+        Long kbId = 7L;
+        injectField(pipeline, "ragCacheEnabled", true);
+
+        when(queryRewriter.generateHypotheticalDocument(query)).thenReturn("假设文档");
+        when(queryRewriter.rewriteMultiPerspective(eq(query), anyInt()))
+                .thenReturn(List.of(query, "缓存查询 改写"));
+        when(embeddingModel.embed(anyString()))
+                .thenReturn(Response.from(Embedding.from(new float[]{0.1f, 0.2f})));
+        when(embeddingStore.search(any()))
+                .thenReturn(new EmbeddingSearchResult<>(Collections.emptyList()));
+
+        List<RetrievedChunk> reranked = List.of(
+                RetrievedChunk.builder()
+                        .chunkId("cached-1")
+                        .content("缓存内容")
+                        .tenantId(tenantId)
+                        .kbId(kbId)
+                        .build()
+        );
+        when(rrfFusionRanker.fuse(any(), anyInt())).thenReturn(reranked);
+        when(rerankerService.rerank(eq(query), any(), anyInt())).thenReturn(reranked);
+
+        List<RetrievedChunk> first = pipeline.retrieveOnly(query, tenantId, kbId);
+        List<RetrievedChunk> second = pipeline.retrieveOnly("  缓存查询  ", tenantId, kbId);
+
+        assertThat(first).hasSize(1);
+        assertThat(second).hasSize(1);
+        verify(queryRewriter, times(1)).generateHypotheticalDocument(query);
+        verify(rerankerService, times(1)).rerank(eq(query), any(), anyInt());
     }
 
     @Test

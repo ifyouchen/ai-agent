@@ -60,6 +60,11 @@ server:
     # SSE 异步场景：异常发生时不尝试转发到 /error（SSE 响应已 committed 无法转发）
     path: /error
 
+chat:
+  stream:
+    flush-interval-ms: 50
+    flush-min-chars: 40
+
 # 链路追踪（Zipkin）
 # 开发环境未启动 Zipkin 时设为 never，避免连接错误日志
 management:
@@ -82,13 +87,13 @@ logging:
   level:
     com.example.aiagent: INFO
     dev.langchain4j: INFO
-    org.mybatis: WARN
-    org.apache.ibatis: WARN
-    java.sql: WARN
-    jdbc.sqlonly: WARN
-    jdbc.sqltiming: WARN
-    jdbc.resultset: WARN
-    jdbc.audit: WARN
+    org.mybatis: INFO
+    org.apache.ibatis: INFO
+    java.sql: INFO
+    jdbc.sqlonly: INFO
+    jdbc.sqltiming: INFO
+    jdbc.resultset: INFO
+    jdbc.audit: INFO
     # 抑制 SSE 场景下 "Cannot render error page for request [null]" 的 ERROR 噪声日志
     # 根因已通过将 completeWithError 改为 complete 修复，此处仅做降噪
     org.springframework.boot.autoconfigure.web.servlet.error.ErrorMvcAutoConfiguration: OFF
@@ -109,8 +114,14 @@ agent:
 rag:
   # 查询改写
   query:
+    hyde:
+      enabled: true            # true=保留 HyDE 检索质量；低延迟场景可关闭
     rewrite:
       variants: 0              # 0=仅用原始问题（HyDE 已足够，跳过多变体 LLM 调用）；2=多变体但更慢
+
+  cache:
+    enabled: true
+    ttl-seconds: 300
 
   # 向量检索
   retrieval:

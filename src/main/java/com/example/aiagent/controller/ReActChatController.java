@@ -2,6 +2,7 @@ package com.example.aiagent.controller;
 
 import com.example.aiagent.agent.ReActAgent;
 import com.example.aiagent.chat.service.ChatHistoryService;
+import com.example.aiagent.controller.sse.SseDeltaBuffer;
 import com.example.aiagent.kb.service.ChatRagContextService;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
@@ -13,6 +14,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -60,6 +62,12 @@ public class ReActChatController {
     private final ChatHistoryService chatHistoryService;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    @Value("${chat.stream.flush-interval-ms:50}")
+    private long streamFlushIntervalMs;
+
+    @Value("${chat.stream.flush-min-chars:40}")
+    private int streamFlushMinChars;
 
     /**
      * SSE 流式推理专属线程池（有界，防止高并发下 OOM）
@@ -182,11 +190,10 @@ public class ReActChatController {
             }
             String userText = injectionCheck.sanitizedInput();
             String aiText = outputCheck.filteredContent();
-            reActAgent.rememberExchange(sessionId, userText, aiText);
-            chatHistoryService.saveSession(sessionId, userId,
-                    userText.substring(0, Math.min(userText.length(), 20)), kbId);
-            chatHistoryService.saveMessage(sessionId, userId, "user", userText);
-            chatHistoryService.saveMessage(sessionId, userId, "ai", aiText);
+            reActAgent.rememberExchangeAsync(sessionId, userText, aiText);
+            chatHistoryService.saveExchange(sessionId, userId,
+                    userText.substring(0, Math.min(userText.length(), 20)), kbId,
+                    userText, aiText);
 
             // ── Step 6：审计日志（完成）──────────────────
             auditLogService.logAiChat(userId, sessionId, clientIp, 0, 0);
@@ -326,65 +333,110 @@ public class ReActChatController {
             if (ragContext != null) {
                 HybridRagContentRetriever.setContext(ragContext);
             }
+            class ReactSseCallback implements ReActAgent.ReActStreamCallback {
+                private SseDeltaBuffer reasoningBuffer;
+                private int reasoningIteration;
+                private final SseDeltaBuffer answerBuffer = new SseDeltaBuffer(
+                        "answer-token",
+                        streamFlushMinChars,
+                        streamFlushIntervalMs,
+                        data -> data,
+                        (eventName, data) -> sendSseEvent(emitter, completed, eventName, data));
+
+                private SseDeltaBuffer newReasoningBuffer(int iteration) {
+                    reasoningIteration = iteration;
+                    return new SseDeltaBuffer(
+                            "reasoning-token",
+                            streamFlushMinChars,
+                            streamFlushIntervalMs,
+                            data -> toJsonPayload(Map.of(
+                                    "iteration", iteration,
+                                    "token", data != null ? data : ""
+                            )),
+                            (eventName, data) -> sendSseEvent(emitter, completed, eventName, data));
+                }
+
+                void flushDeltas() {
+                    if (reasoningBuffer != null) {
+                        reasoningBuffer.flush();
+                    }
+                    answerBuffer.flush();
+                }
+
+                @Override
+                public void onReasoningStart(int iteration) {
+                    if (reasoningBuffer != null) {
+                        reasoningBuffer.flush();
+                    }
+                    reasoningBuffer = newReasoningBuffer(iteration);
+                    sendReactJsonEvent(emitter, completed, "reasoning-start",
+                            Map.of("iteration", iteration));
+                }
+
+                @Override
+                public void onReasoningToken(int iteration, String token) {
+                    if (reasoningBuffer == null || reasoningIteration != iteration) {
+                        if (reasoningBuffer != null) {
+                            reasoningBuffer.flush();
+                        }
+                        reasoningBuffer = newReasoningBuffer(iteration);
+                    }
+                    reasoningBuffer.append(token);
+                }
+
+                @Override
+                public void onReasoningDone(int iteration, String text) {
+                    if (reasoningBuffer != null) {
+                        reasoningBuffer.flush();
+                    }
+                    sendReactJsonEvent(emitter, completed, "reasoning-done", Map.of(
+                            "iteration", iteration,
+                            "text", text != null ? text : ""
+                    ));
+                }
+
+                @Override
+                public void onToolCall(ReActAgent.ReActStep step) {
+                    flushDeltas();
+                    sendReactJsonEvent(emitter, completed, "tool-call", Map.of(
+                            "iteration", step.iteration(),
+                            "toolName", step.toolName() != null ? step.toolName() : "",
+                            "toolArgs", step.toolArgs() != null ? step.toolArgs() : ""
+                    ));
+                }
+
+                @Override
+                public void onToolResult(ReActAgent.ReActStep step) {
+                    flushDeltas();
+                    sendReactJsonEvent(emitter, completed, "tool-result", Map.of(
+                            "iteration", step.iteration(),
+                            "toolName", step.toolName() != null ? step.toolName() : "",
+                            "observation", step.observation() != null ? step.observation() : ""
+                    ));
+                    sendLegacyStepEvent(emitter, completed, step);
+                }
+
+                @Override
+                public void onAnswerStart(int iteration) {
+                    flushDeltas();
+                    sendReactJsonEvent(emitter, completed, "answer-start",
+                            Map.of("iteration", iteration));
+                }
+
+                @Override
+                public void onAnswerToken(String token) {
+                    answerBuffer.append(token);
+                }
+            }
+            ReactSseCallback reactCallback = new ReactSseCallback();
             try {
                 sendReactStatus(emitter, completed, "模型推理中");
                 ReActAgent.ReActResult result = reActAgent.executeStreamingWithCallback(
                         sanitizedMessage, sessionId, model,
                         ragContext != null ? ragContext.tenantId() : null,
                         ragContext != null ? ragContext.kbId() : null,
-                        new ReActAgent.ReActStreamCallback() {
-                            @Override
-                            public void onReasoningStart(int iteration) {
-                                sendReactJsonEvent(emitter, completed, "reasoning-start",
-                                        Map.of("iteration", iteration));
-                            }
-
-                            @Override
-                            public void onReasoningToken(int iteration, String token) {
-                                sendReactJsonEvent(emitter, completed, "reasoning-token", Map.of(
-                                        "iteration", iteration,
-                                        "token", token != null ? token : ""
-                                ));
-                            }
-
-                            @Override
-                            public void onReasoningDone(int iteration, String text) {
-                                sendReactJsonEvent(emitter, completed, "reasoning-done", Map.of(
-                                        "iteration", iteration,
-                                        "text", text != null ? text : ""
-                                ));
-                            }
-
-                            @Override
-                            public void onToolCall(ReActAgent.ReActStep step) {
-                                sendReactJsonEvent(emitter, completed, "tool-call", Map.of(
-                                        "iteration", step.iteration(),
-                                        "toolName", step.toolName() != null ? step.toolName() : "",
-                                        "toolArgs", step.toolArgs() != null ? step.toolArgs() : ""
-                                ));
-                            }
-
-                            @Override
-                            public void onToolResult(ReActAgent.ReActStep step) {
-                                sendReactJsonEvent(emitter, completed, "tool-result", Map.of(
-                                        "iteration", step.iteration(),
-                                        "toolName", step.toolName() != null ? step.toolName() : "",
-                                        "observation", step.observation() != null ? step.observation() : ""
-                                ));
-                                sendLegacyStepEvent(emitter, completed, step);
-                            }
-
-                            @Override
-                            public void onAnswerStart(int iteration) {
-                                sendReactJsonEvent(emitter, completed, "answer-start",
-                                        Map.of("iteration", iteration));
-                            }
-
-                            @Override
-                            public void onAnswerToken(String token) {
-                                sendSseEvent(emitter, completed, "answer-token", token != null ? token : "");
-                            }
-                        });
+                        reactCallback);
+                reactCallback.flushDeltas();
 
                 // ── Step 5：输出脱敏 ──────────────────
                 sendReactStatus(emitter, completed, "整理答案中");
@@ -404,11 +456,14 @@ public class ReActChatController {
                         "iterations", result.iterations(),
                         "durationMs", result.durationMs()
                 ));
-                reActAgent.rememberExchange(sessionId, sanitizedMessage, aiText);
-                chatHistoryService.saveSession(sessionId, userId,
-                        sanitizedMessage.substring(0, Math.min(sanitizedMessage.length(), 20)), kbId);
-                chatHistoryService.saveMessage(sessionId, userId, "user", sanitizedMessage);
-                chatHistoryService.saveMessage(sessionId, userId, "ai", aiText);
+
+                sendSseEvent(emitter, completed, "done", "[DONE]");
+                completeOnce(emitter, completed);
+
+                reActAgent.rememberExchangeAsync(sessionId, sanitizedMessage, aiText);
+                chatHistoryService.saveExchange(sessionId, userId,
+                        sanitizedMessage.substring(0, Math.min(sanitizedMessage.length(), 20)), kbId,
+                        sanitizedMessage, aiText);
 
                 // ── Step 6：审计日志 ──────────────────
                 long duration = System.currentTimeMillis() - startMs;
@@ -416,10 +471,8 @@ public class ReActChatController {
                 log.info("[ReAct-Stream] 完成 userId={} iterations={} durationMs={}",
                         userId, result.iterations(), duration);
 
-                sendSseEvent(emitter, completed, "done", "[DONE]");
-                completeOnce(emitter, completed);
-
             } catch (Exception e) {
+                reactCallback.flushDeltas();
                 long duration = System.currentTimeMillis() - startMs;
                 log.error("[ReAct-Stream] 推理出错 userId={} sessionId={} model={} kbId={} durationMs={}",
                         userId, sessionId, model, kbId, duration, e);
@@ -454,11 +507,15 @@ public class ReActChatController {
 
     private void sendReactJsonEvent(SseEmitter emitter, AtomicBoolean completed,
                                     String eventName, Map<String, ?> payload) {
+        sendSseEvent(emitter, completed, eventName, toJsonPayload(payload));
+    }
+
+    private String toJsonPayload(Map<String, ?> payload) {
         try {
-            sendSseEvent(emitter, completed, eventName, MAPPER.writeValueAsString(payload));
+            return MAPPER.writeValueAsString(payload);
         } catch (IOException e) {
-            log.debug("[ReAct-Stream] {} 序列化失败: {}", eventName, e.getMessage());
-            completeOnce(emitter, completed);
+            log.debug("[ReAct-Stream] JSON 序列化失败: {}", e.getMessage());
+            return "{}";
         }
     }
 

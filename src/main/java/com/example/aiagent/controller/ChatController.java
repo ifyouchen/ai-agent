@@ -134,10 +134,9 @@ public class ChatController {
             // ── Step 7：异步持久化聊天记录 ──────────────
             String userText = injectionCheck.sanitizedInput();
             String aiText   = outputCheck.filteredContent();
-            chatHistoryService.saveSession(request.getSessionId(), userId,
-                    userText.substring(0, Math.min(userText.length(), 20)), request.getKbId());
-            chatHistoryService.saveMessage(request.getSessionId(), userId, "user", userText);
-            chatHistoryService.saveMessage(request.getSessionId(), userId, "ai",   aiText);
+            chatHistoryService.saveExchange(request.getSessionId(), userId,
+                    userText.substring(0, Math.min(userText.length(), 20)), request.getKbId(),
+                    userText, aiText);
 
             log.info("对话完成 userId={} sessionId={} 耗时={}ms",
                     userId, request.getSessionId(), duration);

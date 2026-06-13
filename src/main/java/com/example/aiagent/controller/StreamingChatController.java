@@ -2,6 +2,7 @@ package com.example.aiagent.controller;
 
 import com.example.aiagent.agent.AgentFactory;
 import com.example.aiagent.chat.service.ChatHistoryService;
+import com.example.aiagent.controller.sse.SseDeltaBuffer;
 import com.example.aiagent.kb.service.ChatRagContextService;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
@@ -12,6 +13,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,6 +24,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -50,6 +53,12 @@ public class StreamingChatController {
     private final ChatHistoryService chatHistoryService;
     private final ChatRagContextService chatRagContextService;
 
+    @Value("${chat.stream.flush-interval-ms:50}")
+    private long streamFlushIntervalMs;
+
+    @Value("${chat.stream.flush-min-chars:40}")
+    private int streamFlushMinChars;
+
     /**
      * 流式对话（SSE 推送，字符逐步出现）
      *
@@ -75,8 +84,12 @@ public class StreamingChatController {
             HttpServletRequest httpRequest) {
 
         SseEmitter emitter = new SseEmitter(120_000L);
+        AtomicBoolean completed = new AtomicBoolean(false);
+        emitter.onCompletion(() -> completed.set(true));
+        emitter.onError(error -> completed.set(true));
         String clientIp = getClientIp(httpRequest);
         MDC.put("scenario", "stream_chat");
+        String sanitizedMessage;
 
         try {
             // ── Step 1：Prompt 注入检测 ────────────────────
@@ -92,6 +105,7 @@ public class StreamingChatController {
                 emitter.complete();
                 return emitter;
             }
+            sanitizedMessage = injectionCheck.sanitizedInput();
 
             // ── Step 2：限流校验 ──────────────────────────
             RateLimitService.RateLimitResult rateLimit = rateLimitService.tryAcquire(userId);
@@ -110,7 +124,7 @@ public class StreamingChatController {
             // ── Step 3：审计日志（请求开始）──────────────
             auditLogService.log(AuditLogService.EventType.AI_CHAT_REQUEST,
                     userId, sessionId, clientIp, true,
-                    Map.of("messageLength", injectionCheck.sanitizedInput().length(), "mode", "stream"));
+                    Map.of("messageLength", sanitizedMessage.length(), "mode", "stream"));
 
         } catch (IOException e) {
             // SSE 响应可能已开始，不能用 completeWithError（会触发 Spring 错误页渲染）
@@ -125,7 +139,6 @@ public class StreamingChatController {
         // ── Step 4：LLM 流式调用 ──────────────────────────
         log.info("开始流式对话 userId={} sessionId={} orgId={} kbId={} model={}",
                 userId, sessionId, orgId, kbId, model);
-        String sanitizedMessage = promptInjectionFilter.check(message).sanitizedInput();
 
         // 设置 RAG 检索上下文：只有显式选择知识库（kbId 非空）时生效。
         HybridRagContentRetriever.RetrievalContext ragContext;
@@ -148,22 +161,24 @@ public class StreamingChatController {
 
         // 用 AtomicReference 累积全部 token，供 onComplete 时统一脱敏
         AtomicReference<StringBuilder> fullTextRef = new AtomicReference<>(new StringBuilder());
+        SseDeltaBuffer deltaBuffer = new SseDeltaBuffer(
+                null,
+                streamFlushMinChars,
+                streamFlushIntervalMs,
+                data -> data,
+                (eventName, data) -> sendSseEvent(emitter, completed, eventName, data));
         long startMs = System.currentTimeMillis();
 
         agentFactory.streamingChatAssistantForModel(model).streamChat(sessionId, sanitizedMessage)
                 .onNext(token -> {
-                    try {
-                        // 累积 token 用于后续脱敏
-                        fullTextRef.get().append(token);
-                        emitter.send(SseEmitter.event().data(token));
-                    } catch (IOException e) {
-                        // 客户端已断开，静默关闭，不用 completeWithError（避免触发 Spring 错误页）
-                        log.debug("SSE 推送失败，客户端可能已断开: {}", e.getMessage());
-                        emitter.complete();
-                    }
+                    // 累积 token 用于后续脱敏
+                    fullTextRef.get().append(token);
+                    deltaBuffer.append(token);
                 })
                 .onComplete(response -> {
+                    boolean doneSent = false;
                     try {
+                        deltaBuffer.flush();
                         // ── Step 5：输出内容脱敏 ──────────────────
                         // 对完整回复做脱敏处理；若检测到敏感内容，推送脱敏后的完整文本
                         // 让前端用 replace 事件替换已渲染的原始内容，确保用户看到的是脱敏文本
@@ -175,18 +190,20 @@ public class StreamingChatController {
                                     userId, clientIp,
                                     "流式输出脱敏，检测到：" + outputCheck.detectedTypes());
                             // 推送脱敏后的完整替换文本（前端收到 replace 事件后整体替换已显示内容）
-                            emitter.send(SseEmitter.event()
-                                    .name("replace")
-                                    .data(outputCheck.filteredContent()));
+                            sendSseEvent(emitter, completed, "replace", outputCheck.filteredContent());
                             log.info("[SECURITY] 流式输出已脱敏，类型：{}", outputCheck.detectedTypes());
                         }
 
-                        // ── Step 6：异步持久化聊天记录 ──────────
                         String finalText = outputCheck.filteredContent();
-                        chatHistoryService.saveSession(sessionId, userId,
-                                sanitizedMessage.substring(0, Math.min(sanitizedMessage.length(), 20)), kbId);
-                        chatHistoryService.saveMessage(sessionId, userId, "user", sanitizedMessage);
-                        chatHistoryService.saveMessage(sessionId, userId, "ai", finalText);
+
+                        sendSseEvent(emitter, completed, "done", "[DONE]");
+                        doneSent = true;
+                        completeOnce(emitter, completed);
+
+                        // ── Step 6：异步持久化聊天记录 ──────────
+                        chatHistoryService.saveExchange(sessionId, userId,
+                                sanitizedMessage.substring(0, Math.min(sanitizedMessage.length(), 20)), kbId,
+                                sanitizedMessage, finalText);
 
                         // ── Step 7：审计日志（对话完成）──────────
                         long duration = System.currentTimeMillis() - startMs;
@@ -202,13 +219,11 @@ public class StreamingChatController {
                         auditLogService.logAiChat(userId, sessionId, clientIp, inputTokens, outputTokens);
                         log.info("流式对话完成 userId={} sessionId={} tokens={}/{} 耗时={}ms",
                                 userId, sessionId, inputTokens, outputTokens, duration);
-
-                        emitter.send(SseEmitter.event().name("done").data("[DONE]"));
-                        emitter.complete();
-                    } catch (IOException e) {
-                        // 发送完成事件失败（客户端断开），直接关闭，不触发 Spring 错误页
-                        log.debug("SSE 发送 done 事件失败，客户端可能已断开: {}", e.getMessage());
-                        emitter.complete();
+                    } catch (Exception e) {
+                        log.debug("SSE 完成阶段失败，客户端可能已断开: {}", e.getMessage());
+                        if (!doneSent) {
+                            completeOnce(emitter, completed);
+                        }
                     } finally {
                         // 清除 RAG ThreadLocal 上下文，防止内存泄漏
                         HybridRagContentRetriever.clearContext();
@@ -222,15 +237,14 @@ public class StreamingChatController {
                     // 不能用 completeWithError：SSE 响应已 committed，异步线程中 request 为 null，
                     // 会触发 "Cannot render error page for request [null]" 警告
                     // 改为通过 SSE error 事件通知前端，再正常 complete
+                    deltaBuffer.flush();
                     try {
-                        emitter.send(SseEmitter.event().name("error").data(
-                                error.getMessage() != null ? error.getMessage() : "LLM 调用失败，请重试"));
-                    } catch (IOException ignore) {
-                        // 客户端已断开，忽略
+                        sendSseEvent(emitter, completed, "error",
+                                error.getMessage() != null ? error.getMessage() : "LLM 调用失败，请重试");
                     } finally {
                         HybridRagContentRetriever.clearContext();
                     }
-                    emitter.complete();
+                    completeOnce(emitter, completed);
                 })
                 .start();
 
@@ -244,5 +258,29 @@ public class StreamingChatController {
             return forwarded.split(",")[0].trim();
         }
         return request.getRemoteAddr();
+    }
+
+    private boolean sendSseEvent(SseEmitter emitter, AtomicBoolean completed, String eventName, String data) {
+        if (completed.get()) {
+            return false;
+        }
+        try {
+            SseEmitter.SseEventBuilder event = SseEmitter.event().data(data);
+            if (eventName != null && !eventName.isBlank()) {
+                event.name(eventName);
+            }
+            emitter.send(event);
+            return true;
+        } catch (IOException | IllegalStateException e) {
+            log.debug("SSE 事件发送失败 event={} reason={}", eventName, e.getMessage());
+            completeOnce(emitter, completed);
+            return false;
+        }
+    }
+
+    private void completeOnce(SseEmitter emitter, AtomicBoolean completed) {
+        if (completed.compareAndSet(false, true)) {
+            emitter.complete();
+        }
     }
 }

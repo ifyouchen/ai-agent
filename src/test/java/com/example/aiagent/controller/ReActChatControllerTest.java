@@ -15,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.MethodParameter;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -132,8 +133,8 @@ class ReActChatControllerTest {
     void reactStreamSendsTokenLevelEvents() throws Exception {
         stubPreflight();
         when(chatRagContextService.resolve(USER_ID, null, null)).thenReturn(null);
-        when(outputContentFilter.filter("最终答案"))
-                .thenReturn(new OutputContentFilter.FilterResult("最终答案", java.util.List.of(), false));
+        when(outputContentFilter.filter("final answer"))
+                .thenReturn(new OutputContentFilter.FilterResult("final answer", java.util.List.of(), false));
 
         doAnswer(invocation -> {
             ReActAgent.ReActStreamCallback callback = invocation.getArgument(5);
@@ -145,9 +146,9 @@ class ReActChatControllerTest {
             callback.onToolCall(step);
             callback.onToolResult(step);
             callback.onAnswerStart(1);
-            callback.onAnswerToken("最终");
-            callback.onAnswerToken("答案");
-            return new ReActAgent.ReActResult("最终答案", java.util.List.of(step), 1, 123);
+            callback.onAnswerToken("final ");
+            callback.onAnswerToken("answer");
+            return new ReActAgent.ReActResult("final answer", java.util.List.of(step), 1, 123);
         }).when(reActAgent).executeStreamingWithCallback(
                 eq("hello"),
                 eq("sess-1"),
@@ -164,6 +165,7 @@ class ReActChatControllerTest {
                 .andExpect(content().string(containsString("event:tool-call")))
                 .andExpect(content().string(containsString("event:tool-result")))
                 .andExpect(content().string(containsString("event:answer-token")))
+                .andExpect(content().string(containsString("data:final answer")))
                 .andExpect(content().string(containsString("event:answer")))
                 .andExpect(content().string(containsString("event:done")));
     }
@@ -178,6 +180,8 @@ class ReActChatControllerTest {
                 chatRagContextService,
                 chatHistoryService,
                 executor);
+        ReflectionTestUtils.setField(controller, "streamFlushIntervalMs", 50L);
+        ReflectionTestUtils.setField(controller, "streamFlushMinChars", 40);
 
         return MockMvcBuilders.standaloneSetup(controller)
                 .setCustomArgumentResolvers(authenticationPrincipalResolver())

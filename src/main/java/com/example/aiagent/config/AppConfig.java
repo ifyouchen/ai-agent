@@ -135,4 +135,23 @@ public class AppConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * RAG 检索并发专属线程池，避免 parallelStream 占用 JVM common pool。
+     */
+    @Bean(name = "ragRetrievalExecutor")
+    public Executor ragRetrievalExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(8);
+        executor.setQueueCapacity(100);
+        executor.setKeepAliveSeconds(60);
+        executor.setThreadNamePrefix("rag-retrieval-");
+        executor.setThreadGroupName("rag-retrieval-group");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
+        executor.initialize();
+        return executor;
+    }
 }

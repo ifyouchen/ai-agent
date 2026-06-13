@@ -94,6 +94,27 @@ public class ChatHistoryService {
         }
     }
 
+    /**
+     * 一次性保存一轮用户/AI 对话，并只更新一次会话时间。
+     */
+    @Async
+    public void saveExchange(String sessionId, String userId, String title, Long kbId,
+                             String userContent, String aiContent) {
+        try {
+            ChatSession session = new ChatSession();
+            session.setSessionId(sessionId);
+            session.setUserId(userId);
+            session.setTitle(title != null ? truncate(title, 50) : "新对话");
+            session.setKbId(kbId);
+            chatSessionMapper.upsert(session);
+
+            chatMessageMapper.insert(newMessage(sessionId, userId, "user", userContent));
+            chatMessageMapper.insert(newMessage(sessionId, userId, "ai", aiContent));
+        } catch (Exception e) {
+            log.warn("保存对话轮次失败 sessionId={}: {}", sessionId, e.getMessage());
+        }
+    }
+
     // ── 查询 ──────────────────────────────────────────────────
 
     /**
@@ -323,6 +344,15 @@ public class ChatHistoryService {
     private String truncate(String text, int maxLen) {
         if (text == null) return "";
         return text.length() <= maxLen ? text : text.substring(0, maxLen) + "…";
+    }
+
+    private ChatMessage newMessage(String sessionId, String userId, String role, String content) {
+        ChatMessage msg = new ChatMessage();
+        msg.setSessionId(sessionId);
+        msg.setUserId(userId);
+        msg.setRole(role);
+        msg.setContent(content != null ? content : "");
+        return msg;
     }
 
     private ChatMessage toChatMessage(String sessionId, String userId, Map<String, Object> input) {

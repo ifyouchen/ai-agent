@@ -30,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -199,6 +200,38 @@ class ReActAgentTest {
         assertThat(result.answer()).isEqualTo("最终答案");
         assertThat(reasoningTokens).containsExactly("需要", "分析");
         assertThat(answerTokens).containsExactly("最终", "答案");
+    }
+
+    @Test
+    @DisplayName("全链路 ReAct 无工具调用且已有完整答案时不再额外 synthesis")
+    void executeStreamingWithCallbackReusesDirectAnswerWhenNoToolCall() {
+        String directAnswer = "这是一个完整的业务说明，已经能够直接回答用户的问题。";
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            StreamingResponseHandler<AiMessage> handler = invocation.getArgument(2);
+            handler.onNext(directAnswer);
+            handler.onComplete(Response.from(AiMessage.from(directAnswer)));
+            return null;
+        }).when(streamingChatModel).generate(anyList(), anyList(), any(StreamingResponseHandler.class));
+
+        List<String> answerTokens = new java.util.ArrayList<>();
+
+        ReActAgent.ReActResult result = reActAgent.executeStreamingWithCallback(
+                "问题",
+                "session-1",
+                "deepseek-v4-pro",
+                null,
+                null,
+                new ReActAgent.ReActStreamCallback() {
+                    @Override
+                    public void onAnswerToken(String token) {
+                        answerTokens.add(token);
+                    }
+                });
+
+        assertThat(result.answer()).isEqualTo(directAnswer);
+        assertThat(answerTokens).containsExactly(directAnswer);
+        verify(streamingChatModel, never()).generate(anyList(), any(StreamingResponseHandler.class));
     }
 
     @Test
