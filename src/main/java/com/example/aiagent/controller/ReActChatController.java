@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * ReAct 多步推理接口
@@ -231,10 +232,12 @@ public class ReActChatController {
      * GET /api/v1/chat/react/stream?sessionId=user-123&message=...&token=&lt;jwt&gt;
      *
      * SSE 事件类型：
-     *   step  - 每步推理（工具调用）JSON：{iteration, thought, toolName, toolArgs, observation}
-     *   answer- 最终答案 JSON：{answer, iterations, durationMs}
-     *   error - 错误信息文本
-     *   done  - 结束标识
+     *   status      - 当前阶段提示 JSON：{message}
+     *   step        - 每步推理（工具调用）JSON：{iteration, thought, toolName, toolArgs, observation}
+     *   answer      - 最终答案 JSON：{answer, iterations, durationMs}
+     *   react-error - 业务错误 JSON：{message, code}
+     *   error       - 兼容旧前端的错误文本
+     *   done        - 结束标识
      * </pre>
      */
     @GetMapping(value = "/react/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -248,7 +251,22 @@ public class ReActChatController {
             HttpServletRequest httpRequest) {
 
         SseEmitter emitter = new SseEmitter(300_000L); // ReAct 可能较慢，超时设 5 分钟
+        AtomicBoolean completed = new AtomicBoolean(false);
+        emitter.onCompletion(() -> completed.set(true));
+        emitter.onError(error -> {
+            completed.set(true);
+            log.debug("[ReAct-Stream] SSE 连接异常结束 userId={} sessionId={}: {}",
+                    userId, sessionId, error.getMessage());
+        });
+        emitter.onTimeout(() -> {
+            log.warn("[ReAct-Stream] SSE 超时 userId={} sessionId={} model={} kbId={}",
+                    userId, sessionId, model, kbId);
+            sendReactErrorAndComplete(emitter, completed,
+                    "深度推理超时，请稍后重试", "timeout");
+        });
         String clientIp = getClientIp(httpRequest);
+
+        sendReactStatus(emitter, completed, "请求已接收");
 
         // ── Step 1：Prompt 注入检测 ────────────────────
         PromptInjectionFilter.FilterResult injectionCheck = promptInjectionFilter.check(message);
@@ -257,10 +275,8 @@ public class ReActChatController {
             auditLogService.logSecurityBlock(
                     AuditLogService.EventType.PROMPT_INJECTION_DETECTED,
                     userId, clientIp, injectionCheck.reason());
-            try {
-                emitter.send(SseEmitter.event().name("error").data(injectionCheck.reason()));
-                emitter.complete();
-            } catch (IOException ignore) {}
+            sendReactErrorAndComplete(emitter, completed,
+                    injectionCheck.reason(), "prompt_blocked");
             return emitter;
         }
 
@@ -271,10 +287,8 @@ public class ReActChatController {
             auditLogService.logSecurityBlock(
                     AuditLogService.EventType.RATE_LIMIT_TRIGGERED,
                     userId, clientIp, rateLimit.reason());
-            try {
-                emitter.send(SseEmitter.event().name("error").data(rateLimit.reason()));
-                emitter.complete();
-            } catch (IOException ignore) {}
+            sendReactErrorAndComplete(emitter, completed,
+                    rateLimit.reason(), "rate_limited");
             return emitter;
         }
 
@@ -287,14 +301,13 @@ public class ReActChatController {
         final String sanitizedMessage = injectionCheck.sanitizedInput();
         final HybridRagContentRetriever.RetrievalContext ragContext;
         try {
+            sendReactStatus(emitter, completed, "知识库校验中");
             ragContext = chatRagContextService.resolve(userId, orgId, kbId);
         } catch (IllegalArgumentException e) {
             log.warn("[ReAct-Stream] 知识库上下文无效 userId={} orgId={} kbId={} reason={}",
                     userId, orgId, kbId, e.getMessage());
-            try {
-                emitter.send(SseEmitter.event().name("error").data(e.getMessage()));
-            } catch (IOException ignore) {}
-            emitter.complete();
+            sendReactErrorAndComplete(emitter, completed,
+                    e.getMessage(), "kb_forbidden");
             return emitter;
         }
         try {
@@ -307,6 +320,7 @@ public class ReActChatController {
                 HybridRagContentRetriever.setContext(ragContext);
             }
             try {
+                sendReactStatus(emitter, completed, "模型推理中");
                 ReActAgent.ReActResult result = reActAgent.executeWithCallback(
                         sanitizedMessage, sessionId, model,
                         ragContext != null ? ragContext.tenantId() : null,
@@ -321,7 +335,7 @@ public class ReActChatController {
                                             "iterations", step.iteration(),
                                             "durationMs", dur
                                     ));
-                                    emitter.send(SseEmitter.event().name("answer").data(answerJson));
+                                    sendSseEvent(emitter, completed, "answer", answerJson);
                                 } else {
                                     // 推理步骤通过 step 事件推送
                                     String stepJson = MAPPER.writeValueAsString(Map.of(
@@ -331,16 +345,17 @@ public class ReActChatController {
                                             "toolArgs",    step.toolArgs()     != null ? step.toolArgs()     : "",
                                             "observation", step.observation()  != null ? step.observation()  : ""
                                     ));
-                                    emitter.send(SseEmitter.event().name("step").data(stepJson));
+                                    sendSseEvent(emitter, completed, "step", stepJson);
                                 }
                             } catch (IOException e) {
                                 // 客户端断开，静默关闭，不用 completeWithError
                                 log.debug("[ReAct-Stream] SSE 推送失败，客户端可能已断开: {}", e.getMessage());
-                                emitter.complete();
+                                completeOnce(emitter, completed);
                             }
                         });
 
                 // ── Step 5：输出脱敏 ──────────────────
+                sendReactStatus(emitter, completed, "整理答案中");
                 OutputContentFilter.FilterResult outputCheck = outputContentFilter.filter(result.answer());
                 if (!outputCheck.detectedTypes().isEmpty()) {
                     auditLogService.logSecurityBlock(
@@ -348,8 +363,8 @@ public class ReActChatController {
                             userId, clientIp,
                             "ReAct-Stream 输出脱敏，检测到：" + outputCheck.detectedTypes());
                     // 通知前端替换已显示的最终答案
-                    emitter.send(SseEmitter.event().name("replace-answer")
-                            .data(MAPPER.writeValueAsString(Map.of("answer", outputCheck.filteredContent()))));
+                    sendSseEvent(emitter, completed, "replace-answer",
+                            MAPPER.writeValueAsString(Map.of("answer", outputCheck.filteredContent())));
                 }
                 String aiText = outputCheck.filteredContent();
                 reActAgent.rememberExchange(sessionId, sanitizedMessage, aiText);
@@ -364,18 +379,17 @@ public class ReActChatController {
                 log.info("[ReAct-Stream] 完成 userId={} iterations={} durationMs={}",
                         userId, result.iterations(), duration);
 
-                emitter.send(SseEmitter.event().name("done").data("[DONE]"));
-                emitter.complete();
+                sendSseEvent(emitter, completed, "done", "[DONE]");
+                completeOnce(emitter, completed);
 
             } catch (Exception e) {
-                log.error("[ReAct-Stream] 推理出错 userId={}: {}", userId, e.getMessage());
+                long duration = System.currentTimeMillis() - startMs;
+                log.error("[ReAct-Stream] 推理出错 userId={} sessionId={} model={} kbId={} durationMs={}",
+                        userId, sessionId, model, kbId, duration, e);
                 // 不用 completeWithError：SSE 响应已 committed，异步线程中 request 为 null，
                 // 会触发 "Cannot render error page for request [null]" 警告
-                try {
-                    emitter.send(SseEmitter.event().name("error").data(
-                            e.getMessage() != null ? e.getMessage() : "ReAct 推理失败，请重试"));
-                } catch (IOException ignore) {}
-                emitter.complete();
+                ReactError error = mapReactError(e);
+                sendReactErrorAndComplete(emitter, completed, error.message(), error.code());
             } finally {
                 HybridRagContentRetriever.clearContext();
                 MDC.remove("scenario");
@@ -385,14 +399,91 @@ public class ReActChatController {
         } catch (RejectedExecutionException ex) {
             // 线程池已满，快速失败并向客户端发送错误事件
             log.warn("[ReAct-Stream] SSE 线程池已满，拒绝请求 userId={}", userId);
-            try {
-                emitter.send(SseEmitter.event().name("error").data("服务繁忙，请稍后重试"));
-            } catch (IOException ignore) {}
-            emitter.complete();
+            sendReactErrorAndComplete(emitter, completed,
+                    "服务繁忙，请稍后重试", "busy");
         }
 
         return emitter;
     }
+
+    private void sendReactStatus(SseEmitter emitter, AtomicBoolean completed, String message) {
+        try {
+            sendSseEvent(emitter, completed, "status", MAPPER.writeValueAsString(Map.of("message", message)));
+        } catch (IOException e) {
+            log.debug("[ReAct-Stream] status 序列化失败: {}", e.getMessage());
+            completeOnce(emitter, completed);
+        }
+    }
+
+    private void sendReactErrorAndComplete(SseEmitter emitter, AtomicBoolean completed, String message) {
+        sendReactErrorAndComplete(emitter, completed, message, "internal_error");
+    }
+
+    private void sendReactErrorAndComplete(SseEmitter emitter, AtomicBoolean completed,
+                                           String message, String code) {
+        String safeCode = code != null && !code.isBlank() ? code : "internal_error";
+        String safeMessage = message != null && !message.isBlank()
+                ? message
+                : "深度推理失败，请稍后重试";
+        try {
+            String payload = MAPPER.writeValueAsString(Map.of(
+                    "message", safeMessage,
+                    "code", safeCode
+            ));
+            sendSseEvent(emitter, completed, "react-error", payload);
+        } catch (IOException e) {
+            log.debug("[ReAct-Stream] react-error 序列化失败: {}", e.getMessage());
+        }
+
+        // 兼容旧前端：旧代码监听 error 事件并直接读取 ev.data。
+        sendSseEvent(emitter, completed, "error", safeMessage);
+        completeOnce(emitter, completed);
+    }
+
+    private boolean sendSseEvent(SseEmitter emitter, AtomicBoolean completed,
+                                 String eventName, String data) {
+        if (completed.get()) {
+            return false;
+        }
+        try {
+            emitter.send(SseEmitter.event().name(eventName).data(data));
+            return true;
+        } catch (IOException | IllegalStateException e) {
+            log.debug("[ReAct-Stream] SSE 事件发送失败 event={} reason={}", eventName, e.getMessage());
+            completeOnce(emitter, completed);
+            return false;
+        }
+    }
+
+    private void completeOnce(SseEmitter emitter, AtomicBoolean completed) {
+        if (completed.compareAndSet(false, true)) {
+            emitter.complete();
+        }
+    }
+
+    private ReactError mapReactError(Throwable error) {
+        String message = collectExceptionMessages(error).toLowerCase();
+        if (message.contains("account_overdue")) {
+            return new ReactError(
+                    "模型/Embedding 服务账号欠费或不可用，请检查 API Key 或账户余额",
+                    "account_overdue");
+        }
+        return new ReactError("深度推理失败，请稍后重试", "internal_error");
+    }
+
+    private String collectExceptionMessages(Throwable error) {
+        StringBuilder sb = new StringBuilder();
+        Throwable current = error;
+        while (current != null) {
+            if (current.getMessage() != null) {
+                sb.append(current.getMessage()).append('\n');
+            }
+            current = current.getCause();
+        }
+        return sb.toString();
+    }
+
+    private record ReactError(String message, String code) {}
 
     /** 提取客户端真实 IP（兼容 Nginx 反向代理） */
     private String getClientIp(HttpServletRequest request) {

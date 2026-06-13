@@ -45,6 +45,8 @@ export const useSessionStore = defineStore('sessions', () => {
   const editingOriginalText = ref('');
 
   let _saveTimer = null;
+  const REACT_WATCHDOG_MS = 150000;
+  const REACT_WAITING_UPDATE_MS = 1000;
 
   // ── 计算属性 ──────────────────────────────────────────────────────────
   const currentSessionSending = computed(() =>
@@ -404,6 +406,41 @@ export const useSessionStore = defineStore('sessions', () => {
     if (showNotice) ui.showToast('info', '已停止当前会话的生成');
   }
 
+  function renderReactThinking(status, startMs) {
+    const elapsed = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+    const label = elapsed >= 3 ? `${status}，已等待 ${elapsed} 秒` : status;
+    return `<div class="react-thinking"><span class="typing-dots">●●●</span><span class="react-thinking-label">${escapeHtml(label)}</span></div>`;
+  }
+
+  function parseReactPayload(raw) {
+    if (raw && typeof raw === 'object') return raw;
+    if (!raw) return {};
+    try {
+      const data = JSON.parse(raw);
+      return data && typeof data === 'object' ? data : { message: String(data) };
+    } catch {
+      return { message: String(raw) };
+    }
+  }
+
+  function mapReactErrorMessage(raw, fallback = '深度推理失败，请稍后重试') {
+    const data = parseReactPayload(raw);
+    const code = String(data.code || '').toLowerCase();
+    const message = String(data.message || raw || fallback);
+    const source = `${code} ${message}`.toLowerCase();
+
+    if (source.includes('account_overdue')) {
+      return '模型/Embedding 服务账号欠费或不可用，请检查 API Key 或账户余额';
+    }
+    if (['busy', 'rate_limited', 'prompt_blocked', 'kb_forbidden', 'timeout'].includes(code)) {
+      return message;
+    }
+    if (code === 'internal_error') {
+      return fallback;
+    }
+    return source.includes('{') ? fallback : message;
+  }
+
   // ── 聊天发送 ──────────────────────────────────────────────────────────
   async function sendMessage(text, kbId = null, requestText = text) {
     const reqId = sessionId.value;
@@ -562,14 +599,61 @@ async function doStreamChat(reqId, text, kbId) {
     rt.sending = true; rt.cancelled = false;
     const rid = ++rt.requestId;
     const startMs = Date.now();
-    const bubble = pushMessage(reqId, 'ai',
-      '<div class="react-thinking"><span class="typing-dots">●●●</span><span class="react-thinking-label">思考中…</span></div>');
+    let currentStatus = '思考中…';
+    const bubble = pushMessage(reqId, 'ai', renderReactThinking(currentStatus, startMs));
     rt.bubble = bubble; rt.reactSteps = []; rt.reactAnswer = null; rt.reactStartMs = startMs;
     const es = api.chatReactStream(reqId, text, kbId, activeModel.value, org.currentOrgId);
     rt.eventSource = es;
+    let lastEventAt = Date.now();
+    let receivedAnswer = false;
+    let finished = false;
+    let watchdogId = null;
 
+    function touchEvent(status = null) {
+      lastEventAt = Date.now();
+      if (status) currentStatus = status;
+    }
+
+    function setWaitingStatus(status = currentStatus) {
+      if (receivedAnswer || rt.reactSteps?.length) return;
+      bubble.html = renderReactThinking(status, startMs);
+    }
+
+    function failReact(raw, fallback, toastMessage = '深度推理失败，请重试') {
+      if (finished || rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
+      const msg = mapReactErrorMessage(raw, fallback);
+      es.close();
+      bubble.html = `<span class="error-msg">${escapeHtml(msg)}</span>`;
+      bubble.durationMs = Date.now() - startMs;
+      ui.showToast('error', toastMessage);
+      finishReact();
+    }
+
+    watchdogId = window.setInterval(() => {
+      if (finished || rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) {
+        window.clearInterval(watchdogId);
+        return;
+      }
+      if (Date.now() - lastEventAt >= REACT_WATCHDOG_MS) {
+        failReact(
+          { message: '深度推理超时，请稍后重试', code: 'timeout' },
+          '深度推理超时，请稍后重试',
+          '深度推理超时'
+        );
+        return;
+      }
+      setWaitingStatus();
+    }, REACT_WAITING_UPDATE_MS);
+
+    es.addEventListener('status', ev => {
+      if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
+      const data = parseReactPayload(ev.data);
+      touchEvent(data.message || '思考中…');
+      setWaitingStatus(currentStatus);
+    });
     es.addEventListener('step', ev => {
       if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
+      touchEvent();
       try {
         const step = JSON.parse(ev.data);
         rt.reactSteps.push(step);
@@ -578,46 +662,63 @@ async function doStreamChat(reqId, text, kbId) {
     });
     es.addEventListener('answer', ev => {
       if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
+      touchEvent();
       try {
         const data = JSON.parse(ev.data);
-        rt.reactAnswer = data.answer;
-        bubble.html = renderReactBubble(rt.reactSteps, data.answer, data.durationMs);
+        const answer = data.answer || '';
+        receivedAnswer = !!String(answer).trim();
+        rt.reactAnswer = answer;
+        bubble.html = renderReactBubble(rt.reactSteps, answer, data.durationMs);
         bubble.durationMs = data.durationMs;
       } catch {}
     });
     es.addEventListener('replace-answer', ev => {
       if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
+      touchEvent();
       try {
         const data = JSON.parse(ev.data);
-        rt.reactAnswer = data.answer;
-        bubble.html = renderReactBubble(rt.reactSteps, data.answer, Date.now() - startMs);
+        const answer = data.answer || '';
+        receivedAnswer = !!String(answer).trim();
+        rt.reactAnswer = answer;
+        bubble.html = renderReactBubble(rt.reactSteps, answer, Date.now() - startMs);
       } catch {}
+    });
+    es.addEventListener('react-error', ev => {
+      touchEvent();
+      failReact(ev.data, '深度推理失败，请稍后重试');
     });
     es.addEventListener('done', () => {
       if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
-      es.close(); finishReact();
+      touchEvent();
+      es.close();
+      if (!receivedAnswer) {
+        bubble.html = '<span class="error-msg">推理已结束但没有返回答案，请重试</span>';
+        bubble.durationMs = Date.now() - startMs;
+        ui.showToast('error', '深度推理未返回答案');
+      }
+      finishReact();
     });
     es.addEventListener('error', ev => {
       if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
-      es.close();
-      const msg = ev.data || '推理失败，请重试';
-      if (!rt.reactAnswer) {
-        bubble.html = `<span class="error-msg">推理失败：${escapeHtml(msg)}</span>`;
-        ui.showToast('error', '深度推理失败，请重试');
-      }
-      finishReact();
+      if (typeof ev.data === 'undefined') return;
+      touchEvent();
+      failReact(ev.data, '深度推理失败，请稍后重试');
     });
     es.onerror = () => {
       if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
       es.close();
-      if (!rt.reactAnswer && !rt.reactSteps?.length) {
-        bubble.html = '<span class="error-msg">连接失败，请重试</span>';
+      if (!receivedAnswer) {
+        bubble.html = '<span class="error-msg">深度推理连接中断，后端可能已异常退出，请重试</span>';
+        bubble.durationMs = Date.now() - startMs;
         ui.showToast('error', '深度推理连接失败');
       }
       finishReact();
     };
 
     function finishReact() {
+      if (finished) return;
+      finished = true;
+      if (watchdogId) window.clearInterval(watchdogId);
       if (rt.requestId === rid) {
         rt.sending = false; rt.eventSource = null; rt.bubble = null;
         rt.reactSteps = null; rt.reactAnswer = null;

@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -121,5 +122,44 @@ class ReActAgentTest {
                 .contains("旧答案2")
                 .contains("新问题")
                 .contains("新答案");
+    }
+
+    @Test
+    @DisplayName("深度思考流式回调会推送最终答案")
+    void executeWithCallbackPushesFinalAnswer() {
+        when(chatModel.generate(anyList(), anyList()))
+                .thenReturn(Response.from(AiMessage.from("最终答案")));
+
+        List<ReActAgent.ReActStep> finalSteps = new java.util.ArrayList<>();
+        ReActAgent.ReActResult result = reActAgent.executeWithCallback(
+                "问题",
+                "session-1",
+                "deepseek-v4-pro",
+                null,
+                null,
+                (step, isFinal) -> {
+                    if (isFinal) finalSteps.add(step);
+                });
+
+        assertThat(result.answer()).isEqualTo("最终答案");
+        assertThat(finalSteps).hasSize(1);
+        assertThat(finalSteps.getFirst().thought()).isEqualTo("最终答案");
+    }
+
+    @Test
+    @DisplayName("深度思考流式执行中的模型异常会向调用方传播")
+    void executeWithCallbackPropagatesModelErrors() {
+        when(chatModel.generate(anyList(), anyList()))
+                .thenThrow(new RuntimeException("account_overdue"));
+
+        assertThatThrownBy(() -> reActAgent.executeWithCallback(
+                "问题",
+                "session-1",
+                "deepseek-v4-pro",
+                null,
+                null,
+                (step, isFinal) -> {}))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("account_overdue");
     }
 }
