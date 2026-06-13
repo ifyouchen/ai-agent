@@ -79,6 +79,8 @@ public class SecurityConfig {
                     "/api/v1/auth/login",
                     "/api/v1/auth/register",
                     "/api/v1/auth/email-code",
+                    "/api/v1/auth/forgot-password",
+                    "/api/v1/auth/reset-password",
                     "/actuator/health",
                     "/actuator/prometheus",
                     // Spring Boot 内部错误转发端点必须放行，否则异常处理时会触发二次

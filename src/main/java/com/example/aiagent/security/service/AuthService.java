@@ -107,17 +107,79 @@ public class AuthService {
         emailVerificationService.sendRegisterCode(email);
     }
 
+    public void sendEmailCode(String email, String purpose) {
+        String p = purpose == null ? "register" : purpose.toLowerCase(Locale.ROOT);
+        if ("register".equals(p)) {
+            String normalizedEmail = email != null ? email.strip().toLowerCase(Locale.ROOT) : "";
+            if (sysUserMapper.existsByEmail(normalizedEmail)) {
+                throw new IllegalArgumentException("邮箱已被注册：" + normalizedEmail);
+            }
+            emailVerificationService.sendRegisterCode(email);
+        } else if ("reset_password".equals(p)) {
+            emailVerificationService.sendResetPasswordCode(email);
+        } else if ("change_password".equals(p)) {
+            emailVerificationService.sendChangePasswordCode(email);
+        } else {
+            emailVerificationService.sendRegisterCode(email);
+        }
+    }
+
+    /**
+     * 忘记密码：发送重置验证码。
+     *
+     * <p>为防止邮箱枚举，无论邮箱是否存在都返回相同提示，
+     * 只有数据库中存在对应用户时才会真正发送邮件。
+     */
+    public void forgotPassword(String email) {
+        String normalizedEmail = email != null ? email.strip().toLowerCase(Locale.ROOT) : "";
+        if (!normalizedEmail.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            throw new IllegalArgumentException("邮箱格式不正确");
+        }
+        sysUserMapper.findByEmail(normalizedEmail)
+                .ifPresentOrElse(
+                        user -> emailVerificationService.sendResetPasswordCode(normalizedEmail),
+                        () -> log.warn("忘记密码：邮箱不存在，不发送验证码 email={}", maskEmail(normalizedEmail))
+                );
+    }
+
+    /**
+     * 重置密码：使用邮箱验证码设置新密码。
+     */
+    @Transactional
+    public void resetPassword(String email, String emailCode, String newPassword) {
+        String normalizedEmail = email != null ? email.strip().toLowerCase(Locale.ROOT) : "";
+        emailVerificationService.verifyResetPasswordCode(normalizedEmail, emailCode);
+
+        SysUser user = sysUserMapper.findByEmail(normalizedEmail)
+                .orElseThrow(() -> new IllegalArgumentException("该邮箱未注册账号"));
+
+        if (newPassword == null || newPassword.length() < 6) {
+            throw new IllegalArgumentException("新密码长度不能少于 6 位");
+        }
+
+        sysUserMapper.updatePassword(user.getUserId(), passwordEncoder.encode(newPassword));
+        log.info("用户重置密码成功 userId={} email={}", user.getUserId(), maskEmail(normalizedEmail));
+    }
+
     /**
      * 修改密码
      *
      * @param userId      当前用户 ID
      * @param oldPassword 旧密码（用于校验）
      * @param newPassword 新密码（明文，将被 BCrypt 加密）
-     * @throws IllegalArgumentException 旧密码错误或新密码不符合规则
+     * @param emailCode   邮箱验证码
+     * @throws IllegalArgumentException 旧密码错误、验证码错误或新密码不符合规则
      */
-    public void changePassword(String userId, String oldPassword, String newPassword) {
+    @Transactional
+    public void changePassword(String userId, String oldPassword, String newPassword, String emailCode) {
         SysUser user = sysUserMapper.findByUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
+
+        if (user.getEmail() == null || user.getEmail().isBlank()) {
+            throw new IllegalArgumentException("当前账号未绑定邮箱，无法通过邮箱验证修改密码");
+        }
+
+        emailVerificationService.verifyChangePasswordCode(user.getEmail(), emailCode);
 
         if (!passwordEncoder.matches(oldPassword, user.getPasswordHash())) {
             throw new IllegalArgumentException("旧密码不正确");
@@ -130,6 +192,14 @@ public class AuthService {
         String newHash = passwordEncoder.encode(newPassword);
         sysUserMapper.updatePassword(userId, newHash);
         log.info("用户修改密码成功 userId={}", userId);
+    }
+
+    private String maskEmail(String email) {
+        int at = email.indexOf('@');
+        if (at <= 1) {
+            return "***" + email.substring(Math.max(at, 0));
+        }
+        return email.charAt(0) + "***" + email.substring(at);
     }
 
     /**
@@ -149,21 +219,17 @@ public class AuthService {
     }
 
     /**
-     * 更新用户 Profile（昵称、邮箱）
+     * 更新用户 Profile（仅昵称可修改，邮箱注册后不可变更）
      *
-     * @throws IllegalArgumentException 用户不存在 / 邮箱格式无效
+     * @throws IllegalArgumentException 用户不存在
      */
-    public void updateProfile(String userId, String nickname, String email) {
+    public void updateProfile(String userId, String nickname) {
         sysUserMapper.findByUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
 
-        if (email != null && !email.isBlank()
-                && !email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
-            throw new IllegalArgumentException("邮箱格式不正确");
-        }
         sysUserMapper.updateProfile(userId,
                 nickname != null ? nickname.strip() : null,
-                email    != null ? email.strip()    : null);
+                null);
         log.info("用户更新 Profile userId={}", userId);
     }
 }

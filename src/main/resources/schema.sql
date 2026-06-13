@@ -203,7 +203,43 @@ CREATE INDEX IF NOT EXISTS idx_org_member_org_id  ON sys_org_member(org_id);
 CREATE INDEX IF NOT EXISTS idx_org_member_user_id ON sys_org_member(user_id);
 
 -- ============================================================
--- 11. 知识库成员授权表
+-- 11. 组织邀请表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS sys_org_invitation (
+    id              BIGSERIAL     PRIMARY KEY,
+    org_id          VARCHAR(64)   NOT NULL,
+    invited_email   VARCHAR(100)  NOT NULL,
+    invited_user_id VARCHAR(64),
+    inviter_id      VARCHAR(64)   NOT NULL,
+    role            VARCHAR(32)   NOT NULL DEFAULT 'MEMBER',
+    token           VARCHAR(64)   NOT NULL UNIQUE,
+    status          VARCHAR(32)   NOT NULL DEFAULT 'PENDING',
+    expires_at      TIMESTAMPTZ   NOT NULL,
+    created_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_org_invitation_org_id   ON sys_org_invitation(org_id);
+CREATE INDEX IF NOT EXISTS idx_org_invitation_token    ON sys_org_invitation(token);
+CREATE INDEX IF NOT EXISTS idx_org_invitation_email    ON sys_org_invitation(invited_email);
+CREATE INDEX IF NOT EXISTS idx_org_invitation_status   ON sys_org_invitation(org_id, status);
+
+-- ============================================================
+-- 12. 组织加入申请表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS sys_org_join_request (
+    id          BIGSERIAL     PRIMARY KEY,
+    org_id      VARCHAR(64)   NOT NULL,
+    user_id     VARCHAR(64)   NOT NULL,
+    message     TEXT,
+    status      VARCHAR(32)   NOT NULL DEFAULT 'PENDING',
+    created_at  TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    UNIQUE (org_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_org_join_request_org_id   ON sys_org_join_request(org_id);
+CREATE INDEX IF NOT EXISTS idx_org_join_request_user_id  ON sys_org_join_request(user_id);
+CREATE INDEX IF NOT EXISTS idx_org_join_request_status   ON sys_org_join_request(org_id, status);
+
+-- ============================================================
+-- 13. 知识库成员授权表
 -- ============================================================
 CREATE TABLE IF NOT EXISTS kb_member (
     id              BIGSERIAL     PRIMARY KEY,
@@ -218,7 +254,7 @@ CREATE INDEX IF NOT EXISTS idx_kb_member_kb_id   ON kb_member(kb_id);
 CREATE INDEX IF NOT EXISTS idx_kb_member_user_id ON kb_member(user_id);
 
 -- ============================================================
--- 12. 聊天会话表（对话历史持久化）
+-- 14. 聊天会话表（对话历史持久化）
 -- ============================================================
 CREATE TABLE IF NOT EXISTS chat_session (
     id          BIGSERIAL    PRIMARY KEY,
@@ -233,7 +269,7 @@ CREATE INDEX IF NOT EXISTS idx_chat_session_user_id    ON chat_session(user_id, 
 CREATE INDEX IF NOT EXISTS idx_chat_session_session_id ON chat_session(session_id);
 
 -- ============================================================
--- 13. 聊天消息表（对话历史持久化）
+-- 15. 聊天消息表（对话历史持久化）
 -- ============================================================
 CREATE TABLE IF NOT EXISTS chat_message (
     id          BIGSERIAL    PRIMARY KEY,

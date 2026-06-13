@@ -12,8 +12,18 @@ export async function register(payload) {
   return data;
 }
 
-export async function sendEmailCode(email) {
-  const { data } = await http.post('/api/v1/auth/email-code', { email });
+export async function sendEmailCode(email, purpose = 'register') {
+  const { data } = await http.post('/api/v1/auth/email-code', { email, purpose });
+  return data;
+}
+
+export async function forgotPassword(email) {
+  const { data } = await http.post('/api/v1/auth/forgot-password', { email });
+  return data;
+}
+
+export async function resetPassword(email, emailCode, newPassword) {
+  const { data } = await http.post('/api/v1/auth/reset-password', { email, emailCode, newPassword });
   return data;
 }
 
@@ -28,12 +38,12 @@ export async function getProfile() {
   return data;
 }
 
-export async function changePassword(oldPassword, newPassword) {
-  const { data } = await http.put('/api/v1/auth/profile/password', { oldPassword, newPassword });
+export async function changePassword(oldPassword, newPassword, emailCode) {
+  const { data } = await http.put('/api/v1/auth/profile/password', { oldPassword, newPassword, emailCode });
   return data;
 }
 
-export async function updateProfile(nickname, email) {
-  const { data } = await http.put('/api/v1/auth/profile', { nickname, email });
+export async function updateProfile(nickname) {
+  const { data } = await http.put('/api/v1/auth/profile', { nickname });
   return data;
 }

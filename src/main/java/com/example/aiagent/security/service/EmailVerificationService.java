@@ -1,13 +1,13 @@
 package com.example.aiagent.security.service;
 
 import com.example.aiagent.security.entity.EmailVerificationCode;
+import com.example.aiagent.security.mail.MailMessage;
+import com.example.aiagent.security.mail.MailSender;
 import com.example.aiagent.security.mapper.EmailVerificationCodeMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.MailException;
-import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -20,18 +20,21 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
- * 注册邮箱验证码服务。
+ * 邮箱验证码服务。
+ *
+ * <p>支持注册、重置密码、修改密码三种用途。验证码生成与校验同步执行，
+ * 邮件发送通过 {@link MailSender} 异步化，避免阻塞 HTTP 请求线程。
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class EmailVerificationService {
 
-    private static final String PURPOSE_REGISTER = "REGISTER";
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
     private static final Pattern CODE_PATTERN = Pattern.compile("^\\d{6}$");
 
     private final EmailVerificationCodeMapper codeMapper;
+    private final MailSender mailSender;
     private final ObjectProvider<JavaMailSender> mailSenderProvider;
     private final PasswordEncoder passwordEncoder;
     private final SecureRandom random = new SecureRandom();
@@ -45,37 +48,70 @@ public class EmailVerificationService {
     @Value("${auth.email.max-attempts:5}")
     private int maxAttempts;
 
-    @Value("${auth.email.from:}")
-    private String emailFrom;
+    // ─────────────── 公开 API：按用途分派 ───────────────
 
     @Transactional
     public void sendRegisterCode(String email) {
+        sendCode(email, EmailVerificationPurpose.REGISTER);
+    }
+
+    @Transactional
+    public void sendResetPasswordCode(String email) {
+        sendCode(email, EmailVerificationPurpose.RESET_PASSWORD);
+    }
+
+    @Transactional
+    public void sendChangePasswordCode(String email) {
+        sendCode(email, EmailVerificationPurpose.CHANGE_PASSWORD);
+    }
+
+    public void verifyRegisterCode(String email, String code) {
+        verifyCode(email, code, EmailVerificationPurpose.REGISTER);
+    }
+
+    public void verifyResetPasswordCode(String email, String code) {
+        verifyCode(email, code, EmailVerificationPurpose.RESET_PASSWORD);
+    }
+
+    public void verifyChangePasswordCode(String email, String code) {
+        verifyCode(email, code, EmailVerificationPurpose.CHANGE_PASSWORD);
+    }
+
+    // ─────────────── 核心实现 ───────────────
+
+    @Transactional
+    public void sendCode(String email, EmailVerificationPurpose purpose) {
         String normalizedEmail = normalizeEmail(email);
         Instant now = Instant.now();
-        codeMapper.findLatestByEmailAndPurpose(normalizedEmail, PURPOSE_REGISTER)
+        String purposeName = purpose.name();
+
+        codeMapper.findLatestByEmailAndPurpose(normalizedEmail, purposeName)
                 .filter(code -> code.getCreatedAt() != null)
                 .filter(code -> code.getCreatedAt().plusSeconds(resendCooldownSeconds).isAfter(now))
                 .ifPresent(code -> {
                     throw new IllegalArgumentException("验证码发送太频繁，请稍后再试");
                 });
 
-        JavaMailSender mailSender = mailSenderProvider.getIfAvailable();
-        ensureMailSenderConfigured(mailSender);
+        // 同步校验邮件服务是否已配置，避免用户点击后事件被监听器静默跳过
+        JavaMailSender mailSenderBean = mailSenderProvider.getIfAvailable();
+        ensureMailSenderConfigured(mailSenderBean);
 
         String code = String.format("%06d", random.nextInt(1_000_000));
-        sendEmail(mailSender, normalizedEmail, code);
+
+        // 异步发送邮件，页面点击后立即返回
+        mailSender.send(buildMailMessage(normalizedEmail, code, purpose));
 
         EmailVerificationCode record = EmailVerificationCode.builder()
                 .email(normalizedEmail)
-                .purpose(PURPOSE_REGISTER)
+                .purpose(purposeName)
                 .codeHash(passwordEncoder.encode(code))
                 .expiresAt(now.plusSeconds(Math.max(codeTtlMinutes, 1L) * 60))
                 .build();
         codeMapper.insert(record);
-        log.info("注册邮箱验证码已发送 email={}", maskEmail(normalizedEmail));
+        log.info("{}邮箱验证码已发送 email={}", purpose.getDisplayName(), maskEmail(normalizedEmail));
     }
 
-    public void verifyRegisterCode(String email, String code) {
+    public void verifyCode(String email, String code, EmailVerificationPurpose purpose) {
         String normalizedEmail = normalizeEmail(email);
         String normalizedCode = code != null ? code.strip() : "";
         if (!CODE_PATTERN.matcher(normalizedCode).matches()) {
@@ -83,7 +119,7 @@ public class EmailVerificationService {
         }
 
         EmailVerificationCode record = codeMapper
-                .findLatestByEmailAndPurpose(normalizedEmail, PURPOSE_REGISTER)
+                .findLatestByEmailAndPurpose(normalizedEmail, purpose.name())
                 .orElseThrow(() -> new IllegalArgumentException("请先获取邮箱验证码"));
 
         if (record.getUsedAt() != null) {
@@ -103,12 +139,46 @@ public class EmailVerificationService {
         codeMapper.markUsed(record.getId(), Instant.now());
     }
 
-    private String normalizeEmail(String email) {
-        String normalized = email != null ? email.strip().toLowerCase(Locale.ROOT) : "";
-        if (!EMAIL_PATTERN.matcher(normalized).matches()) {
-            throw new IllegalArgumentException("邮箱格式不正确");
-        }
-        return normalized;
+    private MailMessage buildMailMessage(String email, String code, EmailVerificationPurpose purpose) {
+        String displayName = purpose.getDisplayName();
+        String subject = "AI Agent " + displayName + "验证码";
+        String text = """
+                您正在进行 AI Agent %s操作。
+
+                验证码：%s
+
+                该验证码 %d 分钟内有效，请勿转发给他人。
+                如果不是您本人操作，请忽略这封邮件。
+                """.formatted(displayName, code, Math.max(codeTtlMinutes, 1L));
+
+        String html = buildEmailHtml(displayName, code, Math.max(codeTtlMinutes, 1L));
+
+        return MailMessage.builder()
+                .to(email)
+                .subject(subject)
+                .text(text)
+                .html(html)
+                .build();
+    }
+
+    private String buildEmailHtml(String purposeName, String code, long ttlMinutes) {
+        return "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\"/><style>"
+                + "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;margin:0;padding:20px}"
+                + ".container{max-width:480px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)}"
+                + ".header{background:#4D6BFE;color:#fff;padding:24px 28px}"
+                + ".header h2{margin:0;font-size:18px;font-weight:600}"
+                + ".content{padding:28px}"
+                + ".purpose{color:#666;font-size:14px;margin-bottom:16px}"
+                + ".code{font-size:32px;font-weight:700;letter-spacing:6px;color:#4D6BFE;margin:16px 0}"
+                + ".tip{color:#999;font-size:13px;line-height:1.6;margin-top:20px}"
+                + ".footer{padding:16px 28px;background:#fafafa;border-top:1px solid #eee;font-size:12px;color:#aaa}"
+                + "</style></head><body><div class=\"container\">"
+                + "<div class=\"header\"><h2>AI Agent 邮箱验证</h2></div>"
+                + "<div class=\"content\"><p class=\"purpose\">您正在进行 <strong>" + purposeName + "</strong> 操作</p>"
+                + "<div class=\"code\">" + code + "</div>"
+                + "<p class=\"tip\">验证码 " + ttlMinutes + " 分钟内有效，请勿转发给他人。<br/>如非本人操作，请忽略此邮件。</p></div>"
+                + "<div class=\"footer\">此邮件由 AI Agent 自动发送，请勿直接回复。</div>"
+                + "</div></body></html>";
     }
 
     private void ensureMailSenderConfigured(JavaMailSender mailSender) {
@@ -121,40 +191,12 @@ public class EmailVerificationService {
         }
     }
 
-    private void sendEmail(JavaMailSender mailSender, String email, String code) {
-        try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            String from = resolveFromAddress(mailSender);
-            if (from != null && !from.isBlank()) {
-                message.setFrom(from);
-            }
-            message.setTo(email);
-            message.setSubject("AI Agent 注册验证码");
-            message.setText("""
-                    您正在注册 AI Agent 账号。
-
-                    验证码：%s
-
-                    该验证码 %d 分钟内有效，请勿转发给他人。
-                    如果不是您本人操作，请忽略这封邮件。
-                    """.formatted(code, Math.max(codeTtlMinutes, 1L)));
-            mailSender.send(message);
-        } catch (MailException e) {
-            log.warn("注册验证码邮件发送失败 email={} reason={}", maskEmail(email), e.getMessage());
-            throw new IllegalStateException("验证码发送失败，请检查邮箱服务配置");
+    private String normalizeEmail(String email) {
+        String normalized = email != null ? email.strip().toLowerCase(Locale.ROOT) : "";
+        if (!EMAIL_PATTERN.matcher(normalized).matches()) {
+            throw new IllegalArgumentException("邮箱格式不正确");
         }
-    }
-
-    private String resolveFromAddress(JavaMailSender mailSender) {
-        if (emailFrom != null && !emailFrom.isBlank()) {
-            return emailFrom;
-        }
-        if (mailSender instanceof JavaMailSenderImpl impl
-                && impl.getUsername() != null
-                && !impl.getUsername().isBlank()) {
-            return impl.getUsername();
-        }
-        return null;
+        return normalized;
     }
 
     private String maskEmail(String email) {

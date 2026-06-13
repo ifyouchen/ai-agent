@@ -50,6 +50,26 @@
           <span v-if="item.orgId === org.currentOrgId" class="org-current-dot"></span>
         </button>
       </div>
+
+      <div class="org-apply-section">
+        <div class="section-heading compact">
+          <h4>加入其他组织</h4>
+        </div>
+        <div class="org-apply-row">
+          <input
+            v-model.trim="applyOrgId"
+            type="text"
+            placeholder="输入组织 ID"
+            class="org-member-input"
+          />
+          <button class="org-primary-btn" type="button" :disabled="!applyOrgId || applySending" @click="doApplyJoin">
+            <svg v-if="applySending" class="inline-spinner" viewBox="0 0 24 24" fill="none" width="14" height="14">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
+            </svg>
+            {{ applySending ? '申请中' : '申请加入' }}
+          </button>
+        </div>
+      </div>
     </aside>
 
     <main class="org-detail-panel">
@@ -73,6 +93,11 @@
             <div>
               <h3>{{ displayOrgName(org.currentOrg) }}</h3>
               <p>{{ orgTypeLabel(org.currentOrg.orgType) }} · 我的角色：{{ orgRoleLabel(org.currentOrg.role) }}</p>
+              <div class="org-id-row">
+                <span class="org-id-label">组织 ID</span>
+                <code class="org-id-value">{{ org.currentOrg.orgId }}</code>
+                <button class="org-id-copy" type="button" @click="copyOrgId(org.currentOrg.orgId)">复制</button>
+              </div>
             </div>
           </div>
           <div class="org-detail-actions">
@@ -96,54 +121,98 @@
           <section v-if="canManageMembers" class="org-invite-panel">
             <div class="section-heading">
               <h4>邀请成员</h4>
-              <span>搜索用户后选择角色加入当前组织</span>
+              <span>输入已注册用户的邮箱或用户名，默认角色为成员</span>
             </div>
-            <div class="org-invite-row">
-              <div class="org-member-search-wrap">
-                <input
-                  v-model.trim="inviteUsername"
-                  type="text"
-                  placeholder="输入用户名搜索"
-                  class="org-member-input"
-                  autocomplete="off"
-                  @input="searchInviteUsers"
-                  @blur="hideInviteSugg"
-                  @focus="searchInviteUsers"
-                />
-                <div v-if="inviteSuggestions.length && inviteSuggVisible" class="org-member-suggestions">
-                  <button
-                    v-for="u in inviteSuggestions"
-                    :key="u.userId"
-                    class="org-member-suggestion-item"
-                    type="button"
-                    @mousedown.prevent="selectInviteSugg(u)"
-                  >
-                    <span class="org-member-sug-name">{{ u.username }}</span>
-                    <span class="org-member-sug-id">{{ u.userId }}</span>
-                  </button>
+            <div class="org-invite-row compact">
+              <input
+                v-model.trim="inviteEmailOrUsername"
+                type="text"
+                placeholder="邮箱或用户名"
+                class="org-member-input invite-input"
+                autocomplete="off"
+              />
+              <button class="org-primary-btn invite-btn" type="button" :disabled="!inviteEmailOrUsername || inviteSending" @click="doInvite">
+                <svg v-if="inviteSending" class="inline-spinner" viewBox="0 0 24 24" fill="none" width="14" height="14">
+                  <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
+                </svg>
+                {{ inviteSending ? '发送中' : '发送邀请' }}
+              </button>
+            </div>
+          </section>
+
+          <section v-if="canManageMembers" class="org-invite-panel">
+            <div class="section-heading">
+              <h4>待处理邀请</h4>
+              <span>{{ pendingInvitations.length }} 条</span>
+            </div>
+            <div v-if="invitationsLoading" class="org-loading">
+              <svg class="inline-spinner" viewBox="0 0 24 24" fill="none" width="18" height="18">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
+              </svg>
+              加载邀请中
+            </div>
+            <div v-else-if="!pendingInvitations.length" class="org-empty compact">
+              <div class="org-empty-title">暂无待处理邀请</div>
+            </div>
+            <div v-else class="invitation-list">
+              <div v-for="inv in pendingInvitations" :key="inv.id" class="invitation-row">
+                <div class="invitation-main">
+                  <div class="invitation-email">{{ inv.email }}</div>
+                  <div class="invitation-meta">
+                    <span v-if="inv.username" class="invitation-user">{{ inv.username }}</span>
+                    <span class="invitation-role">{{ orgRoleLabel(inv.role) }}</span>
+                    <span class="invitation-expires">{{ formatExpires(inv.expiresAt) }}</span>
+                  </div>
+                </div>
+                <button class="member-remove-btn" type="button" @click="cancelInvitation(inv.id)">撤销</button>
+              </div>
+            </div>
+          </section>
+
+          <section v-if="canManageMembers" class="org-invite-panel">
+            <div class="section-heading">
+              <h4>加入申请</h4>
+              <span>{{ pendingJoinRequests.length }} 条待处理</span>
+            </div>
+            <div v-if="joinRequestsLoading" class="org-loading">
+              <svg class="inline-spinner" viewBox="0 0 24 24" fill="none" width="18" height="18">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
+              </svg>
+              加载申请中
+            </div>
+            <div v-else-if="!pendingJoinRequests.length" class="org-empty compact">
+              <div class="org-empty-title">暂无加入申请</div>
+            </div>
+            <div v-else class="invitation-list">
+              <div v-for="req in pendingJoinRequests" :key="req.id" class="invitation-row">
+                <div class="invitation-main">
+                  <div class="invitation-email">{{ req.username || req.userId }}</div>
+                  <div v-if="req.message" class="invitation-message">{{ req.message }}</div>
+                  <div class="invitation-meta">
+                    <span class="invitation-expires">{{ formatTime(req.createdAt) }}</span>
+                  </div>
+                </div>
+                <div class="join-request-actions">
+                  <button class="org-text-btn" type="button" @click="approveJoinRequest(req.id)">通过</button>
+                  <button class="member-remove-btn" type="button" @click="rejectJoinRequest(req.id)">拒绝</button>
                 </div>
               </div>
-              <div class="role-segmented" aria-label="邀请角色">
-                <button
-                  v-for="role in editableRoles"
-                  :key="role.value"
-                  type="button"
-                  :class="{ active: inviteRole === role.value }"
-                  @click="inviteRole = role.value"
-                >
-                  {{ role.label }}
-                </button>
-              </div>
-              <button class="org-primary-btn" type="button" :disabled="!inviteUserId" @click="doInvite">
-                邀请
-              </button>
             </div>
           </section>
 
           <section class="org-members-panel">
             <div class="section-heading">
               <h4>成员</h4>
-              <span>{{ members.length }} 人</span>
+              <span>{{ filteredMembers.length }} 人</span>
+            </div>
+
+            <div class="member-search-row">
+              <input
+                v-model.trim="memberSearch"
+                type="text"
+                placeholder="搜索用户名或用户 ID"
+                class="org-member-input"
+              />
             </div>
 
             <div v-if="membersLoading" class="org-loading members-loading">
@@ -153,12 +222,12 @@
               加载成员中
             </div>
 
-            <div v-else-if="!members.length" class="org-empty compact">
-              <div class="org-empty-title">暂无成员</div>
+            <div v-else-if="!filteredMembers.length" class="org-empty compact">
+              <div class="org-empty-title">{{ memberSearch ? '无匹配成员' : '暂无成员' }}</div>
             </div>
 
             <div v-else class="member-list">
-              <div v-for="member in members" :key="member.userId" class="member-row">
+              <div v-for="member in filteredMembers" :key="member.userId" class="member-row">
                 <div class="member-avatar">{{ memberInitial(member) }}</div>
                 <div class="member-main">
                   <div class="member-name">
@@ -169,7 +238,7 @@
                 </div>
 
                 <span v-if="member.role === 'OWNER'" class="member-role-badge owner">所有者</span>
-                <div v-else-if="canManageMembers" class="member-role-actions">
+                <div v-else-if="isOwner" class="member-role-actions">
                   <button
                     v-for="role in editableRoles"
                     :key="role.value"
@@ -201,23 +270,29 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth.js';
 import { useOrgStore } from '../stores/org.js';
 import { useUiStore } from '../stores/ui.js';
-import * as api from '../services/api.js';
 
 const auth = useAuthStore();
 const org = useOrgStore();
 const ui  = useUiStore();
+const route = useRoute();
+const router = useRouter();
 
-const inviteUsername    = ref('');
-const inviteUserId      = ref('');
-const inviteRole        = ref('MEMBER');
-const inviteSuggestions = ref([]);
-const inviteSuggVisible = ref(false);
-const members           = ref([]);
-const membersLoading    = ref(false);
+const inviteEmailOrUsername = ref('');
+const inviteSending         = ref(false);
+const applyOrgId            = ref('');
+const applySending          = ref(false);
+const members               = ref([]);
+const membersLoading        = ref(false);
+const memberSearch          = ref('');
+const pendingInvitations    = ref([]);
+const invitationsLoading    = ref(false);
+const pendingJoinRequests   = ref([]);
+const joinRequestsLoading   = ref(false);
 
 const editableRoles = [
   { value: 'MEMBER', label: '成员' },
@@ -227,6 +302,10 @@ const editableRoles = [
 const canManageMembers = computed(() =>
   org.currentOrg?.orgType === 'ENTERPRISE'
   && ['OWNER', 'ADMIN'].includes(org.currentOrg?.role)
+);
+
+const isOwner = computed(() =>
+  org.currentOrg?.orgType === 'ENTERPRISE' && org.currentOrg?.role === 'OWNER'
 );
 
 const canEditOrg = computed(() =>
@@ -241,10 +320,26 @@ const canLeaveOrg = computed(() =>
   org.currentOrg?.orgType === 'ENTERPRISE' && org.currentOrg?.role !== 'OWNER'
 );
 
+const filteredMembers = computed(() => {
+  const keyword = memberSearch.value.trim().toLowerCase();
+  if (!keyword) return members.value;
+  return members.value.filter(m =>
+    (m.username || '').toLowerCase().includes(keyword) ||
+    (m.userId || '').toLowerCase().includes(keyword)
+  );
+});
+
 watch(() => org.currentOrgId, () => {
   clearInvite();
   loadMembers();
+  loadInvitations();
+  loadJoinRequests();
 }, { immediate: true });
+
+onMounted(() => {
+  const inviteToken = route.query.inviteToken || route.params.token;
+  if (inviteToken) handleAcceptInvite(inviteToken);
+});
 
 function displayOrgName(item) {
   if (!item) return '';
@@ -262,6 +357,26 @@ function orgRoleLabel(role) {
 
 function memberInitial(member) {
   return String(member.username || member.userId || 'U').slice(0, 1).toUpperCase();
+}
+
+function formatExpires(iso) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  return `有效期至 ${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function formatTime(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString();
+}
+
+async function copyOrgId(orgId) {
+  try {
+    await navigator.clipboard.writeText(orgId);
+    ui.showToast('success', '组织 ID 已复制');
+  } catch {
+    ui.showToast('info', orgId);
+  }
 }
 
 async function handleSelectOrg(orgId) {
@@ -320,36 +435,102 @@ async function handleLeaveOrg(item) {
   catch (err) { ui.showToast('error', err.message || '退出失败'); }
 }
 
-let _searchTimer = null;
-function searchInviteUsers() {
-  clearTimeout(_searchTimer);
-  _searchTimer = setTimeout(async () => {
-    if (!inviteUsername.value.trim()) { inviteSuggestions.value = []; return; }
-    inviteSuggestions.value = await api.searchUsers(inviteUsername.value.trim());
-    inviteSuggVisible.value = true;
-  }, 200);
-}
-
-function hideInviteSugg() {
-  setTimeout(() => { inviteSuggVisible.value = false; }, 150);
-}
-
-function selectInviteSugg(u) {
-  inviteUsername.value    = u.username;
-  inviteUserId.value      = u.userId;
-  inviteSuggestions.value = [];
-  inviteSuggVisible.value = false;
-}
-
 async function doInvite() {
-  if (!inviteUserId.value) { ui.showToast('warning', '请先从搜索结果中选择用户'); return; }
+  if (!inviteEmailOrUsername.value.trim()) { ui.showToast('warning', '请输入邮箱或用户名'); return; }
+  inviteSending.value = true;
   try {
-    await org.inviteMember(org.currentOrgId, inviteUserId.value, inviteRole.value);
-    ui.showToast('success', `已邀请 ${inviteUsername.value} 加入组织`);
+    await org.inviteMember(org.currentOrgId, inviteEmailOrUsername.value.trim(), 'MEMBER');
+    ui.showToast('success', '邀请邮件已发送');
     clearInvite();
-    await loadMembers();
+    await loadInvitations();
   } catch (err) {
     ui.showToast('error', err.message || '邀请失败');
+  } finally {
+    inviteSending.value = false;
+  }
+}
+
+async function doApplyJoin() {
+  if (!applyOrgId.value.trim()) { ui.showToast('warning', '请输入组织 ID'); return; }
+  applySending.value = true;
+  try {
+    await org.applyJoin(applyOrgId.value.trim(), null);
+    ui.showToast('success', '加入申请已提交');
+    applyOrgId.value = '';
+  } catch (err) {
+    ui.showToast('error', err.message || '申请失败');
+  } finally {
+    applySending.value = false;
+  }
+}
+
+async function loadInvitations() {
+  if (!org.currentOrgId || org.currentOrg?.orgType !== 'ENTERPRISE' || !canManageMembers.value) {
+    pendingInvitations.value = [];
+    return;
+  }
+  invitationsLoading.value = true;
+  try {
+    pendingInvitations.value = await org.listInvitations(org.currentOrgId);
+  } catch (err) {
+    ui.showToast('error', err.message || '加载邀请失败');
+    pendingInvitations.value = [];
+  } finally {
+    invitationsLoading.value = false;
+  }
+}
+
+async function cancelInvitation(invitationId) {
+  const confirmed = await ui.showConfirm({
+    title: '撤销邀请',
+    message: '确认撤销该邀请？',
+    confirmText: '撤销',
+    variant: 'danger',
+  });
+  if (!confirmed) return;
+  try {
+    await org.cancelInvitation(org.currentOrgId, invitationId);
+    pendingInvitations.value = pendingInvitations.value.filter(i => i.id !== invitationId);
+    ui.showToast('success', '邀请已撤销');
+  } catch (err) {
+    ui.showToast('error', err.message || '撤销失败');
+  }
+}
+
+async function loadJoinRequests() {
+  if (!org.currentOrgId || org.currentOrg?.orgType !== 'ENTERPRISE' || !canManageMembers.value) {
+    pendingJoinRequests.value = [];
+    return;
+  }
+  joinRequestsLoading.value = true;
+  try {
+    pendingJoinRequests.value = await org.listJoinRequests(org.currentOrgId);
+  } catch (err) {
+    ui.showToast('error', err.message || '加载加入申请失败');
+    pendingJoinRequests.value = [];
+  } finally {
+    joinRequestsLoading.value = false;
+  }
+}
+
+async function approveJoinRequest(requestId) {
+  try {
+    await org.approveJoinRequest(requestId);
+    pendingJoinRequests.value = pendingJoinRequests.value.filter(r => r.id !== requestId);
+    ui.showToast('success', '已通过加入申请');
+    await loadMembers();
+  } catch (err) {
+    ui.showToast('error', err.message || '操作失败');
+  }
+}
+
+async function rejectJoinRequest(requestId) {
+  try {
+    await org.rejectJoinRequest(requestId);
+    pendingJoinRequests.value = pendingJoinRequests.value.filter(r => r.id !== requestId);
+    ui.showToast('success', '已拒绝加入申请');
+  } catch (err) {
+    ui.showToast('error', err.message || '操作失败');
   }
 }
 
@@ -397,12 +578,20 @@ async function removeMemberInline(member) {
   }
 }
 
+async function handleAcceptInvite(token) {
+  try {
+    await org.acceptInvitation(token);
+    ui.showToast('success', '已接受组织邀请');
+  } catch (err) {
+    ui.showToast('error', err.message || '接受邀请失败');
+  } finally {
+    router.replace('/org');
+  }
+}
+
 function clearInvite() {
-  inviteUsername.value = '';
-  inviteUserId.value = '';
-  inviteRole.value = 'MEMBER';
-  inviteSuggestions.value = [];
-  inviteSuggVisible.value = false;
+  inviteEmailOrUsername.value = '';
+  memberSearch.value = '';
 }
 </script>
 

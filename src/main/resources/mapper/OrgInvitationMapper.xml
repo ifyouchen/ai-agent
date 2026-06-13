@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.aiagent.security.mapper.OrgInvitationMapper">
+
+    <resultMap id="orgInvitationResultMap" type="com.example.aiagent.security.entity.OrgInvitation">
+        <id property="id" column="id"/>
+        <result property="orgId" column="org_id"/>
+        <result property="invitedEmail" column="invited_email"/>
+        <result property="invitedUserId" column="invited_user_id"/>
+        <result property="inviterId" column="inviter_id"/>
+        <result property="role" column="role"/>
+        <result property="token" column="token"/>
+        <result property="status" column="status"/>
+        <result property="expiresAt" column="expires_at"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <select id="findById" resultMap="orgInvitationResultMap">
+        SELECT id, org_id, invited_email, invited_user_id, inviter_id, role, token, status, expires_at, created_at
+        FROM sys_org_invitation
+        WHERE id = #{id}
+    </select>
+
+    <select id="findByToken" resultMap="orgInvitationResultMap">
+        SELECT id, org_id, invited_email, invited_user_id, inviter_id, role, token, status, expires_at, created_at
+        FROM sys_org_invitation
+        WHERE token = #{token}
+    </select>
+
+    <select id="findLatestByOrgAndEmail" resultMap="orgInvitationResultMap">
+        SELECT id, org_id, invited_email, invited_user_id, inviter_id, role, token, status, expires_at, created_at
+        FROM sys_org_invitation
+        WHERE org_id = #{orgId} AND invited_email = #{email}
+        ORDER BY created_at DESC
+        LIMIT 1
+    </select>
+
+    <select id="findByOrgId" resultMap="orgInvitationResultMap">
+        SELECT id, org_id, invited_email, invited_user_id, inviter_id, role, token, status, expires_at, created_at
+        FROM sys_org_invitation
+        WHERE org_id = #{orgId}
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="findPendingByOrgId" resultMap="orgInvitationResultMap">
+        SELECT id, org_id, invited_email, invited_user_id, inviter_id, role, token, status, expires_at, created_at
+        FROM sys_org_invitation
+        WHERE org_id = #{orgId} AND status = 'PENDING'
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="findPendingByEmail" resultMap="orgInvitationResultMap">
+        SELECT id, org_id, invited_email, invited_user_id, inviter_id, role, token, status, expires_at, created_at
+        FROM sys_org_invitation
+        WHERE invited_email = #{email} AND status = 'PENDING'
+        ORDER BY created_at DESC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sys_org_invitation (
+            org_id, invited_email, invited_user_id, inviter_id, role, token, status, expires_at, created_at
+        ) VALUES (
+            #{orgId}, #{invitedEmail}, #{invitedUserId}, #{inviterId}, #{role}, #{token}, #{status}, #{expiresAt}, NOW()
+        )
+    </insert>
+
+    <update id="updateStatus">
+        UPDATE sys_org_invitation
+        SET status = #{status}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM sys_org_invitation WHERE id = #{id}
+    </delete>
+
+</mapper>

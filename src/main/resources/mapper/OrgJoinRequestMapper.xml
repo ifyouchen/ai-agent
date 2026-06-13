@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.aiagent.security.mapper.OrgJoinRequestMapper">
+
+    <resultMap id="orgJoinRequestResultMap" type="com.example.aiagent.security.entity.OrgJoinRequest">
+        <id property="id" column="id"/>
+        <result property="orgId" column="org_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="message" column="message"/>
+        <result property="status" column="status"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <select id="findById" resultMap="orgJoinRequestResultMap">
+        SELECT id, org_id, user_id, message, status, created_at
+        FROM sys_org_join_request
+        WHERE id = #{id}
+    </select>
+
+    <select id="findByOrgId" resultMap="orgJoinRequestResultMap">
+        SELECT id, org_id, user_id, message, status, created_at
+        FROM sys_org_join_request
+        WHERE org_id = #{orgId}
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="findPendingByOrgId" resultMap="orgJoinRequestResultMap">
+        SELECT id, org_id, user_id, message, status, created_at
+        FROM sys_org_join_request
+        WHERE org_id = #{orgId} AND status = 'PENDING'
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="findByUserId" resultMap="orgJoinRequestResultMap">
+        SELECT id, org_id, user_id, message, status, created_at
+        FROM sys_org_join_request
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="findPendingByUserIdAndOrgId" resultMap="orgJoinRequestResultMap">
+        SELECT id, org_id, user_id, message, status, created_at
+        FROM sys_org_join_request
+        WHERE user_id = #{userId} AND org_id = #{orgId} AND status = 'PENDING'
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sys_org_join_request (org_id, user_id, message, status, created_at)
+        VALUES (#{orgId}, #{userId}, #{message}, #{status}, NOW())
+    </insert>
+
+    <update id="updateStatus">
+        UPDATE sys_org_join_request
+        SET status = #{status}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM sys_org_join_request WHERE id = #{id}
+    </delete>
+
+</mapper>

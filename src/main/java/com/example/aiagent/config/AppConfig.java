@@ -137,6 +137,37 @@ public class AppConfig {
     }
 
     /**
+     * 邮件发送专属线程池（mailTaskExecutor）
+     *
+     * <p>验证码、邀请、告警等邮件 I/O 耗时且不稳定，必须与 HTTP 业务线程隔离。
+     * 采用有界队列（容量 1000），防止邮件堆积时内存无限增长。
+     * CallerRunsPolicy：队列满时由发布者线程兜底同步执行，确保重要邮件不丢失。
+     *
+     * 容量规划：
+     * ┌──────────────┬──────────────────────────────────────────────────┐
+     * │  核心线程数   │  4（常规并发邮件发送）                            │
+     * │  最大线程数   │  10（邮件发送高峰时短暂扩展）                     │
+     * │  队列容量     │  1000（有界队列，避免 OOM）                       │
+     * │  空闲存活     │  60s（扩展线程在空闲 60s 后回收到核心线程数）     │
+     * └──────────────┴──────────────────────────────────────────────────┘
+     */
+    @Bean(name = "mailTaskExecutor")
+    public Executor mailTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(10);
+        executor.setQueueCapacity(1000);
+        executor.setKeepAliveSeconds(60);
+        executor.setThreadNamePrefix("mail-worker-");
+        executor.setThreadGroupName("mail-group");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
+        executor.initialize();
+        return executor;
+    }
+
+    /**
      * RAG 检索并发专属线程池，避免 parallelStream 占用 JVM common pool。
      */
     @Bean(name = "ragRetrievalExecutor")

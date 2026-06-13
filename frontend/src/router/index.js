@@ -21,6 +21,7 @@ const ChatView         = () => import('../views/ChatView.vue');
 const KnowledgeBaseView = () => import('../views/KnowledgeBaseView.vue');
 const OrgView          = () => import('../views/OrgView.vue');
 const MonitorView      = () => import('../views/MonitorView.vue');
+// /invite/:token 复用 OrgView，组件内读取 token 调用接受邀请 API
 const AdminView        = () => import('../views/AdminView.vue');
 const ProfileView      = () => import('../views/ProfileView.vue');
 const MainLayout       = () => import('../components/layout/MainLayout.vue');
@@ -35,8 +36,9 @@ const routes = [
       { path: '',        redirect: '/chat' },
       { path: 'chat',    component: ChatView,          meta: { title: '对话' } },
       { path: 'kb',      component: KnowledgeBaseView, meta: { title: '知识库' } },
-      { path: 'org',     component: OrgView,           meta: { title: '组织管理' } },
-      { path: 'monitor', component: MonitorView,       meta: { title: '监控',     requiresAdmin: true } },
+      { path: 'org',           component: OrgView,           meta: { title: '组织管理' } },
+      { path: 'invite/:token', component: OrgView,           meta: { title: '组织邀请' } },
+      { path: 'monitor',       component: MonitorView,       meta: { title: '监控',     requiresAdmin: true } },
       { path: 'admin',   component: AdminView,         meta: { title: '用户管理', requiresAdmin: true } },
       { path: 'profile', component: ProfileView,       meta: { title: '个人资料' } },
     ],

@@ -16,6 +16,9 @@ public interface SysUserMapper {
     /** 按 userId 查询（Token 验证时使用） */
     Optional<SysUser> findByUserId(@Param("userId") String userId);
 
+    /** 按邮箱查询（忘记密码/修改密码时使用） */
+    Optional<SysUser> findByEmail(@Param("email") String email);
+
     /** 检查用户名是否已存在 */
     boolean existsByUsername(@Param("username") String username);
 

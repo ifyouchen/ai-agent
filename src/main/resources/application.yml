@@ -82,6 +82,13 @@ logging:
     # 根因已通过将 completeWithError 改为 complete 修复，此处仅做降噪
     org.springframework.boot.autoconfigure.web.servlet.error.ErrorMvcAutoConfiguration: OFF
 
+# 应用前端地址（用于邮件中的链接，如组织邀请、密码重置）
+app:
+  frontend-url: ""            # 留空表示使用相对链接；生产环境填写 https://your-domain.com
+  org:
+    invitation:
+      ttl-hours: 72           # 组织邀请链接有效期（小时）
+
 # Agent 配置
 agent:
   memory:
@@ -138,11 +145,23 @@ rag:
     index-dir: ""
 
 # ==================== 邮件 SMTP 配置 ====================
-# 启用邮件告警时需配置此节。以 Gmail 为例：
-#   host: smtp.gmail.com
-#   port: 587
-#   username: your-account@gmail.com
-#   password: your-app-password（开启两步验证后生成"应用密码"）
+# 启用邮件验证码/邀请/告警时需配置此节。以 Gmail 为例：
+# spring:
+#   mail:
+#     host: smtp.gmail.com
+#     port: 587
+#     username: your-account@gmail.com
+#     password: your-app-password
+#     protocol: smtp
+#     default-encoding: UTF-8
+#     properties:
+#       mail.smtp.auth: true
+#       mail.smtp.starttls.enable: true
+
+# 邮件发件人（可选，未指定时使用 spring.mail.username）
+# auth:
+#   email:
+#     from: noreply@example.com
 
 
 # ==================== 告警通知配置 ====================

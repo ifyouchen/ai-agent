@@ -73,8 +73,49 @@ export const useOrgStore = defineStore('org', () => {
     return api.getOrganization(orgId).then(r => r.members || []);
   }
 
-  async function inviteMember(orgId, userId, role) {
-    await api.inviteOrgMember(orgId, userId, role);
+  async function inviteMember(orgId, emailOrUsername, role) {
+    return api.inviteOrgMember(orgId, emailOrUsername, role);
+  }
+
+  async function listInvitations(orgId) {
+    return api.listOrgInvitations(orgId);
+  }
+
+  async function cancelInvitation(orgId, invitationId) {
+    await api.cancelOrgInvitation(orgId, invitationId);
+  }
+
+  async function acceptInvitation(token) {
+    await api.acceptOrgInvitation(token);
+    await loadOrgs();
+  }
+
+  async function rejectInvitation(token) {
+    await api.rejectOrgInvitation(token);
+  }
+
+  async function listMyInvitations() {
+    return api.listMyInvitations();
+  }
+
+  async function applyJoin(orgId, message) {
+    await api.applyJoinOrg(orgId, message);
+  }
+
+  async function listJoinRequests(orgId) {
+    return api.listOrgJoinRequests(orgId);
+  }
+
+  async function approveJoinRequest(requestId) {
+    await api.approveOrgJoinRequest(requestId);
+  }
+
+  async function rejectJoinRequest(requestId) {
+    await api.rejectOrgJoinRequest(requestId);
+  }
+
+  async function listMyJoinRequests() {
+    return api.listMyJoinRequests();
   }
 
   async function removeMember(orgId, userId) {
@@ -89,6 +130,9 @@ export const useOrgStore = defineStore('org', () => {
     organizations, currentOrgId, orgLoading,
     currentOrg, currentOrgName,
     loadOrgs, selectOrg, createOrg, updateOrg, deleteOrg, leaveOrg,
-    getOrgMembers, inviteMember, removeMember, updateMemberRole,
+    getOrgMembers, inviteMember, listInvitations, cancelInvitation,
+    acceptInvitation, rejectInvitation, listMyInvitations,
+    applyJoin, listJoinRequests, approveJoinRequest, rejectJoinRequest, listMyJoinRequests,
+    removeMember, updateMemberRole,
   };
 });

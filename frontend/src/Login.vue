@@ -31,15 +31,17 @@
       </section>
 
       <section class="form-box">
-        <div class="form-title">{{ activeTab === 'login' ? '欢迎回来' : '创建账号' }}</div>
-        <div class="form-subtitle">{{ activeTab === 'login' ? '登录以继续使用 AI Agent' : '注册后即可开始使用' }}</div>
+        <div class="form-title">{{ formTitle }}</div>
+        <div class="form-subtitle">{{ formSubtitle }}</div>
 
         <div class="auth-tabs">
           <button class="auth-tab" :class="{ active: activeTab === 'login' }" type="button" @click="switchTab('login')">登录</button>
           <button class="auth-tab" :class="{ active: activeTab === 'register' }" type="button" @click="switchTab('register')">注册</button>
+          <button class="auth-tab" :class="{ active: activeTab === 'forgot' }" type="button" @click="switchTab('forgot')">找回密码</button>
         </div>
 
-        <div v-if="globalError" class="global-error visible">{{ globalError }}</div>
+        <div v-if="globalSuccess" class="global-success visible">{{ globalSuccess }}</div>
+        <div v-else-if="globalError" class="global-error visible">{{ globalError }}</div>
 
         <form v-if="activeTab === 'login'" class="auth-form active" novalidate @submit.prevent="submitLogin">
           <div class="form-group">
@@ -56,7 +58,10 @@
             <div v-if="fieldErrors.loginUsername" class="form-error visible">{{ fieldErrors.loginUsername }}</div>
           </div>
           <div class="form-group">
-            <label class="form-label" for="loginPassword">密码</label>
+            <div class="label-row">
+              <label class="form-label" for="loginPassword">密码</label>
+              <button class="forgot-link" type="button" @click="switchTab('forgot')">忘记密码？</button>
+            </div>
             <input
               id="loginPassword"
               v-model="loginForm.password"
@@ -73,7 +78,7 @@
           </button>
         </form>
 
-        <form v-else class="auth-form active" novalidate @submit.prevent="submitRegister">
+        <form v-else-if="activeTab === 'register'" class="auth-form active" novalidate @submit.prevent="submitRegister">
           <div class="form-group">
             <label class="form-label" for="regUsername">用户名</label>
             <input
@@ -95,7 +100,7 @@
               class="form-input"
               :class="{ error: fieldErrors.regEmail }"
               type="email"
-              placeholder="用于接收注册验证码"
+              placeholder="接收验证码"
               autocomplete="email"
             >
             <div v-if="fieldErrors.regEmail" class="form-error visible">{{ fieldErrors.regEmail }}</div>
@@ -151,15 +156,83 @@
             <span v-if="loading" class="spinner"></span>{{ loading ? '注册中' : '注册并登录' }}
           </button>
         </form>
+
+        <form v-else class="auth-form active" novalidate @submit.prevent="submitForgot">
+          <div class="form-group">
+            <label class="form-label" for="forgotEmail">注册邮箱</label>
+            <input
+              id="forgotEmail"
+              v-model.trim="forgotForm.email"
+              class="form-input"
+              :class="{ error: fieldErrors.forgotEmail }"
+              type="email"
+              placeholder="输入注册邮箱"
+              autocomplete="email"
+            >
+            <div v-if="fieldErrors.forgotEmail" class="form-error visible">{{ fieldErrors.forgotEmail }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="forgotEmailCode">邮箱验证码</label>
+            <div class="verification-row">
+              <input
+                id="forgotEmailCode"
+                v-model.trim="forgotForm.emailCode"
+                class="form-input verification-input"
+                :class="{ error: fieldErrors.forgotEmailCode }"
+                type="text"
+                inputmode="numeric"
+                maxlength="6"
+                placeholder="6 位验证码"
+                autocomplete="one-time-code"
+              >
+              <button class="code-btn" type="button" :disabled="!canSendForgotCode || codeSending || codeCountdown > 0" @click="sendForgotCode">
+                <span v-if="codeSending" class="spinner code-spinner"></span>
+                {{ codeButtonText }}
+              </button>
+            </div>
+            <div v-if="fieldErrors.forgotEmailCode" class="form-error visible">{{ fieldErrors.forgotEmailCode }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="forgotPassword">新密码</label>
+            <input
+              id="forgotPassword"
+              v-model="forgotForm.password"
+              class="form-input"
+              :class="{ error: fieldErrors.forgotPassword }"
+              type="password"
+              placeholder="至少 6 位"
+              autocomplete="new-password"
+            >
+            <div v-if="fieldErrors.forgotPassword" class="form-error visible">{{ fieldErrors.forgotPassword }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="forgotConfirm">确认新密码</label>
+            <input
+              id="forgotConfirm"
+              v-model="forgotForm.confirm"
+              class="form-input"
+              :class="{ error: fieldErrors.forgotConfirm }"
+              type="password"
+              placeholder="再次输入新密码"
+              autocomplete="new-password"
+            >
+            <div v-if="fieldErrors.forgotConfirm" class="form-error visible">{{ fieldErrors.forgotConfirm }}</div>
+          </div>
+          <button class="submit-btn" type="submit" :disabled="loading">
+            <span v-if="loading" class="spinner"></span>{{ loading ? '重置中' : '重置密码' }}
+          </button>
+          <div class="form-extra">
+            <button class="text-link" type="button" @click="switchTab('login')">想起密码？返回登录</button>
+          </div>
+        </form>
       </section>
     </main>
   </div>
 </template>
 
 <script setup>
-// P3-16：合并 LoginPage.js 逻辑，移除外部 script 引用
 import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref } from 'vue';
-import { getToken, login, register, sendEmailCode } from './services/api.js';
+import { getToken, login, register, sendEmailCode, forgotPassword, resetPassword } from './services/api.js';
 
 const LogoMark = defineComponent({
   setup: () => () => h('svg', { viewBox: '0 0 32 32', fill: 'currentColor' }, [
@@ -177,14 +250,33 @@ const features = [
 const activeTab   = ref('login');
 const loading     = ref(false);
 const globalError = ref('');
+const globalSuccess = ref('');
 const fieldErrors = reactive({});
 const loginForm   = reactive({ username: '', password: '' });
 const registerForm = reactive({ username: '', email: '', emailCode: '', password: '', confirm: '' });
+const forgotForm   = reactive({ email: '', emailCode: '', password: '', confirm: '' });
 const codeSending = ref(false);
 const codeCountdown = ref(0);
 let codeTimer = null;
 
+const formTitle = computed(() => {
+  switch (activeTab.value) {
+    case 'register': return '创建账号';
+    case 'forgot':   return '找回密码';
+    default:         return '欢迎回来';
+  }
+});
+
+const formSubtitle = computed(() => {
+  switch (activeTab.value) {
+    case 'register': return '注册后即可开始使用';
+    case 'forgot':   return '通过邮箱验证码重置密码';
+    default:         return '登录以继续使用 AI Agent';
+  }
+});
+
 const canSendCode = computed(() => isValidEmail(registerForm.email));
+const canSendForgotCode = computed(() => isValidEmail(forgotForm.email));
 const codeButtonText = computed(() => {
   if (codeSending.value) return '发送中';
   if (codeCountdown.value > 0) return `${codeCountdown.value}s`;
@@ -202,6 +294,7 @@ onUnmounted(() => {
 function switchTab(tab) {
   activeTab.value = tab;
   clearErrors();
+  globalSuccess.value = '';
 }
 
 async function submitLogin() {
@@ -237,8 +330,28 @@ async function submitRegister() {
   }
 }
 
+async function submitForgot() {
+  clearErrors();
+  if (!validateForgot()) return;
+  loading.value = true;
+  try {
+    await resetPassword(forgotForm.email, forgotForm.emailCode, forgotForm.password);
+    forgotForm.email = '';
+    forgotForm.emailCode = '';
+    forgotForm.password = '';
+    forgotForm.confirm = '';
+    switchTab('login');
+    globalSuccess.value = '密码重置成功，请使用新密码登录';
+  } catch (error) {
+    globalError.value = error.message || '重置失败，请检查验证码';
+  } finally {
+    loading.value = false;
+  }
+}
+
 async function sendCode() {
   globalError.value = '';
+  globalSuccess.value = '';
   delete fieldErrors.regEmail;
   if (!isValidEmail(registerForm.email)) {
     fieldErrors.regEmail = '请输入正确的邮箱地址';
@@ -246,7 +359,28 @@ async function sendCode() {
   }
   codeSending.value = true;
   try {
-    await sendEmailCode(registerForm.email);
+    await sendEmailCode(registerForm.email, 'register');
+    globalSuccess.value = '验证码已发送至邮箱，请查收';
+    startCodeCountdown();
+  } catch (error) {
+    globalError.value = error.message || '验证码发送失败，请稍后重试';
+  } finally {
+    codeSending.value = false;
+  }
+}
+
+async function sendForgotCode() {
+  globalError.value = '';
+  globalSuccess.value = '';
+  delete fieldErrors.forgotEmail;
+  if (!isValidEmail(forgotForm.email)) {
+    fieldErrors.forgotEmail = '请输入正确的邮箱地址';
+    return;
+  }
+  codeSending.value = true;
+  try {
+    await forgotPassword(forgotForm.email);
+    globalSuccess.value = '验证码已发送至邮箱，请查收';
     startCodeCountdown();
   } catch (error) {
     globalError.value = error.message || '验证码发送失败，请稍后重试';
@@ -280,8 +414,25 @@ function validateRegister() {
   return !Object.keys(fieldErrors).length;
 }
 
+function validateForgot() {
+  if (!isValidEmail(forgotForm.email)) {
+    fieldErrors.forgotEmail = '请输入正确的邮箱地址';
+  }
+  if (!/^\d{6}$/.test(forgotForm.emailCode || '')) {
+    fieldErrors.forgotEmailCode = '请输入 6 位邮箱验证码';
+  }
+  if (!forgotForm.password || forgotForm.password.length < 6) {
+    fieldErrors.forgotPassword = '密码不能少于 6 位';
+  }
+  if (forgotForm.password !== forgotForm.confirm) {
+    fieldErrors.forgotConfirm = '两次密码不一致';
+  }
+  return !Object.keys(fieldErrors).length;
+}
+
 function clearErrors() {
   globalError.value = '';
+  globalSuccess.value = '';
   Object.keys(fieldErrors).forEach(k => delete fieldErrors[k]);
 }
 
@@ -302,4 +453,3 @@ function startCodeCountdown() {
   }, 1000);
 }
 </script>
-

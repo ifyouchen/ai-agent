@@ -215,9 +215,9 @@ public class OrganizationController {
     }
 
     /**
-     * 邀请成员加入组织
+     * 邀请成员加入组织（通过邮箱或用户名）
      * POST /api/v1/org/{orgId}/members
-     * Body: {"userId": "user-xxx", "role": "MEMBER"}
+     * Body: {"emailOrUsername": "alice@example.com", "role": "MEMBER"}
      */
     @PostMapping("/{orgId}/members")
     public ResponseEntity<?> inviteMember(
@@ -225,21 +225,101 @@ public class OrganizationController {
             @RequestBody Map<String, String> body,
             @AuthenticationPrincipal String userId) {
         try {
-            String targetUserId = body.get("userId");
+            String emailOrUsername = body.get("emailOrUsername");
             String role = body.getOrDefault("role", "MEMBER");
 
-            orgService.inviteMember(orgId, targetUserId, role, userId);
+            String token = orgService.inviteByEmailOrUsername(orgId, emailOrUsername, role, userId);
 
             return ResponseEntity.ok(Map.of(
-                    "message", "成员邀请成功",
+                    "message", "邀请已发送",
                     "orgId", orgId,
-                    "userId", targetUserId,
-                    "role", role
+                    "emailOrUsername", emailOrUsername != null ? emailOrUsername : "",
+                    "role", role,
+                    "token", token
             ));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", e.getMessage()));
         }
+    }
+
+    /**
+     * 列出组织的待处理邀请
+     * GET /api/v1/org/{orgId}/invitations
+     */
+    @GetMapping("/{orgId}/invitations")
+    public ResponseEntity<?> listInvitations(
+            @PathVariable String orgId,
+            @AuthenticationPrincipal String userId) {
+        if (!orgService.isMemberOf(orgId, userId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "您不是该组织的成员"));
+        }
+        return ResponseEntity.ok(orgService.getPendingInvitations(orgId));
+    }
+
+    /**
+     * 撤销组织邀请
+     * DELETE /api/v1/org/{orgId}/invitations/{invitationId}
+     */
+    @DeleteMapping("/{orgId}/invitations/{invitationId}")
+    public ResponseEntity<?> cancelInvitation(
+            @PathVariable String orgId,
+            @PathVariable Long invitationId,
+            @AuthenticationPrincipal String userId) {
+        try {
+            orgService.cancelInvitation(orgId, invitationId, userId);
+            return ResponseEntity.ok(Map.of("message", "邀请已撤销", "invitationId", invitationId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 接受组织邀请
+     * POST /api/v1/org/invitations/{token}/accept
+     */
+    @PostMapping("/invitations/{token}/accept")
+    public ResponseEntity<?> acceptInvitation(
+            @PathVariable String token,
+            @AuthenticationPrincipal String userId) {
+        try {
+            orgService.acceptInvitation(token, userId);
+            return ResponseEntity.ok(Map.of("message", "已接受邀请"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 拒绝组织邀请
+     * POST /api/v1/org/invitations/{token}/reject
+     */
+    @PostMapping("/invitations/{token}/reject")
+    public ResponseEntity<?> rejectInvitation(
+            @PathVariable String token,
+            @AuthenticationPrincipal String userId) {
+        try {
+            orgService.rejectInvitation(token, userId);
+            return ResponseEntity.ok(Map.of("message", "已拒绝邀请"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 获取当前用户收到的待处理邀请
+     * GET /api/v1/org/invitations/my
+     */
+    @GetMapping("/invitations/my")
+    public ResponseEntity<?> myInvitations(@AuthenticationPrincipal String userId) {
+        return ResponseEntity.ok(orgService.getMyPendingInvitations(userId));
     }
 
     /**
@@ -256,6 +336,86 @@ public class OrganizationController {
         }
 
         return ResponseEntity.ok(orgService.getOrgMembersWithUsername(orgId));
+    }
+
+    /**
+     * 提交加入组织申请
+     * POST /api/v1/org/{orgId}/join-requests
+     * Body: {"message": "申请理由（可选）"}
+     */
+    @PostMapping("/{orgId}/join-requests")
+    public ResponseEntity<?> applyJoin(
+            @PathVariable String orgId,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal String userId) {
+        try {
+            orgService.applyJoin(orgId, userId, body.get("message"));
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+                    "message", "加入申请已提交，等待组织管理员审批",
+                    "orgId", orgId
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 列出组织的待处理加入申请
+     * GET /api/v1/org/{orgId}/join-requests
+     */
+    @GetMapping("/{orgId}/join-requests")
+    public ResponseEntity<?> listJoinRequests(
+            @PathVariable String orgId,
+            @AuthenticationPrincipal String userId) {
+        if (!orgService.isMemberOf(orgId, userId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "您不是该组织的成员"));
+        }
+        return ResponseEntity.ok(orgService.getPendingJoinRequests(orgId));
+    }
+
+    /**
+     * 通过加入申请
+     * POST /api/v1/org/join-requests/{requestId}/approve
+     */
+    @PostMapping("/join-requests/{requestId}/approve")
+    public ResponseEntity<?> approveJoinRequest(
+            @PathVariable Long requestId,
+            @AuthenticationPrincipal String userId) {
+        try {
+            orgService.approveJoinRequest(requestId, userId);
+            return ResponseEntity.ok(Map.of("message", "已通过加入申请"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 拒绝加入申请
+     * POST /api/v1/org/join-requests/{requestId}/reject
+     */
+    @PostMapping("/join-requests/{requestId}/reject")
+    public ResponseEntity<?> rejectJoinRequest(
+            @PathVariable Long requestId,
+            @AuthenticationPrincipal String userId) {
+        try {
+            orgService.rejectJoinRequest(requestId, userId);
+            return ResponseEntity.ok(Map.of("message", "已拒绝加入申请"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 获取当前用户提交的加入申请
+     * GET /api/v1/org/join-requests/my
+     */
+    @GetMapping("/join-requests/my")
+    public ResponseEntity<?> myJoinRequests(@AuthenticationPrincipal String userId) {
+        return ResponseEntity.ok(orgService.getMyJoinRequests(userId));
     }
 
     /**

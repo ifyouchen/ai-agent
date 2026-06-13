@@ -2,8 +2,10 @@ package com.example.aiagent.security.controller;
 
 import com.example.aiagent.security.dto.AuthResponse;
 import com.example.aiagent.security.dto.EmailCodeRequest;
+import com.example.aiagent.security.dto.ForgotPasswordRequest;
 import com.example.aiagent.security.dto.LoginRequest;
 import com.example.aiagent.security.dto.RegisterRequest;
+import com.example.aiagent.security.dto.ResetPasswordRequest;
 import com.example.aiagent.security.mapper.SysUserMapper;
 import com.example.aiagent.security.service.AuditLogService;
 import com.example.aiagent.security.service.AuthService;
@@ -77,12 +79,15 @@ public class AuthController {
     }
 
     /**
-     * 发送注册邮箱验证码。
+     * 发送邮箱验证码。
+     *
+     * <p>purpose 支持 register（默认）、reset_password、change_password。
      */
     @PostMapping("/email-code")
     public ResponseEntity<?> sendEmailCode(@Valid @RequestBody EmailCodeRequest request) {
         try {
-            authService.sendRegisterEmailCode(request.email());
+            String purpose = request.purpose() != null ? request.purpose() : "register";
+            authService.sendEmailCode(request.email(), purpose);
             return ResponseEntity.ok(Map.of("message", "验证码已发送"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -115,6 +120,38 @@ public class AuthController {
     }
 
     /**
+     * 忘记密码：发送重置验证码到邮箱。
+     * POST /api/v1/auth/forgot-password
+     */
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        try {
+            authService.forgotPassword(request.email());
+            // 统一返回文案，避免邮箱枚举
+            return ResponseEntity.ok(Map.of("message", "如果该邮箱已注册，验证码将很快送达"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 重置密码：使用邮箱验证码设置新密码。
+     * POST /api/v1/auth/reset-password
+     */
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        try {
+            authService.resetPassword(request.email(), request.emailCode(), request.newPassword());
+            return ResponseEntity.ok(Map.of("message", "密码重置成功，请使用新密码登录"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
      * 获取当前用户个人资料
      * GET /api/v1/auth/profile
      */
@@ -137,7 +174,7 @@ public class AuthController {
             @AuthenticationPrincipal String userId,
             @RequestBody Map<String, String> request) {
         try {
-            authService.updateProfile(userId, request.get("nickname"), request.get("email"));
+            authService.updateProfile(userId, request.get("nickname"));
             return ResponseEntity.ok(authService.getProfile(userId));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -147,7 +184,7 @@ public class AuthController {
     /**
      * 修改密码
      * PUT /api/v1/auth/profile/password
-     * Body: {"oldPassword": "...", "newPassword": "..."}
+     * Body: {"oldPassword": "...", "newPassword": "...", "emailCode": "123456"}
      */
     @PutMapping("/profile/password")
     public ResponseEntity<?> changePassword(
@@ -156,13 +193,14 @@ public class AuthController {
 
         String oldPwd = request.get("oldPassword");
         String newPwd = request.get("newPassword");
+        String emailCode = request.get("emailCode");
 
-        if (oldPwd == null || newPwd == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "旧密码和新密码不能为空"));
+        if (oldPwd == null || newPwd == null || emailCode == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "旧密码、新密码和邮箱验证码不能为空"));
         }
 
         try {
-            authService.changePassword(userId, oldPwd, newPwd);
+            authService.changePassword(userId, oldPwd, newPwd, emailCode);
             return ResponseEntity.ok(Map.of("message", "密码修改成功，请重新登录"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));

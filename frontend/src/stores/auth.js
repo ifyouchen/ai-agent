@@ -48,17 +48,16 @@ export const useAuthStore = defineStore('auth', () => {
     api.logout();
   }
 
-  /** 更新 Profile（后端成功后刷新本地 user 对象） */
-  async function updateProfile(nickname, email) {
-    const updated = await api.updateProfile(nickname, email);
-    user.value = { ...user.value, nickname: updated.nickname, email: updated.email };
+  /** 更新 Profile（仅昵称可修改，后端成功后刷新本地 user 对象） */
+  async function updateProfile(nickname) {
+    const updated = await api.updateProfile(nickname);
+    user.value = { ...user.value, nickname: updated.nickname };
     // 同步更新 localStorage
     const stored = api.getUser();
     if (stored) {
       localStorage.setItem('ai_agent_user', JSON.stringify({
         ...stored,
         nickname: updated.nickname,
-        email:    updated.email,
       }));
     }
     return updated;

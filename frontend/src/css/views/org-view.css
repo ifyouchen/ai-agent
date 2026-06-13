@@ -30,6 +30,23 @@
   gap: 18px;
 }
 
+.org-apply-section {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-light);
+}
+
+.org-apply-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.org-apply-row .org-member-input {
+  flex: 1;
+  min-width: 0;
+}
+
 .org-sidebar-header,
 .org-detail-header,
 .section-heading,
@@ -247,6 +264,41 @@
   font-size: 13px;
 }
 
+.org-id-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.org-id-label {
+  font-weight: 500;
+}
+
+.org-id-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background: var(--surface-soft, #f8fafc);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  padding: 2px 8px;
+  color: var(--text-secondary);
+}
+
+.org-id-copy {
+  font-size: 12px;
+  color: var(--primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.org-id-copy:hover {
+  background: var(--primary-light);
+}
+
 .org-detail-actions {
   display: flex;
   align-items: center;
@@ -319,6 +371,33 @@
 .org-invite-row {
   gap: 10px;
   align-items: stretch;
+}
+
+.org-invite-row.compact {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: stretch;
+}
+
+.invite-input {
+  min-width: 0;
+  width: 100%;
+}
+
+.invite-btn {
+  min-width: 96px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.member-search-row {
+  margin-bottom: 14px;
+}
+
+.member-search-row .org-member-input {
+  max-width: 320px;
 }
 
 .org-member-search-wrap {
@@ -428,10 +507,74 @@
   cursor: not-allowed;
 }
 
-.member-list {
+.member-list,
+.invitation-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.invitation-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.invitation-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.invitation-email {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invitation-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.invitation-message {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.join-request-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.invitation-user {
+  color: var(--primary);
+  background: var(--primary-light);
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+.invitation-role {
+  color: var(--text-secondary);
+  background: var(--border-light);
+  padding: 1px 7px;
+  border-radius: 999px;
 }
 
 .member-row {
@@ -536,21 +679,38 @@
 
   .org-detail-header,
   .org-invite-row,
-  .member-row {
+  .org-invite-row.compact,
+  .member-row,
+  .org-apply-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .org-invite-row.compact {
+    display: flex;
+    grid-template-columns: none;
   }
 
   .org-detail-actions,
   .role-segmented,
   .member-role-actions,
   .org-primary-btn,
-  .member-remove-btn {
+  .member-remove-btn,
+  .invite-btn,
+  .join-request-actions {
     width: 100%;
   }
 
   .role-segmented button,
   .member-role-chip {
     flex: 1;
+  }
+
+  .join-request-actions {
+    justify-content: stretch;
+  }
+
+  .member-search-row .org-member-input {
+    max-width: 100%;
   }
 }

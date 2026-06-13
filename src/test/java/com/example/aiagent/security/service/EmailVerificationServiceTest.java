@@ -1,6 +1,8 @@
 package com.example.aiagent.security.service;
 
 import com.example.aiagent.security.entity.EmailVerificationCode;
+import com.example.aiagent.security.mail.MailMessage;
+import com.example.aiagent.security.mail.MailSender;
 import com.example.aiagent.security.mapper.EmailVerificationCodeMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -10,7 +12,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -38,20 +39,22 @@ class EmailVerificationServiceTest {
     @Mock
     JavaMailSender mailSender;
 
+    @Mock
+    MailSender asyncMailSender;
+
     PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     EmailVerificationService service;
 
     @BeforeEach
     void setUp() {
-        service = new EmailVerificationService(codeMapper, mailSenderProvider, passwordEncoder);
+        service = new EmailVerificationService(codeMapper, asyncMailSender, mailSenderProvider, passwordEncoder);
         ReflectionTestUtils.setField(service, "codeTtlMinutes", 10L);
         ReflectionTestUtils.setField(service, "resendCooldownSeconds", 60L);
         ReflectionTestUtils.setField(service, "maxAttempts", 5);
-        ReflectionTestUtils.setField(service, "emailFrom", "noreply@example.com");
     }
 
     @Test
-    @DisplayName("发送注册验证码成功后发送邮件并保存哈希记录")
+    @DisplayName("发送注册验证码成功后发布邮件事件并保存哈希记录")
     void sendRegisterCodeSendsEmailAndStoresHash() {
         when(codeMapper.findLatestByEmailAndPurpose("user@example.com", "REGISTER"))
                 .thenReturn(Optional.empty());
@@ -59,10 +62,10 @@ class EmailVerificationServiceTest {
 
         service.sendRegisterCode("User@Example.com");
 
-        ArgumentCaptor<SimpleMailMessage> mailCaptor = ArgumentCaptor.forClass(SimpleMailMessage.class);
-        verify(mailSender).send(mailCaptor.capture());
-        assertThat(mailCaptor.getValue().getTo()).containsExactly("user@example.com");
-        assertThat(mailCaptor.getValue().getSubject()).isEqualTo("AI Agent 注册验证码");
+        ArgumentCaptor<MailMessage> mailCaptor = ArgumentCaptor.forClass(MailMessage.class);
+        verify(asyncMailSender).send(mailCaptor.capture());
+        assertThat(mailCaptor.getValue().getTo()).isEqualTo("user@example.com");
+        assertThat(mailCaptor.getValue().getSubject()).isEqualTo("AI Agent 注册账号验证码");
 
         ArgumentCaptor<EmailVerificationCode> codeCaptor = ArgumentCaptor.forClass(EmailVerificationCode.class);
         verify(codeMapper).insert(codeCaptor.capture());
@@ -87,6 +90,7 @@ class EmailVerificationServiceTest {
 
         verify(mailSenderProvider, never()).getIfAvailable();
         verify(codeMapper, never()).insert(any());
+        verify(asyncMailSender, never()).send(any());
     }
 
     @Test
@@ -101,6 +105,7 @@ class EmailVerificationServiceTest {
                 .hasMessageContaining("邮件服务未配置");
 
         verify(codeMapper, never()).insert(any());
+        verify(asyncMailSender, never()).send(any());
     }
 
     @Test

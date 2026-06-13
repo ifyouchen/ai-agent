@@ -30,6 +30,12 @@
         WHERE user_id = #{userId}
     </select>
 
+    <select id="findByEmail" resultMap="SysUserResultMap">
+        SELECT id, user_id, username, password_hash, roles, enabled, default_org_id, nickname, email, created_at, updated_at
+        FROM biz_user_account
+        WHERE LOWER(email) = LOWER(#{email})
+    </select>
+
     <select id="existsByUsername" resultType="boolean">
         SELECT COUNT(1) > 0
         FROM biz_user_account
