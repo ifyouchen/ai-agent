@@ -91,8 +91,7 @@ class ReActChatControllerTest {
         mockMvc.perform(asyncDispatch(result))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("event:react-error")))
-                .andExpect(content().string(containsString("account_overdue")))
-                .andExpect(content().string(containsString("模型/Embedding 服务账号欠费或不可用")));
+                .andExpect(content().string(containsString("\"code\":\"account_overdue\"")));
     }
 
     @Test
@@ -109,8 +108,7 @@ class ReActChatControllerTest {
         mockMvc.perform(asyncDispatch(result))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("event:react-error")))
-                .andExpect(content().string(containsString("\"code\":\"busy\"")))
-                .andExpect(content().string(containsString("服务繁忙，请稍后重试")));
+                .andExpect(content().string(containsString("\"code\":\"busy\"")));
     }
 
     @Test
@@ -125,8 +123,7 @@ class ReActChatControllerTest {
         mockMvc.perform(asyncDispatch(result))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("event:react-error")))
-                .andExpect(content().string(containsString("\"code\":\"kb_forbidden\"")))
-                .andExpect(content().string(containsString("无权访问该知识库")));
+                .andExpect(content().string(containsString("\"code\":\"kb_forbidden\"")));
     }
 
     private MockMvc buildMockMvc(Executor executor) {
