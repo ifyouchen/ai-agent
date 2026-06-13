@@ -81,7 +81,7 @@ public class OrganizationService {
 
         // 幂等检查
         if (organizationMapper.existsByOrgId(orgId)) {
-            log.info("个人组织已存在，跳过创建：orgId={}", orgId);
+            log.info("[ORG] 个人组织已存在，跳过创建 orgId={}", orgId);
             return organizationMapper.findByOrgId(orgId).orElseThrow();
         }
 
@@ -97,7 +97,7 @@ public class OrganizationService {
         // 创建者自动成为 OWNER
         addMember(orgId, userId, "OWNER");
 
-        log.info("个人组织创建成功：orgId={}, ownerId={}", orgId, userId);
+        log.info("[ORG] 个人组织创建成功 orgId={} ownerId={}", orgId, userId);
         return org;
     }
 
@@ -128,7 +128,7 @@ public class OrganizationService {
         // 创建者自动成为 OWNER
         addMember(orgId, ownerId, "OWNER");
 
-        log.info("企业组织创建成功：orgId={}, name={}, ownerId={}", orgId, name, ownerId);
+        log.info("[ORG] 企业组织创建成功 orgId={} name={} ownerId={}", orgId, name, ownerId);
         return org;
     }
 
@@ -188,7 +188,7 @@ public class OrganizationService {
         orgInvitationMapper.insert(invitation);
 
         sendInvitationEmail(org, invitation, inviterId);
-        log.info("组织邀请已创建：orgId={}, email={}, role={}, inviterId={}", orgId, maskEmail(email), role, inviterId);
+        log.info("[ORG] 邀请已创建 orgId={} email={} role={} inviterId={}", orgId, maskEmail(email), role, inviterId);
         return token;
     }
 
@@ -225,7 +225,7 @@ public class OrganizationService {
 
         addMember(invitation.getOrgId(), userId, invitation.getRole());
         orgInvitationMapper.updateStatus(invitation.getId(), "ACCEPTED");
-        log.info("用户接受组织邀请：orgId={}, userId={}", invitation.getOrgId(), userId);
+        log.info("[ORG] 接受邀请 orgId={} userId={}", invitation.getOrgId(), userId);
     }
 
     /**
@@ -247,7 +247,7 @@ public class OrganizationService {
         }
 
         orgInvitationMapper.updateStatus(invitation.getId(), "REJECTED");
-        log.info("用户拒绝组织邀请：orgId={}, userId={}", invitation.getOrgId(), userId);
+        log.info("[ORG] 拒绝邀请 orgId={} userId={}", invitation.getOrgId(), userId);
     }
 
     /**
@@ -262,7 +262,7 @@ public class OrganizationService {
             throw new IllegalArgumentException("邀请不属于该组织");
         }
         orgInvitationMapper.updateStatus(invitationId, "REVOKED");
-        log.info("组织邀请已撤销：orgId={}, invitationId={}, operatorId={}", orgId, invitationId, operatorId);
+        log.info("[ORG] 邀请已撤销 orgId={} invitationId={} operatorId={}", orgId, invitationId, operatorId);
     }
 
     /**
@@ -372,7 +372,7 @@ public class OrganizationService {
         }
 
         sendJoinRequestNotification(org, userId, message);
-        log.info("用户提交加入组织申请：orgId={}, userId={}", orgId, userId);
+        log.info("[ORG] 提交加入申请 orgId={} userId={}", orgId, userId);
     }
 
     /**
@@ -394,7 +394,7 @@ public class OrganizationService {
 
         addMember(request.getOrgId(), request.getUserId(), "MEMBER");
         orgJoinRequestMapper.updateStatus(requestId, "APPROVED");
-        log.info("加入申请已批准：orgId={}, userId={}", request.getOrgId(), request.getUserId());
+        log.info("[ORG] 加入申请已批准 orgId={} userId={}", request.getOrgId(), request.getUserId());
     }
 
     /**
@@ -409,7 +409,7 @@ public class OrganizationService {
         }
         validateAdminPermission(request.getOrgId(), operatorId);
         orgJoinRequestMapper.updateStatus(requestId, "REJECTED");
-        log.info("加入申请已拒绝：orgId={}, userId={}", request.getOrgId(), request.getUserId());
+        log.info("[ORG] 加入申请已拒绝 orgId={} userId={}", request.getOrgId(), request.getUserId());
     }
 
     /**
@@ -495,7 +495,7 @@ public class OrganizationService {
         }
 
         orgMemberMapper.deleteByOrgIdAndUserId(orgId, userId);
-        log.info("成员移除成功：orgId={}, userId={}, operatorId={}", orgId, userId, operatorId);
+        log.info("[ORG] 成员已移除 orgId={} userId={} operatorId={}", orgId, userId, operatorId);
     }
 
     /**
@@ -672,7 +672,7 @@ public class OrganizationService {
         org.setName(name);
         org.setDescription(description != null ? description : "");
         organizationMapper.update(org);
-        log.info("组织信息更新：orgId={} name={} operatorId={}", orgId, name, operatorId);
+        log.info("[ORG] 组织信息更新 orgId={} name={} operatorId={}", orgId, name, operatorId);
         return org;
     }
 
@@ -699,7 +699,7 @@ public class OrganizationService {
         }
 
         orgMemberMapper.updateRole(orgId, targetUserId, newRole);
-        log.info("成员角色已修改：orgId={} userId={} newRole={} operatorId={}",
+        log.info("[ORG] 成员角色已修改 orgId={} userId={} newRole={} operatorId={}",
                 orgId, targetUserId, newRole, operatorId);
     }
 
@@ -734,7 +734,7 @@ public class OrganizationService {
 
         // 删除组织
         organizationMapper.deleteByOrgId(orgId);
-        log.info("企业组织已删除：orgId={} operatorId={}", orgId, operatorId);
+        log.info("[ORG] 企业组织已删除 orgId={} operatorId={}", orgId, operatorId);
     }
 
     /**
@@ -758,7 +758,7 @@ public class OrganizationService {
         }
 
         orgMemberMapper.deleteByOrgIdAndUserId(orgId, userId);
-        log.info("成员退出组织：orgId={} userId={}", orgId, userId);
+        log.info("[ORG] 成员退出组织 orgId={} userId={}", orgId, userId);
     }
 
     // ── 私有辅助 ─────────────────────────────────────────────
@@ -780,8 +780,13 @@ public class OrganizationService {
         }
 
         OrgMember operator = orgMemberMapper.findByOrgIdAndUserId(orgId, operatorId)
-                .orElseThrow(() -> new IllegalArgumentException("您不是该组织的成员"));
+                .orElseThrow(() -> {
+                    log.warn("[ORG] 权限校验失败：非组织成员 orgId={} operatorId={} action={}", orgId, operatorId, action);
+                    return new IllegalArgumentException("您不是该组织的成员");
+                });
         if (!"OWNER".equals(operator.getRole()) && !"ADMIN".equals(operator.getRole())) {
+            log.warn("[ORG] 权限校验失败：权限不足 orgId={} operatorId={} role={} action={}",
+                    orgId, operatorId, operator.getRole(), action);
             throw new IllegalArgumentException("只有组织拥有者或管理员才能" + action);
         }
         return org;
@@ -846,6 +851,7 @@ public class OrganizationService {
                     .html(html)
                     .build());
         }
+        log.info("[ORG] 加入申请通知已发送 orgId={} applicantId={} adminCount={}", org.getOrgId(), applicantUserId, adminEmails.size());
     }
 
     private void sendInvitationEmail(Organization org, OrgInvitation invitation, String inviterId) {

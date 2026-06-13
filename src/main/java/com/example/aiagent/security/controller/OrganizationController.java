@@ -54,12 +54,14 @@ public class OrganizationController {
     public ResponseEntity<?> createOrganization(
             @RequestBody Map<String, String> body,
             @AuthenticationPrincipal String userId) {
+        log.info("[ORG] 创建企业组织 name={} userId={}", body.get("name"), userId);
         try {
             Organization org = orgService.createEnterpriseOrganization(
                     body.get("name"),
                     userId,
                     body.get("description"));
 
+            log.info("[ORG] 企业组织创建成功 orgId={} name={} userId={}", org.getOrgId(), org.getName(), userId);
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                     "orgId", org.getOrgId(),
                     "name", org.getName(),
@@ -67,6 +69,7 @@ public class OrganizationController {
                     "message", "企业组织创建成功，您是组织拥有者"
             ));
         } catch (IllegalArgumentException e) {
+            log.warn("[ORG] 创建企业组织失败 userId={} reason={}", userId, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -79,7 +82,9 @@ public class OrganizationController {
     @GetMapping
     public ResponseEntity<?> listMyOrganizations(
             @AuthenticationPrincipal String userId) {
+        log.info("[ORG] 查询我的组织 userId={}", userId);
         List<Map<String, Object>> result = orgService.getUserOrganizationsWithDetail(userId);
+        log.info("[ORG] 查询我的组织完成 userId={} count={}", userId, result.size());
         return ResponseEntity.ok(result);
     }
 
@@ -92,17 +97,20 @@ public class OrganizationController {
             @PathVariable String orgId,
             @AuthenticationPrincipal String userId) {
         if (!orgService.isMemberOf(orgId, userId)) {
+            log.warn("[ORG] 查询组织失败 userId={} orgId={} reason=非成员", userId, orgId);
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "您不是该组织的成员"));
         }
 
         var org = orgService.getOrganizationById(orgId);
         if (org == null) {
+            log.warn("[ORG] 查询组织失败 userId={} orgId={} reason=组织不存在", userId, orgId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("error", "组织不存在"));
         }
 
         List<Map<String, Object>> members = orgService.getOrgMembersWithUsername(orgId);
+        log.info("[ORG] 查询组织详情 userId={} orgId={} memberCount={}", userId, orgId, members.size());
         return ResponseEntity.ok(Map.of(
                 "orgId",       org.getOrgId(),
                 "name",        org.getName() != null ? org.getName() : "",
@@ -127,11 +135,13 @@ public class OrganizationController {
             @AuthenticationPrincipal String userId) {
         String name = body.get("name");
         if (name == null || name.isBlank()) {
+            log.warn("[ORG] 更新组织失败 userId={} orgId={} reason=名称为空", userId, orgId);
             return ResponseEntity.badRequest().body(Map.of("error", "组织名称不能为空"));
         }
         try {
             Organization updated = orgService.updateOrganization(
                     orgId, name.trim(), body.getOrDefault("description", ""), userId);
+            log.info("[ORG] 组织信息更新成功 orgId={} name={} userId={}", updated.getOrgId(), updated.getName(), userId);
             return ResponseEntity.ok(Map.of(
                     "orgId",       updated.getOrgId(),
                     "name",        updated.getName(),
@@ -139,6 +149,7 @@ public class OrganizationController {
                     "message",     "组织信息已更新"
             ));
         } catch (IllegalArgumentException e) {
+            log.warn("[ORG] 更新组织失败 userId={} orgId={} reason={}", userId, orgId, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -159,11 +170,13 @@ public class OrganizationController {
             @AuthenticationPrincipal String userId) {
         String newRole = body.get("role");
         if (newRole == null || (!newRole.equals("MEMBER") && !newRole.equals("ADMIN"))) {
+            log.warn("[ORG] 修改角色失败 userId={} orgId={} targetUserId={} reason=无效角色:{}", userId, orgId, memberUserId, newRole);
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "角色必须为 MEMBER 或 ADMIN"));
         }
         try {
             orgService.updateMemberRole(orgId, memberUserId, newRole, userId);
+            log.info("[ORG] 成员角色修改成功 orgId={} targetUserId={} newRole={} operatorId={}", orgId, memberUserId, newRole, userId);
             return ResponseEntity.ok(Map.of(
                     "message", "成员角色已更新",
                     "orgId", orgId,
@@ -171,6 +184,7 @@ public class OrganizationController {
                     "role", newRole
             ));
         } catch (IllegalArgumentException e) {
+            log.warn("[ORG] 修改角色失败 userId={} orgId={} targetUserId={} reason={}", userId, orgId, memberUserId, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -186,10 +200,13 @@ public class OrganizationController {
     public ResponseEntity<?> deleteOrganization(
             @PathVariable String orgId,
             @AuthenticationPrincipal String userId) {
+        log.info("[ORG] 删除组织 orgId={} userId={}", orgId, userId);
         try {
             orgService.deleteOrganization(orgId, userId);
+            log.info("[ORG] 组织删除成功 orgId={} userId={}", orgId, userId);
             return ResponseEntity.ok(Map.of("message", "组织已删除", "orgId", orgId));
         } catch (IllegalArgumentException e) {
+            log.warn("[ORG] 删除组织失败 orgId={} userId={} reason={}", orgId, userId, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -205,10 +222,13 @@ public class OrganizationController {
     public ResponseEntity<?> leaveOrganization(
             @PathVariable String orgId,
             @AuthenticationPrincipal String userId) {
+        log.info("[ORG] 退出组织 orgId={} userId={}", orgId, userId);
         try {
             orgService.leaveOrganization(orgId, userId);
+            log.info("[ORG] 退出组织成功 orgId={} userId={}", orgId, userId);
             return ResponseEntity.ok(Map.of("message", "已成功退出组织", "orgId", orgId));
         } catch (IllegalArgumentException e) {
+            log.warn("[ORG] 退出组织失败 orgId={} userId={} reason={}", orgId, userId, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -224,12 +244,13 @@ public class OrganizationController {
             @PathVariable String orgId,
             @RequestBody Map<String, String> body,
             @AuthenticationPrincipal String userId) {
+        String emailOrUsername = body.get("emailOrUsername");
+        String role = body.getOrDefault("role", "MEMBER");
+        log.info("[ORG] 邀请成员 orgId={} target={} role={} inviterId={}", orgId, emailOrUsername, role, userId);
         try {
-            String emailOrUsername = body.get("emailOrUsername");
-            String role = body.getOrDefault("role", "MEMBER");
-
             String token = orgService.inviteByEmailOrUsername(orgId, emailOrUsername, role, userId);
 
+            log.info("[ORG] 邀请成员成功 orgId={} target={} role={} inviterId={}", orgId, emailOrUsername, role, userId);
             return ResponseEntity.ok(Map.of(
                     "message", "邀请已发送",
                     "orgId", orgId,
@@ -238,9 +259,11 @@ public class OrganizationController {
                     "token", token
             ));
         } catch (IllegalArgumentException e) {
+            log.warn("[ORG] 邀请成员失败 orgId={} target={} inviterId={} reason={}", orgId, emailOrUsername, userId, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
+            log.warn("[ORG] 邀请成员失败 orgId={} target={} inviterId={} reason={}", orgId, emailOrUsername, userId, e.getMessage());
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -255,9 +278,11 @@ public class OrganizationController {
             @PathVariable String orgId,
             @AuthenticationPrincipal String userId) {
         if (!orgService.isMemberOf(orgId, userId)) {
+            log.warn("[ORG] 查询邀请列表失败 userId={} orgId={} reason=非成员", userId, orgId);
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "您不是该组织的成员"));
         }
+        log.info("[ORG] 查询邀请列表 userId={} orgId={}", userId, orgId);
         return ResponseEntity.ok(orgService.getPendingInvitations(orgId));
     }
 
@@ -270,10 +295,13 @@ public class OrganizationController {
             @PathVariable String orgId,
             @PathVariable Long invitationId,
             @AuthenticationPrincipal String userId) {
+        log.info("[ORG] 撤销邀请 orgId={} invitationId={} userId={}", orgId, invitationId, userId);
         try {
             orgService.cancelInvitation(orgId, invitationId, userId);
+            log.info("[ORG] 撤销邀请成功 orgId={} invitationId={} userId={}", orgId, invitationId, userId);
             return ResponseEntity.ok(Map.of("message", "邀请已撤销", "invitationId", invitationId));
         } catch (IllegalArgumentException e) {
+            log.warn("[ORG] 撤销邀请失败 orgId={} invitationId={} userId={} reason={}", orgId, invitationId, userId, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -287,10 +315,13 @@ public class OrganizationController {
     public ResponseEntity<?> acceptInvitation(
             @PathVariable String token,
             @AuthenticationPrincipal String userId) {
+        log.info("[ORG] 接受邀请 token={} userId={}", token, userId);
         try {
             orgService.acceptInvitation(token, userId);
+            log.info("[ORG] 接受邀请成功 token={} userId={}", token, userId);
             return ResponseEntity.ok(Map.of("message", "已接受邀请"));
         } catch (IllegalArgumentException e) {
+            log.warn("[ORG] 接受邀请失败 token={} userId={} reason={}", token, userId, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -304,10 +335,13 @@ public class OrganizationController {
     public ResponseEntity<?> rejectInvitation(
             @PathVariable String token,
             @AuthenticationPrincipal String userId) {
+        log.info("[ORG] 拒绝邀请 token={} userId={}", token, userId);
         try {
             orgService.rejectInvitation(token, userId);
+            log.info("[ORG] 拒绝邀请成功 token={} userId={}", token, userId);
             return ResponseEntity.ok(Map.of("message", "已拒绝邀请"));
         } catch (IllegalArgumentException e) {
+            log.warn("[ORG] 拒绝邀请失败 token={} userId={} reason={}", token, userId, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -319,6 +353,7 @@ public class OrganizationController {
      */
     @GetMapping("/invitations/my")
     public ResponseEntity<?> myInvitations(@AuthenticationPrincipal String userId) {
+        log.info("[ORG] 查询我的邀请 userId={}", userId);
         return ResponseEntity.ok(orgService.getMyPendingInvitations(userId));
     }
 
@@ -331,10 +366,12 @@ public class OrganizationController {
             @PathVariable String orgId,
             @AuthenticationPrincipal String userId) {
         if (!orgService.isMemberOf(orgId, userId)) {
+            log.warn("[ORG] 查询成员列表失败 userId={} orgId={} reason=非成员", userId, orgId);
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "您不是该组织的成员"));
         }
 
+        log.info("[ORG] 查询成员列表 userId={} orgId={}", userId, orgId);
         return ResponseEntity.ok(orgService.getOrgMembersWithUsername(orgId));
     }
 
@@ -348,13 +385,16 @@ public class OrganizationController {
             @PathVariable String orgId,
             @RequestBody Map<String, String> body,
             @AuthenticationPrincipal String userId) {
+        log.info("[ORG] 提交加入申请 orgId={} userId={}", orgId, userId);
         try {
             orgService.applyJoin(orgId, userId, body.get("message"));
+            log.info("[ORG] 加入申请提交成功 orgId={} userId={}", orgId, userId);
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                     "message", "加入申请已提交，等待组织管理员审批",
                     "orgId", orgId
             ));
         } catch (IllegalArgumentException e) {
+            log.warn("[ORG] 提交加入申请失败 orgId={} userId={} reason={}", orgId, userId, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -369,9 +409,11 @@ public class OrganizationController {
             @PathVariable String orgId,
             @AuthenticationPrincipal String userId) {
         if (!orgService.isMemberOf(orgId, userId)) {
+            log.warn("[ORG] 查询加入申请列表失败 userId={} orgId={} reason=非成员", userId, orgId);
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "您不是该组织的成员"));
         }
+        log.info("[ORG] 查询加入申请列表 userId={} orgId={}", userId, orgId);
         return ResponseEntity.ok(orgService.getPendingJoinRequests(orgId));
     }
 
@@ -383,10 +425,13 @@ public class OrganizationController {
     public ResponseEntity<?> approveJoinRequest(
             @PathVariable Long requestId,
             @AuthenticationPrincipal String userId) {
+        log.info("[ORG] 批准加入申请 requestId={} userId={}", requestId, userId);
         try {
             orgService.approveJoinRequest(requestId, userId);
+            log.info("[ORG] 批准加入申请成功 requestId={} userId={}", requestId, userId);
             return ResponseEntity.ok(Map.of("message", "已通过加入申请"));
         } catch (IllegalArgumentException e) {
+            log.warn("[ORG] 批准加入申请失败 requestId={} userId={} reason={}", requestId, userId, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -400,10 +445,13 @@ public class OrganizationController {
     public ResponseEntity<?> rejectJoinRequest(
             @PathVariable Long requestId,
             @AuthenticationPrincipal String userId) {
+        log.info("[ORG] 拒绝加入申请 requestId={} userId={}", requestId, userId);
         try {
             orgService.rejectJoinRequest(requestId, userId);
+            log.info("[ORG] 拒绝加入申请成功 requestId={} userId={}", requestId, userId);
             return ResponseEntity.ok(Map.of("message", "已拒绝加入申请"));
         } catch (IllegalArgumentException e) {
+            log.warn("[ORG] 拒绝加入申请失败 requestId={} userId={} reason={}", requestId, userId, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -415,6 +463,7 @@ public class OrganizationController {
      */
     @GetMapping("/join-requests/my")
     public ResponseEntity<?> myJoinRequests(@AuthenticationPrincipal String userId) {
+        log.info("[ORG] 查询我的加入申请 userId={}", userId);
         return ResponseEntity.ok(orgService.getMyJoinRequests(userId));
     }
 
@@ -427,14 +476,17 @@ public class OrganizationController {
             @PathVariable String orgId,
             @PathVariable String memberUserId,
             @AuthenticationPrincipal String userId) {
+        log.info("[ORG] 移除成员 orgId={} targetUserId={} operatorId={}", orgId, memberUserId, userId);
         try {
             orgService.removeMember(orgId, memberUserId, userId);
+            log.info("[ORG] 移除成员成功 orgId={} targetUserId={} operatorId={}", orgId, memberUserId, userId);
             return ResponseEntity.ok(Map.of(
                     "message", "成员已移除",
                     "orgId", orgId,
                     "userId", memberUserId
             ));
         } catch (IllegalArgumentException e) {
+            log.warn("[ORG] 移除成员失败 orgId={} targetUserId={} operatorId={} reason={}", orgId, memberUserId, userId, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }

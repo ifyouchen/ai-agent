@@ -4,6 +4,8 @@ import com.example.aiagent.security.filter.JwtAuthFilter;
 import com.example.aiagent.security.service.UserDetailsServiceImpl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -17,7 +19,9 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import jakarta.annotation.PostConstruct;
 import jakarta.servlet.DispatcherType;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
@@ -46,6 +50,7 @@ import java.util.Map;
  * - BCrypt 强度默认 10，生产环境不建议降低
  * - @EnableMethodSecurity 支持在 Controller 上用 @PreAuthorize 做方法级权限控制
  */
+@Slf4j
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
@@ -54,6 +59,18 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
     private final UserDetailsServiceImpl userDetailsService;
+
+    @Value("${app.frontend-url:}")
+    private String frontendUrl;
+
+    @PostConstruct
+    public void init() {
+        log.info("[SECURITY] SecurityConfig 初始化 corsOrigins=* session=STATELESS auth=JWT");
+        log.info("[SECURITY] 公开路径: /api/v1/auth/login, /api/v1/auth/register, /api/v1/auth/email-code, " +
+                "/api/v1/auth/forgot-password, /api/v1/auth/reset-password, /actuator/health, /actuator/prometheus");
+        log.info("[SECURITY] 管理接口要求 ADMIN 角色: /api/v1/admin/**, /actuator/**");
+        log.info("[SECURITY] 前端地址 frontendUrl={}", frontendUrl.isEmpty() ? "未配置" : frontendUrl);
+    }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -119,6 +136,8 @@ public class SecurityConfig {
     @Bean
     public AuthenticationEntryPoint jwtAuthenticationEntryPoint() {
         return (request, response, authException) -> {
+            log.warn("[SECURITY] 401 未认证 uri={} clientIp={} reason={}",
+                    request.getRequestURI(), getClientIp(request), authException.getMessage());
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
             response.setContentType(MediaType.APPLICATION_JSON_VALUE + ";charset=UTF-8");
             String body = new ObjectMapper().writeValueAsString(
@@ -133,6 +152,10 @@ public class SecurityConfig {
     @Bean
     public AccessDeniedHandler jwtAccessDeniedHandler() {
         return (request, response, accessDeniedException) -> {
+            log.warn("[SECURITY] 403 权限不足 uri={} clientIp={} userId={} reason={}",
+                    request.getRequestURI(), getClientIp(request),
+                    request.getUserPrincipal() != null ? request.getUserPrincipal().getName() : "anonymous",
+                    accessDeniedException.getMessage());
             response.setStatus(HttpStatus.FORBIDDEN.value());
             response.setContentType(MediaType.APPLICATION_JSON_VALUE + ";charset=UTF-8");
             String body = new ObjectMapper().writeValueAsString(
@@ -186,5 +209,13 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
+    }
+
+    private String getClientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 }

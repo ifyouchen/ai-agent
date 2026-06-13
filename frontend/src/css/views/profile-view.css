@@ -219,6 +219,24 @@
   border-color: var(--border-light);
 }
 
+.profile-readonly-value {
+  min-height: 42px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft, #f8fafc);
+  color: var(--text-secondary);
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  word-break: break-all;
+}
+
+.profile-readonly-value.muted {
+  color: var(--text-light);
+}
+
 .verification-row {
   display: flex;
   gap: 10px;

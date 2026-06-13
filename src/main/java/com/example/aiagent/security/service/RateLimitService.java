@@ -1,5 +1,6 @@
 package com.example.aiagent.security.service;
 
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -46,6 +47,11 @@ public class RateLimitService {
 
     @Value("${security.rate-limit.per-day:500}")
     private int maxPerDay;
+
+    @PostConstruct
+    public void init() {
+        log.info("[RATE_LIMIT] 限流配置 maxPerMinute={} maxPerDay={}", maxPerMinute, maxPerDay);
+    }
 
     /**
      * Lua 脚本：原子执行 INCR + 条件 EXPIRE
@@ -120,6 +126,8 @@ public class RateLimitService {
                     String.format("今日请求次数已达上限 %d 次，明日恢复", maxPerDay), 86400);
         }
 
+        log.debug("[RATE_LIMIT] 限流通过 userId={} minute={}/{} daily={}/{}",
+                userId, minuteCount, maxPerMinute, dailyCount, maxPerDay);
         return RateLimitResult.allow();
     }
 

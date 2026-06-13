@@ -26,7 +26,7 @@ public class AuditLogService {
 
     public enum EventType {
         // 认证相关
-        LOGIN_SUCCESS, LOGIN_FAILED, TOKEN_INVALID,
+        LOGIN_SUCCESS, LOGIN_FAILED, REGISTER_SUCCESS, REGISTER_FAILED, TOKEN_INVALID,
         // AI 请求相关
         AI_CHAT_REQUEST, AI_CHAT_SUCCESS, AI_CHAT_BLOCKED,
         // 安全事件

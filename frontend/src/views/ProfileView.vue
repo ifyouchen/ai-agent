@@ -40,7 +40,9 @@
           </label>
           <label class="profile-field">
             <span class="profile-label">邮箱</span>
-            <input :value="auth.user?.email" type="email" class="profile-input" disabled />
+            <div class="profile-readonly-value" :class="{ muted: !auth.user?.email }">
+              {{ emailDisplay }}
+            </div>
             <span class="profile-hint">邮箱注册后不可修改</span>
           </label>
           <button class="profile-save-btn" type="button" :disabled="saving" @click="saveProfile">
@@ -138,6 +140,7 @@ const codeCountdown = ref(0);
 let codeTimer = null;
 
 const canSendCode = computed(() => isValidEmail(auth.user?.email));
+const emailDisplay = computed(() => auth.user?.email || '未绑定邮箱');
 const codeButtonText = computed(() => {
   if (codeSending.value) return '发送中';
   if (codeCountdown.value > 0) return `${codeCountdown.value}s`;
@@ -150,7 +153,8 @@ const rolesLabel = computed(() => {
   return '普通用户';
 });
 
-onMounted(() => {
+onMounted(async () => {
+  await auth.refreshProfile();
   form.nickname = auth.user?.nickname || '';
 });
 

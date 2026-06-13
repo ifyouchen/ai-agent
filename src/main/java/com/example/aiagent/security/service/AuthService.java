@@ -55,7 +55,7 @@ public class AuthService {
         List<String> roles = user.getRoleList();
         String token = jwtService.generateToken(user.getUserId(), user.getUsername(), roles);
 
-        log.info("用户登录成功 userId={} username={}", user.getUserId(), user.getUsername());
+        log.info("[AUTH] 登录成功 userId={} username={}", user.getUserId(), user.getUsername());
 
         return AuthResponse.of(token, jwtService.getExpirationSeconds(),
                 user.getUserId(), user.getUsername(), roles);
@@ -93,7 +93,7 @@ public class AuthService {
                 .build();
 
         sysUserMapper.insert(user);
-        log.info("用户注册成功 userId={} username={} defaultOrgId={}",
+        log.info("[AUTH] 注册成功 userId={} username={} defaultOrgId={}",
                 userId, request.username(), personalOrg.getOrgId());
 
         List<String> roles = user.getRoleList();
@@ -109,6 +109,7 @@ public class AuthService {
 
     public void sendEmailCode(String email, String purpose) {
         String p = purpose == null ? "register" : purpose.toLowerCase(Locale.ROOT);
+        log.info("[AUTH] 发送邮箱验证码 purpose={} email={}", p, maskEmail(email == null ? "" : email));
         if ("register".equals(p)) {
             String normalizedEmail = email != null ? email.strip().toLowerCase(Locale.ROOT) : "";
             if (sysUserMapper.existsByEmail(normalizedEmail)) {
@@ -135,10 +136,14 @@ public class AuthService {
         if (!normalizedEmail.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
             throw new IllegalArgumentException("邮箱格式不正确");
         }
+        log.info("[AUTH] 忘记密码 email={}", maskEmail(normalizedEmail));
         sysUserMapper.findByEmail(normalizedEmail)
                 .ifPresentOrElse(
-                        user -> emailVerificationService.sendResetPasswordCode(normalizedEmail),
-                        () -> log.warn("忘记密码：邮箱不存在，不发送验证码 email={}", maskEmail(normalizedEmail))
+                        user -> {
+                            emailVerificationService.sendResetPasswordCode(normalizedEmail);
+                            log.info("[AUTH] 忘记密码：验证码已发送 email={}", maskEmail(normalizedEmail));
+                        },
+                        () -> log.warn("[AUTH] 忘记密码：邮箱不存在 email={}", maskEmail(normalizedEmail))
                 );
     }
 
@@ -158,7 +163,7 @@ public class AuthService {
         }
 
         sysUserMapper.updatePassword(user.getUserId(), passwordEncoder.encode(newPassword));
-        log.info("用户重置密码成功 userId={} email={}", user.getUserId(), maskEmail(normalizedEmail));
+        log.info("[AUTH] 用户重置密码成功 userId={} email={}", user.getUserId(), maskEmail(normalizedEmail));
     }
 
     /**
@@ -186,7 +191,7 @@ public class AuthService {
 
         String newHash = passwordEncoder.encode(newPassword);
         sysUserMapper.updatePassword(userId, newHash);
-        log.info("用户修改密码成功 userId={}", userId);
+        log.info("[AUTH] 修改密码成功 userId={}", userId);
     }
 
     private String maskEmail(String email) {
@@ -225,7 +230,7 @@ public class AuthService {
         sysUserMapper.updateProfile(userId,
                 nickname != null ? nickname.strip() : null,
                 null);
-        log.info("用户更新 Profile userId={}", userId);
+        log.info("[AUTH] 更新Profile userId={}", userId);
     }
 }
 

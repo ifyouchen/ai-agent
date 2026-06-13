@@ -67,7 +67,7 @@ public class AuthController {
             return ResponseEntity.ok(response);
 
         } catch (AuthenticationException e) {
-            log.warn("登录失败 username={} ip={} reason={}", request.username(), clientIp, e.getMessage());
+            log.warn("[AUTH] 登录失败 username={} ip={} reason={}", request.username(), clientIp, e.getMessage());
 
             auditLogService.log(AuditLogService.EventType.LOGIN_FAILED,
                     null, null, clientIp, false,
@@ -85,13 +85,16 @@ public class AuthController {
      */
     @PostMapping("/email-code")
     public ResponseEntity<?> sendEmailCode(@Valid @RequestBody EmailCodeRequest request) {
+        log.info("[AUTH] 发送验证码 email={} purpose={}", request.email(), request.purpose());
         try {
             String purpose = request.purpose() != null ? request.purpose() : "register";
             authService.sendEmailCode(request.email(), purpose);
             return ResponseEntity.ok(Map.of("message", "验证码已发送"));
         } catch (IllegalArgumentException e) {
+            log.warn("[AUTH] 发送验证码失败 email={} reason={}", request.email(), e.getMessage());
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
+            log.warn("[AUTH] 发送验证码失败 email={} reason={}", request.email(), e.getMessage());
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -106,11 +109,25 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request,
                                        HttpServletRequest httpRequest) {
+        String clientIp = getClientIp(httpRequest);
+        log.info("[AUTH] 用户注册 username={} ip={}", request.username(), clientIp);
         try {
             AuthResponse response = authService.register(request);
+
+            auditLogService.log(AuditLogService.EventType.REGISTER_SUCCESS,
+                    response.userId(), null, clientIp, true,
+                    Map.of("username", request.username(), "email", request.email()));
+
+            log.info("[AUTH] 注册成功 userId={} username={}", response.userId(), request.username());
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
 
         } catch (IllegalArgumentException e) {
+            log.warn("[AUTH] 注册失败 username={} ip={} reason={}", request.username(), clientIp, e.getMessage());
+
+            auditLogService.log(AuditLogService.EventType.REGISTER_FAILED,
+                    null, null, clientIp, false,
+                    Map.of("username", request.username(), "reason", e.getMessage()));
+
             HttpStatus status = isRegisterConflict(e.getMessage())
                     ? HttpStatus.CONFLICT
                     : HttpStatus.BAD_REQUEST;
@@ -125,13 +142,16 @@ public class AuthController {
      */
     @PostMapping("/forgot-password")
     public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        log.info("[AUTH] 忘记密码 email={}", request.email());
         try {
             authService.forgotPassword(request.email());
             // 统一返回文案，避免邮箱枚举
             return ResponseEntity.ok(Map.of("message", "如果该邮箱已注册，验证码将很快送达"));
         } catch (IllegalArgumentException e) {
+            log.warn("[AUTH] 忘记密码失败 email={} reason={}", request.email(), e.getMessage());
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
+            log.warn("[AUTH] 忘记密码失败 email={} reason={}", request.email(), e.getMessage());
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -143,10 +163,13 @@ public class AuthController {
      */
     @PostMapping("/reset-password")
     public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        log.info("[AUTH] 重置密码 email={}", request.email());
         try {
             authService.resetPassword(request.email(), request.emailCode(), request.newPassword());
+            log.info("[AUTH] 重置密码成功 email={}", request.email());
             return ResponseEntity.ok(Map.of("message", "密码重置成功，请使用新密码登录"));
         } catch (IllegalArgumentException e) {
+            log.warn("[AUTH] 重置密码失败 email={} reason={}", request.email(), e.getMessage());
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
@@ -157,26 +180,31 @@ public class AuthController {
      */
     @GetMapping("/profile")
     public ResponseEntity<?> getProfile(@AuthenticationPrincipal String userId) {
+        log.info("[AUTH] 查询个人资料 userId={}", userId);
         try {
             return ResponseEntity.ok(authService.getProfile(userId));
         } catch (IllegalArgumentException e) {
+            log.warn("[AUTH] 查询个人资料失败 userId={} reason={}", userId, e.getMessage());
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
         }
     }
 
     /**
-     * 更新用户 Profile（昵称、邮箱）
+     * 更新用户 Profile（仅昵称，邮箱注册后不可修改）
      * PUT /api/v1/auth/profile
-     * Body: {"nickname": "...", "email": "..."}
+     * Body: {"nickname": "..."}
      */
     @PutMapping("/profile")
     public ResponseEntity<?> updateProfile(
             @AuthenticationPrincipal String userId,
             @RequestBody Map<String, String> request) {
+        String nickname = request.get("nickname");
+        log.info("[AUTH] 更新个人资料 userId={} nickname={}", userId, nickname);
         try {
-            authService.updateProfile(userId, request.get("nickname"));
+            authService.updateProfile(userId, nickname);
             return ResponseEntity.ok(authService.getProfile(userId));
         } catch (IllegalArgumentException e) {
+            log.warn("[AUTH] 更新个人资料失败 userId={} reason={}", userId, e.getMessage());
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
@@ -195,13 +223,17 @@ public class AuthController {
         String emailCode = request.get("emailCode");
 
         if (newPwd == null || emailCode == null) {
+            log.warn("[AUTH] 修改密码失败 userId={} reason=参数缺失", userId);
             return ResponseEntity.badRequest().body(Map.of("error", "新密码和邮箱验证码不能为空"));
         }
 
+        log.info("[AUTH] 修改密码 userId={}", userId);
         try {
             authService.changePassword(userId, newPwd, emailCode);
+            log.info("[AUTH] 修改密码成功 userId={}", userId);
             return ResponseEntity.ok(Map.of("message", "密码修改成功，请重新登录"));
         } catch (IllegalArgumentException e) {
+            log.warn("[AUTH] 修改密码失败 userId={} reason={}", userId, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         }
     }
@@ -218,10 +250,12 @@ public class AuthController {
         if (keyword.isBlank()) {
             return ResponseEntity.ok(List.of());
         }
+        log.info("[AUTH] 搜索用户 keyword={}", keyword);
         var users = sysUserMapper.searchByUsername(keyword.trim(), 10);
         var result = users.stream()
                 .map(u -> Map.of("userId", u.getUserId(), "username", u.getUsername()))
                 .toList();
+        log.info("[AUTH] 搜索用户完成 keyword={} count={}", keyword, result.size());
         return ResponseEntity.ok(result);
     }
 

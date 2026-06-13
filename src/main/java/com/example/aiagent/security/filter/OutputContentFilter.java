@@ -70,6 +70,7 @@ public class OutputContentFilter {
                 return phone.substring(0, 3) + "****" + phone.substring(7);
             });
             detected.add("手机号");
+            log.warn("[SECURITY] 输出内容中检测到手机号，已脱敏");
         }
 
         // 身份证：110***********5678（保留前3位和后4位）
@@ -79,6 +80,7 @@ public class OutputContentFilter {
                 return id.substring(0, 3) + "***********" + id.substring(id.length() - 4);
             });
             detected.add("身份证号");
+            log.warn("[SECURITY] 输出内容中检测到身份证号，已脱敏");
         }
 
         // 银行卡：**** **** **** 1234（只保留后4位）
@@ -86,6 +88,7 @@ public class OutputContentFilter {
             result = BANK_CARD_PATTERN.matcher(result).replaceAll(m ->
                     "**** **** **** " + m.group(4).substring(0, Math.min(4, m.group(4).length())));
             detected.add("银行卡号");
+            log.warn("[SECURITY] 输出内容中检测到银行卡号，已脱敏");
         }
 
         // 邮箱：u***@example.com（用户名只保留首字母）
@@ -96,12 +99,14 @@ public class OutputContentFilter {
                 return email.charAt(0) + "***" + email.substring(at);
             });
             detected.add("邮箱地址");
+            log.info("[SECURITY] 输出内容中检测到邮箱地址，已脱敏");
         }
 
         // 内网 IP：192.168.1.***
         if (INTERNAL_IP_PATTERN.matcher(result).find()) {
             result = INTERNAL_IP_PATTERN.matcher(result).replaceAll(m -> m.group(1) + "***");
             detected.add("内网IP");
+            log.info("[SECURITY] 输出内容中检测到内网IP，已脱敏");
         }
 
         // 密码/密钥：password=***REDACTED***
@@ -113,7 +118,7 @@ public class OutputContentFilter {
         }
 
         if (!detected.isEmpty()) {
-            log.info("[SECURITY] 输出内容脱敏，检测到：{}", detected);
+            log.info("[SECURITY] 输出内容脱敏，检测到类型：{}", detected);
         }
 
         return new FilterResult(result, detected, false);

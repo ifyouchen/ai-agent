@@ -38,6 +38,18 @@ export const useAuthStore = defineStore('auth', () => {
     };
   }
 
+  function mergeUserProfile(profile) {
+    if (!user.value || !profile) return;
+    user.value = { ...user.value, ...profile };
+    const stored = api.getUser();
+    if (stored) {
+      localStorage.setItem('ai_agent_user', JSON.stringify({
+        ...stored,
+        ...profile,
+      }));
+    }
+  }
+
   async function login(payload) {
     const data = await api.login(payload);
     setAuth(data);
@@ -51,15 +63,7 @@ export const useAuthStore = defineStore('auth', () => {
   /** 更新 Profile（仅昵称可修改，后端成功后刷新本地 user 对象） */
   async function updateProfile(nickname) {
     const updated = await api.updateProfile(nickname);
-    user.value = { ...user.value, nickname: updated.nickname };
-    // 同步更新 localStorage
-    const stored = api.getUser();
-    if (stored) {
-      localStorage.setItem('ai_agent_user', JSON.stringify({
-        ...stored,
-        nickname: updated.nickname,
-      }));
-    }
+    mergeUserProfile(updated);
     return updated;
   }
 
@@ -68,9 +72,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (!token.value) return;
     try {
       const profile = await api.getProfile();
-      if (user.value) {
-        user.value = { ...user.value, ...profile };
-      }
+      mergeUserProfile(profile);
     } catch { /* 静默失败 */ }
   }
 

@@ -46,7 +46,7 @@ public interface SysUserMapper {
     /** 按 userId 列表批量查询（组织成员 username 展示时使用，N+1 → 单次 IN 查询） */
     List<SysUser> findByUserIds(@Param("userIds") List<String> userIds);
 
-    /** 更新用户 Profile（昵称、邮箱） */
+    /** 更新用户 Profile（仅昵称；邮箱注册后不可修改） */
     void updateProfile(@Param("userId") String userId,
                        @Param("nickname") String nickname,
                        @Param("email") String email);

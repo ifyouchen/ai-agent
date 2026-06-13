@@ -33,18 +33,20 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         SysUser user = sysUserMapper.findByUsername(username)
                 .orElseThrow(() -> {
-                    log.warn("登录失败：用户名不存在 username={}", username);
+                    log.warn("[AUTH] 登录失败：用户名不存在 username={}", username);
                     return new UsernameNotFoundException("用户不存在：" + username);
                 });
 
         if (user.getEnabled() == null || user.getEnabled() == 0) {
-            log.warn("登录失败：账号已禁用 username={}", username);
+            log.warn("[AUTH] 登录失败：账号已禁用 username={}", username);
             throw new UsernameNotFoundException("账号已禁用");
         }
 
         List<SimpleGrantedAuthority> authorities = user.getRoleList().stream()
                 .map(SimpleGrantedAuthority::new)
                 .toList();
+
+        log.debug("[AUTH] 用户加载成功 username={} userId={} roles={}", username, user.getUserId(), user.getRoleList());
 
         return User.builder()
                 .username(user.getUsername())
@@ -58,7 +60,10 @@ public class UserDetailsServiceImpl implements UserDetailsService {
      */
     public SysUser loadSysUserByUsername(String username) {
         return sysUserMapper.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("用户不存在：" + username));
+                .orElseThrow(() -> {
+                    log.warn("[AUTH] 加载用户失败 username={}", username);
+                    return new UsernameNotFoundException("用户不存在：" + username);
+                });
     }
 }
 

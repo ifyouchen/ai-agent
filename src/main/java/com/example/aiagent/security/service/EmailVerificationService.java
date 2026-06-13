@@ -89,6 +89,7 @@ public class EmailVerificationService {
                 .filter(code -> code.getCreatedAt() != null)
                 .filter(code -> code.getCreatedAt().plusSeconds(resendCooldownSeconds).isAfter(now))
                 .ifPresent(code -> {
+                    log.warn("[EMAIL] 验证码发送超频 email={} purpose={}", maskEmail(normalizedEmail), purposeName);
                     throw new IllegalArgumentException("验证码发送太频繁，请稍后再试");
                 });
 
@@ -108,35 +109,46 @@ public class EmailVerificationService {
                 .expiresAt(now.plusSeconds(Math.max(codeTtlMinutes, 1L) * 60))
                 .build();
         codeMapper.insert(record);
-        log.info("{}邮箱验证码已发送 email={}", purpose.getDisplayName(), maskEmail(normalizedEmail));
+        log.info("[EMAIL] {}验证码已发送 email={}", purpose.getDisplayName(), maskEmail(normalizedEmail));
     }
 
     public void verifyCode(String email, String code, EmailVerificationPurpose purpose) {
         String normalizedEmail = normalizeEmail(email);
         String normalizedCode = code != null ? code.strip() : "";
+        String purposeName = purpose.name();
+
         if (!CODE_PATTERN.matcher(normalizedCode).matches()) {
+            log.warn("[EMAIL] 验证码格式错误 email={} purpose={}", maskEmail(normalizedEmail), purposeName);
             throw new IllegalArgumentException("验证码必须为 6 位数字");
         }
 
         EmailVerificationCode record = codeMapper
-                .findLatestByEmailAndPurpose(normalizedEmail, purpose.name())
-                .orElseThrow(() -> new IllegalArgumentException("请先获取邮箱验证码"));
+                .findLatestByEmailAndPurpose(normalizedEmail, purposeName)
+                .orElseThrow(() -> {
+                    log.warn("[EMAIL] 验证码不存在 email={} purpose={}", maskEmail(normalizedEmail), purposeName);
+                    return new IllegalArgumentException("请先获取邮箱验证码");
+                });
 
         if (record.getUsedAt() != null) {
+            log.warn("[EMAIL] 验证码已使用 email={} purpose={}", maskEmail(normalizedEmail), purposeName);
             throw new IllegalArgumentException("验证码已使用，请重新获取");
         }
         if (record.getExpiresAt() == null || record.getExpiresAt().isBefore(Instant.now())) {
+            log.warn("[EMAIL] 验证码已过期 email={} purpose={}", maskEmail(normalizedEmail), purposeName);
             throw new IllegalArgumentException("验证码已过期，请重新获取");
         }
         if (record.getAttempts() != null && record.getAttempts() >= maxAttempts) {
+            log.warn("[EMAIL] 验证码错误次数过多 email={} purpose={} attempts={}", maskEmail(normalizedEmail), purposeName, record.getAttempts());
             throw new IllegalArgumentException("验证码错误次数过多，请重新获取");
         }
         if (!passwordEncoder.matches(normalizedCode, record.getCodeHash())) {
             codeMapper.incrementAttempts(record.getId());
+            log.warn("[EMAIL] 验证码不正确 email={} purpose={} attempts={}", maskEmail(normalizedEmail), purposeName, record.getAttempts() + 1);
             throw new IllegalArgumentException("验证码不正确");
         }
 
         codeMapper.markUsed(record.getId(), Instant.now());
+        log.info("[EMAIL] 验证码校验成功 email={} purpose={}", maskEmail(normalizedEmail), purposeName);
     }
 
     private MailMessage buildMailMessage(String email, String code, EmailVerificationPurpose purpose) {

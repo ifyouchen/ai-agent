@@ -103,11 +103,10 @@
         LIMIT #{limit}
     </select>
 
-    <!-- 更新用户 Profile（昵称、邮箱） -->
+    <!-- 更新用户 Profile（仅昵称；邮箱注册后不可修改） -->
     <update id="updateProfile">
         UPDATE biz_user_account
         SET nickname   = #{nickname},
-            email      = #{email},
             updated_at = NOW()
         WHERE user_id = #{userId}
     </update>

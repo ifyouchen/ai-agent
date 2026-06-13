@@ -49,7 +49,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         String token = extractToken(request);
 
-        if (StringUtils.hasText(token) && jwtService.isTokenValid(token)) {
+        if (!StringUtils.hasText(token)) {
+            log.debug("[JWT] 请求无Token method={} uri={}", request.getMethod(), request.getRequestURI());
+        } else if (jwtService.isTokenValid(token)) {
             try {
                 String userId   = jwtService.extractUserId(token);
                 String username = jwtService.extractUsername(token);
@@ -72,10 +74,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 MDC.put("userId",   userId);
                 MDC.put("username", username);
 
-                log.debug("JWT 认证成功 userId={} roles={}", userId, roles);
+                log.debug("[JWT] 认证成功 userId={} roles={} source={}", userId, roles,
+                        request.getHeader(AUTHORIZATION_HEADER) != null ? "Header" : "URL参数");
 
             } catch (Exception e) {
-                log.warn("JWT 解析失败，跳过认证: {}", e.getMessage());
+                log.warn("[JWT] 解析失败 method={} uri={} reason={}",
+                        request.getMethod(), request.getRequestURI(), e.getMessage());
                 SecurityContextHolder.clearContext();
             }
         }
@@ -104,6 +108,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         // 2. 降级读 URL 参数（专为 SSE/EventSource 场景设计，EventSource 无法设置自定义 Header）
         String tokenParam = request.getParameter("token");
         if (StringUtils.hasText(tokenParam)) {
+            log.debug("[JWT] 从URL参数提取Token uri={}", request.getRequestURI());
             return tokenParam;
         }
         return null;

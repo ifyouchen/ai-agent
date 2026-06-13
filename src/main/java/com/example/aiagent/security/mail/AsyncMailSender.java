@@ -21,11 +21,11 @@ public class AsyncMailSender implements MailSender {
     @Override
     public void send(MailMessage message) {
         if (message == null || message.getTo() == null || message.getTo().isBlank()) {
-            log.warn("忽略无效的邮件消息：收件人为空");
+            log.warn("[MAIL] 忽略无效的邮件消息：收件人为空");
             return;
         }
         eventPublisher.publishEvent(new MailEvent(this, message));
-        log.debug("邮件事件已发布 to={}", maskEmail(message.getTo()));
+        log.info("[MAIL] 邮件事件已发布 to={} subject={}", maskEmail(message.getTo()), message.getSubject());
     }
 
     private String maskEmail(String email) {

@@ -3,6 +3,7 @@ package com.example.aiagent.exception;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -36,7 +37,7 @@ public class GlobalExceptionHandler {
         }
 
         if (isSseRequest(request)) {
-            log.error("SSE 请求未处理的异常: {}", e.getMessage(), e);
+            log.error("SSE 请求未处理的异常 uri={} userId={} msg={}", request.getRequestURI(), MDC.get("userId"), e.getMessage(), e);
             if (!response.isCommitted()) {
                 response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
                 response.setContentType(MediaType.APPLICATION_JSON_VALUE);
@@ -46,7 +47,7 @@ public class GlobalExceptionHandler {
             return null;
         }
 
-        log.error("未处理的异常: {}", e.getMessage(), e);
+        log.error("未处理的异常 uri={} userId={} msg={}", request.getRequestURI(), MDC.get("userId"), e.getMessage(), e);
         return ResponseEntity.internalServerError()
                 .body(Map.of(
                         "error", "服务内部错误",
@@ -61,8 +62,8 @@ public class GlobalExceptionHandler {
      * 此处只捕获 Controller / Service 层主动抛出的场景。
      */
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<Map<String, String>> handleAccessDenied(AccessDeniedException e) {
-        log.warn("访问被拒绝: {}", e.getMessage());
+    public ResponseEntity<Map<String, String>> handleAccessDenied(AccessDeniedException e, HttpServletRequest request) {
+        log.warn("访问被拒绝 uri={} userId={} msg={}", request.getRequestURI(), MDC.get("userId"), e.getMessage());
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(Map.of("error", "权限不足", "message", "您没有权限访问该资源"));
     }
@@ -71,14 +72,15 @@ public class GlobalExceptionHandler {
      * 401 Unauthorized — Token 缺失或过期（Controller 层抛出时兜底）。
      */
     @ExceptionHandler(AuthenticationException.class)
-    public ResponseEntity<Map<String, String>> handleAuthentication(AuthenticationException e) {
-        log.warn("认证失败: {}", e.getMessage());
+    public ResponseEntity<Map<String, String>> handleAuthentication(AuthenticationException e, HttpServletRequest request) {
+        log.warn("认证失败 uri={} userId={} msg={}", request.getRequestURI(), MDC.get("userId"), e.getMessage());
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(Map.of("error", "未认证", "message", "请先登录或检查 Token 是否有效"));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<Map<String, String>> handleIllegalArgument(IllegalArgumentException e) {
+    public ResponseEntity<Map<String, String>> handleIllegalArgument(IllegalArgumentException e, HttpServletRequest request) {
+        log.warn("参数错误 uri={} userId={} msg={}", request.getRequestURI(), MDC.get("userId"), e.getMessage());
         return ResponseEntity.badRequest()
                 .body(Map.of("error", "参数错误", "message", e.getMessage()));
     }
