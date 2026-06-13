@@ -39,6 +39,12 @@
         ORDER BY created_at DESC
     </select>
 
+    <select id="findByUserIdAndOrgId" resultMap="orgJoinRequestResultMap">
+        SELECT id, org_id, user_id, message, status, created_at
+        FROM sys_org_join_request
+        WHERE user_id = #{userId} AND org_id = #{orgId}
+    </select>
+
     <select id="findPendingByUserIdAndOrgId" resultMap="orgJoinRequestResultMap">
         SELECT id, org_id, user_id, message, status, created_at
         FROM sys_org_join_request
@@ -53,6 +59,14 @@
     <update id="updateStatus">
         UPDATE sys_org_join_request
         SET status = #{status}
+        WHERE id = #{id}
+    </update>
+
+    <update id="reopenAsPending">
+        UPDATE sys_org_join_request
+        SET status = 'PENDING',
+            message = #{message},
+            created_at = NOW()
         WHERE id = #{id}
     </update>
 

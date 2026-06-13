@@ -25,6 +25,10 @@ public interface OrgJoinRequestMapper {
     /** 查询用户的所有申请 */
     List<OrgJoinRequest> findByUserId(@Param("userId") String userId);
 
+    /** 查询用户对某个组织的历史申请 */
+    Optional<OrgJoinRequest> findByUserIdAndOrgId(@Param("userId") String userId,
+                                                  @Param("orgId") String orgId);
+
     /** 查询用户的待处理申请 */
     List<OrgJoinRequest> findPendingByUserIdAndOrgId(@Param("userId") String userId,
                                                      @Param("orgId") String orgId);
@@ -34,6 +38,9 @@ public interface OrgJoinRequestMapper {
 
     /** 更新申请状态 */
     void updateStatus(@Param("id") Long id, @Param("status") String status);
+
+    /** 将历史申请重新提交为待处理 */
+    void reopenAsPending(@Param("id") Long id, @Param("message") String message);
 
     /** 删除申请 */
     void deleteById(@Param("id") Long id);

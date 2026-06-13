@@ -353,17 +353,23 @@ public class OrganizationService {
         if (orgMemberMapper.findByOrgIdAndUserId(orgId, userId).isPresent()) {
             throw new IllegalArgumentException("您已经是该组织成员");
         }
-        if (!orgJoinRequestMapper.findPendingByUserIdAndOrgId(userId, orgId).isEmpty()) {
-            throw new IllegalArgumentException("您已提交过加入申请，请等待审批");
+        String normalizedMessage = message != null ? message.strip() : null;
+        Optional<OrgJoinRequest> existingRequest = orgJoinRequestMapper.findByUserIdAndOrgId(userId, orgId);
+        if (existingRequest.isPresent()) {
+            OrgJoinRequest request = existingRequest.get();
+            if ("PENDING".equals(request.getStatus())) {
+                throw new IllegalArgumentException("您已提交过加入申请，请等待审批");
+            }
+            orgJoinRequestMapper.reopenAsPending(request.getId(), normalizedMessage);
+        } else {
+            OrgJoinRequest request = OrgJoinRequest.builder()
+                    .orgId(orgId)
+                    .userId(userId)
+                    .message(normalizedMessage)
+                    .status("PENDING")
+                    .build();
+            orgJoinRequestMapper.insert(request);
         }
-
-        OrgJoinRequest request = OrgJoinRequest.builder()
-                .orgId(orgId)
-                .userId(userId)
-                .message(message != null ? message.strip() : null)
-                .status("PENDING")
-                .build();
-        orgJoinRequestMapper.insert(request);
 
         sendJoinRequestNotification(org, userId, message);
         log.info("用户提交加入组织申请：orgId={}, userId={}", orgId, userId);

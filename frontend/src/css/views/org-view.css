@@ -578,6 +578,11 @@
   font-family: inherit;
 }
 
+.role-segmented button:disabled,
+.member-role-chip:disabled {
+  cursor: default;
+}
+
 .role-segmented button.active,
 .member-role-chip.active {
   background: var(--primary);
@@ -664,6 +669,33 @@
   background: var(--border-light);
   padding: 1px 7px;
   border-radius: 999px;
+}
+
+.request-status {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.request-status.pending {
+  color: var(--primary);
+  background: var(--primary-light);
+}
+
+.request-status.approved {
+  color: #047857;
+  background: #ecfdf5;
+}
+
+.request-status.rejected {
+  color: var(--error);
+  background: #fef2f2;
 }
 
 .member-row {

@@ -94,18 +94,65 @@
           </div>
         </section>
 
-        <template>
+        <div class="org-management-body">
           <nav class="org-section-tabs" aria-label="组织管理功能">
             <button
-              v-for="tab in visibleTabs"
-              :key="tab.key"
               class="org-section-tab"
-              :class="{ active: activeSectionKey === tab.key }"
+              :class="{ active: activeSectionKey === 'members' }"
               type="button"
-              @click="activeSection = tab.key"
+              @click="activeSection = 'members'"
             >
-              <span>{{ tab.label }}</span>
-              <span v-if="tab.count !== null" class="org-section-tab-count">{{ tab.count }}</span>
+              <span>成员</span>
+              <span class="org-section-tab-count">{{ filteredMembers.length }}</span>
+            </button>
+            <button
+              v-if="canManageMembers"
+              class="org-section-tab"
+              :class="{ active: activeSectionKey === 'invite' }"
+              type="button"
+              @click="activeSection = 'invite'"
+            >
+              <span>邀请成员</span>
+            </button>
+            <button
+              v-if="canManageMembers"
+              class="org-section-tab"
+              :class="{ active: activeSectionKey === 'invitations' }"
+              type="button"
+              @click="activeSection = 'invitations'"
+            >
+              <span>待处理邀请</span>
+              <span class="org-section-tab-count">{{ pendingInvitations.length }}</span>
+            </button>
+            <button
+              v-if="canManageMembers"
+              class="org-section-tab"
+              :class="{ active: activeSectionKey === 'orgJoinRequests' }"
+              type="button"
+              @click="activeSection = 'orgJoinRequests'"
+            >
+              <span>加入申请</span>
+              <span class="org-section-tab-count">{{ pendingJoinRequests.length }}</span>
+            </button>
+            <button
+              v-if="isPersonalOrg"
+              class="org-section-tab"
+              :class="{ active: activeSectionKey === 'myJoinRequests' }"
+              type="button"
+              @click="activeSection = 'myJoinRequests'"
+            >
+              <span>加入申请</span>
+              <span class="org-section-tab-count">{{ pendingMyJoinRequests.length }}</span>
+            </button>
+            <button
+              v-if="isPersonalOrg"
+              class="org-section-tab"
+              :class="{ active: activeSectionKey === 'myInvitations' }"
+              type="button"
+              @click="activeSection = 'myInvitations'"
+            >
+              <span>收到的邀请</span>
+              <span class="org-section-tab-count">{{ myInvitations.length }}</span>
             </button>
           </nav>
 
@@ -159,6 +206,7 @@
                       class="member-role-chip"
                       :class="{ active: member.role === role.value }"
                       type="button"
+                      :disabled="member.role === role.value"
                       @click="updateMemberRoleInline(member, role.value)"
                     >
                       {{ role.label }}
@@ -230,38 +278,66 @@
             </div>
           </section>
 
-          <section v-if="activeSectionKey === 'joinRequests'" class="org-invite-panel">
+          <section v-if="activeSectionKey === 'orgJoinRequests' && canManageMembers" class="org-invite-panel">
             <div class="section-heading">
-              <h4>加入申请</h4>
-              <span>{{ joinRequestTabCount }} 条待处理</span>
+              <h4>收到的加入申请</h4>
+              <span>{{ pendingJoinRequests.length }} 条待处理</span>
             </div>
 
-            <div class="section-heading sub-heading first">
-              <h4>我收到的邀请</h4>
-              <span>{{ myInvitations.length }} 条待处理</span>
-            </div>
-            <div v-if="myInvitationsLoading" class="org-loading">
+            <div v-if="joinRequestsLoading" class="org-loading">
               <svg class="inline-spinner" viewBox="0 0 24 24" fill="none" width="18" height="18">
                 <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
               </svg>
-              加载邀请中
+              加载申请中
             </div>
-            <div v-else-if="!myInvitations.length" class="org-empty compact">
-              <div class="org-empty-title">暂无收到的组织邀请</div>
+            <div v-else-if="!pendingJoinRequests.length" class="org-empty compact">
+              <div class="org-empty-title">暂无加入申请</div>
             </div>
             <div v-else class="invitation-list">
-              <div v-for="inv in myInvitations" :key="inv.id" class="invitation-row">
+              <div v-for="req in pendingJoinRequests" :key="req.id" class="invitation-row">
                 <div class="invitation-main">
-                  <div class="invitation-email">{{ inv.orgName || inv.orgId }}</div>
+                  <div class="invitation-email">{{ req.username || req.userId }}</div>
+                  <div v-if="req.message" class="invitation-message">{{ req.message }}</div>
                   <div class="invitation-meta">
-                    <span class="invitation-role">{{ orgRoleLabel(inv.role) }}</span>
-                    <span class="invitation-expires">{{ formatExpires(inv.expiresAt) }}</span>
+                    <span class="invitation-expires">{{ formatTime(req.createdAt) }}</span>
                   </div>
                 </div>
                 <div class="join-request-actions">
-                  <button class="org-text-btn" type="button" @click="acceptMyInvitation(inv.token)">接受</button>
-                  <button class="member-remove-btn" type="button" @click="rejectMyInvitation(inv.token)">拒绝</button>
+                  <button class="org-text-btn" type="button" @click="approveJoinRequest(req.id)">通过</button>
+                  <button class="member-remove-btn" type="button" @click="rejectJoinRequest(req.id)">拒绝</button>
                 </div>
+              </div>
+            </div>
+          </section>
+
+          <section v-if="activeSectionKey === 'myJoinRequests' && isPersonalOrg" class="org-invite-panel">
+            <div class="section-heading">
+              <h4>我发出的申请</h4>
+              <span>{{ myJoinRequests.length }} 条记录</span>
+            </div>
+
+            <div v-if="myJoinRequestsLoading" class="org-loading">
+              <svg class="inline-spinner" viewBox="0 0 24 24" fill="none" width="18" height="18">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
+              </svg>
+              加载申请记录中
+            </div>
+            <div v-else-if="!myJoinRequests.length" class="org-empty compact">
+              <div class="org-empty-title">暂无申请记录</div>
+            </div>
+            <div v-else class="invitation-list">
+              <div v-for="req in myJoinRequests" :key="req.id" class="invitation-row">
+                <div class="invitation-main">
+                  <div class="invitation-email">{{ req.orgName || req.orgId }}</div>
+                  <div v-if="req.message" class="invitation-message">{{ req.message }}</div>
+                  <div class="invitation-meta">
+                    <span class="invitation-role">{{ req.orgId }}</span>
+                    <span class="invitation-expires">{{ formatTime(req.createdAt) }}</span>
+                  </div>
+                </div>
+                <span class="request-status" :class="requestStatusClass(req.status)">
+                  {{ requestStatusLabel(req.status) }}
+                </span>
               </div>
             </div>
 
@@ -288,40 +364,39 @@
                 </button>
               </div>
             </div>
+          </section>
 
-            <template v-if="canManageMembers">
-              <div class="section-heading sub-heading">
-                <h4>收到的加入申请</h4>
-                <span>{{ pendingJoinRequests.length }} 条待处理</span>
-              </div>
-
-              <div v-if="joinRequestsLoading" class="org-loading">
+          <section v-if="activeSectionKey === 'myInvitations' && isPersonalOrg" class="org-invite-panel">
+            <div class="section-heading">
+              <h4>收到的邀请</h4>
+              <span>{{ myInvitations.length }} 条待处理</span>
+            </div>
+            <div v-if="myInvitationsLoading" class="org-loading">
               <svg class="inline-spinner" viewBox="0 0 24 24" fill="none" width="18" height="18">
                 <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
               </svg>
-              加载申请中
-              </div>
-              <div v-else-if="!pendingJoinRequests.length" class="org-empty compact">
-                <div class="org-empty-title">暂无加入申请</div>
-              </div>
-              <div v-else class="invitation-list">
-                <div v-for="req in pendingJoinRequests" :key="req.id" class="invitation-row">
-                  <div class="invitation-main">
-                    <div class="invitation-email">{{ req.username || req.userId }}</div>
-                    <div v-if="req.message" class="invitation-message">{{ req.message }}</div>
-                    <div class="invitation-meta">
-                      <span class="invitation-expires">{{ formatTime(req.createdAt) }}</span>
-                    </div>
-                  </div>
-                  <div class="join-request-actions">
-                    <button class="org-text-btn" type="button" @click="approveJoinRequest(req.id)">通过</button>
-                    <button class="member-remove-btn" type="button" @click="rejectJoinRequest(req.id)">拒绝</button>
+              加载邀请中
+            </div>
+            <div v-else-if="!myInvitations.length" class="org-empty compact">
+              <div class="org-empty-title">暂无收到的组织邀请</div>
+            </div>
+            <div v-else class="invitation-list">
+              <div v-for="inv in myInvitations" :key="inv.id" class="invitation-row">
+                <div class="invitation-main">
+                  <div class="invitation-email">{{ inv.orgName || inv.orgId }}</div>
+                  <div class="invitation-meta">
+                    <span class="invitation-role">{{ orgRoleLabel(inv.role) }}</span>
+                    <span class="invitation-expires">{{ formatExpires(inv.expiresAt) }}</span>
                   </div>
                 </div>
+                <div class="join-request-actions">
+                  <button class="org-text-btn" type="button" @click="acceptMyInvitation(inv.token)">接受</button>
+                  <button class="member-remove-btn" type="button" @click="rejectMyInvitation(inv.token)">拒绝</button>
+                </div>
               </div>
-            </template>
+            </div>
           </section>
-        </template>
+        </div>
       </template>
     </main>
   </div>
@@ -352,6 +427,8 @@ const pendingInvitations    = ref([]);
 const invitationsLoading    = ref(false);
 const myInvitations         = ref([]);
 const myInvitationsLoading  = ref(false);
+const myJoinRequests        = ref([]);
+const myJoinRequestsLoading = ref(false);
 const pendingJoinRequests   = ref([]);
 const joinRequestsLoading   = ref(false);
 
@@ -363,6 +440,10 @@ const editableRoles = [
 const canManageMembers = computed(() =>
   org.currentOrg?.orgType === 'ENTERPRISE'
   && ['OWNER', 'ADMIN'].includes(org.currentOrg?.role)
+);
+
+const isPersonalOrg = computed(() =>
+  org.currentOrg?.orgType === 'PERSONAL'
 );
 
 const isOwner = computed(() =>
@@ -390,30 +471,17 @@ const filteredMembers = computed(() => {
   );
 });
 
-const joinRequestTabCount = computed(() =>
-  myInvitations.value.length + (canManageMembers.value ? pendingJoinRequests.value.length : 0)
+const pendingMyJoinRequests = computed(() =>
+  myJoinRequests.value.filter(item => item.status === 'PENDING')
 );
 
-const visibleTabs = computed(() => {
-  const tabs = [
-    { key: 'members', label: '成员', count: filteredMembers.value.length },
-  ];
-  if (canManageMembers.value) {
-    tabs.push(
-      { key: 'invite', label: '邀请成员', count: null },
-      { key: 'invitations', label: '待处理邀请', count: pendingInvitations.value.length },
-    );
-  }
-  tabs.push({
-    key: 'joinRequests',
-    label: '加入申请',
-    count: joinRequestTabCount.value,
-  });
-  return tabs;
-});
-
 const activeSectionKey = computed(() => {
-  const validKeys = visibleTabs.value.map(tab => tab.key);
+  let validKeys = ['members'];
+  if (canManageMembers.value) {
+    validKeys = ['members', 'invite', 'invitations', 'orgJoinRequests'];
+  } else if (isPersonalOrg.value) {
+    validKeys = ['members', 'myJoinRequests', 'myInvitations'];
+  }
   return validKeys.includes(activeSection.value) ? activeSection.value : 'members';
 });
 
@@ -423,6 +491,7 @@ watch(() => org.currentOrgId, () => {
   loadMembers();
   loadInvitations();
   loadMyInvitations();
+  loadMyJoinRequests();
   loadJoinRequests();
 }, { immediate: true });
 
@@ -458,6 +527,19 @@ function formatExpires(iso) {
 function formatTime(iso) {
   if (!iso) return '';
   return new Date(iso).toLocaleString();
+}
+
+function requestStatusLabel(status) {
+  const map = { PENDING: '待处理', APPROVED: '已通过', REJECTED: '已拒绝' };
+  return map[status] || status || '';
+}
+
+function requestStatusClass(status) {
+  return {
+    pending: status === 'PENDING',
+    approved: status === 'APPROVED',
+    rejected: status === 'REJECTED',
+  };
 }
 
 async function copyOrgId(orgId) {
@@ -547,6 +629,7 @@ async function doApplyJoin() {
     await org.applyJoin(applyOrgId.value.trim(), null);
     ui.showToast('success', '加入申请已提交');
     applyOrgId.value = '';
+    await loadMyJoinRequests();
   } catch (err) {
     ui.showToast('error', err.message || '申请失败');
   } finally {
@@ -555,6 +638,10 @@ async function doApplyJoin() {
 }
 
 async function loadMyInvitations() {
+  if (!isPersonalOrg.value) {
+    myInvitations.value = [];
+    return;
+  }
   myInvitationsLoading.value = true;
   try {
     myInvitations.value = await org.listMyInvitations();
@@ -563,6 +650,22 @@ async function loadMyInvitations() {
     myInvitations.value = [];
   } finally {
     myInvitationsLoading.value = false;
+  }
+}
+
+async function loadMyJoinRequests() {
+  if (!isPersonalOrg.value) {
+    myJoinRequests.value = [];
+    return;
+  }
+  myJoinRequestsLoading.value = true;
+  try {
+    myJoinRequests.value = await org.listMyJoinRequests();
+  } catch (err) {
+    ui.showToast('error', err.message || '加载申请记录失败');
+    myJoinRequests.value = [];
+  } finally {
+    myJoinRequestsLoading.value = false;
   }
 }
 
@@ -675,6 +778,13 @@ async function loadMembers() {
 
 async function updateMemberRoleInline(member, role) {
   if (member.role === role) return;
+  const memberName = member.username || member.userId;
+  const confirmed = await ui.showConfirm({
+    title: '确认调整成员角色',
+    message: `确认将「${memberName}」从「${orgRoleLabel(member.role)}」调整为「${orgRoleLabel(role)}」？角色变更会立即影响该成员在组织内的管理权限。`,
+    confirmText: '确认调整',
+  });
+  if (!confirmed) return;
   try {
     await org.updateMemberRole(org.currentOrgId, member.userId, role);
     member.role = role;
