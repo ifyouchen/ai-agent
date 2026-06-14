@@ -13,9 +13,9 @@ WORKDIR /build
 COPY pom.xml .
 RUN mvn dependency:go-offline -q
 
-# 复制源码并打包（跳过测试，CI 流程单独跑）
+# 复制源码并打包（部署镜像不编译/运行测试，CI 流程单独跑）
 COPY src ./src
-RUN mvn package -DskipTests -q
+RUN mvn package -Dmaven.test.skip=true -q
 
 # ── Stage 2: 运行 ──────────────────────────────────────────
 FROM eclipse-temurin:21-jre-alpine
