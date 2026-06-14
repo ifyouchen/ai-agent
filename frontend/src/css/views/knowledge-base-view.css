@@ -840,6 +840,15 @@
   color: var(--text-light);
 }
 
+.kb-list-empty {
+  flex: 1 1 100%;
+  min-height: 220px;
+}
+
+.kb-empty-create-btn {
+  margin-top: 4px;
+}
+
 
 /* ── 动画 ── */
 @keyframes fadeIn {

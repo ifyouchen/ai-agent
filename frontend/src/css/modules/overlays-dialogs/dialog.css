@@ -1,6 +1,7 @@
 .app-dialog-overlay {
     background: rgba(20, 25, 36, .42);
     backdrop-filter: blur(4px);
+    z-index: 2000;
 }
 
 .app-dialog {

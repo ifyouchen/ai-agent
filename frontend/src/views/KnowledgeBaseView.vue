@@ -9,7 +9,7 @@
         </svg>
         <span class="kb-org-badge" :title="'当前组织：' + org.currentOrgName">{{ org.currentOrgName }}</span>
       </h3>
-      <button class="kb-create-btn" type="button" @click="handleCreateKb">
+      <button v-if="hasKnowledgeBases" class="kb-create-btn" type="button" @click="handleCreateKb">
         <svg viewBox="0 0 24 24" fill="none" width="14" height="14">
           <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="2"/>
           <path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -26,15 +26,15 @@
       </template>
 
       <!-- 空状态 -->
-      <div v-else-if="!kb.kbLoading && !kb.knowledgeBases.length" class="empty-state" style="flex:1 1 100%;">
+      <div v-else-if="!kb.kbLoading && !hasKnowledgeBases" class="empty-state kb-list-empty">
         <div class="empty-state-icon">
           <svg viewBox="0 0 24 24" fill="none" width="32" height="32">
             <path d="M4 19V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7M4 19h16M4 19a2 2 0 0 1-2-2v-1h20v1a2 2 0 0 1-2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
         </div>
         <div class="empty-state-text">暂无知识库</div>
-        <div class="empty-state-hint">点击右上角按钮创建第一个知识库</div>
-        <button class="kb-create-btn" type="button" @click="handleCreateKb" style="margin-top:4px;">
+        <div class="empty-state-hint">创建第一个知识库后即可上传文档并开始检索</div>
+        <button class="kb-create-btn kb-empty-create-btn" type="button" @click="handleCreateKb">
           <svg viewBox="0 0 24 24" fill="none" width="14" height="14">
             <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="2"/>
             <path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -84,7 +84,7 @@
     </div>
 
     <!-- 主内容区 -->
-    <div class="kb-main-area">
+    <div v-if="kb.kbLoading || hasKnowledgeBases || kb.currentKbId" class="kb-main-area">
       <!-- 未选择知识库 -->
       <div v-if="!kb.currentKbId" class="empty-state">
         <div class="empty-state-icon">
@@ -353,6 +353,7 @@ const dragOver      = ref(false);
 
 const expandedDocId = ref(null);
 const docChunksCache = reactive({});
+const hasKnowledgeBases = computed(() => kb.knowledgeBases.length > 0);
 
 async function toggleDocChunks(doc) {
   if (!['DONE'].includes(doc.status) && doc.chunks === 0) return;

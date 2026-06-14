@@ -45,21 +45,6 @@
       </div>
     </div>
 
-    <nav class="mobile-sidebar-nav" aria-label="移动端导航">
-      <router-link class="mobile-sidebar-nav-item" to="/org" @click="handleNavClick">
-        <span class="mobile-sidebar-nav-icon">
-          <svg viewBox="0 0 24 24" fill="none">
-            <path d="M8 11a4 4 0 1 1 8 0v2h1.5a2.5 2.5 0 0 1 0 5H6.5a2.5 2.5 0 0 1 0-5H8v-2Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-            <path d="M9.5 8.2a4.5 4.5 0 0 0-6.2 4.2M14.5 8.2a4.5 4.5 0 0 1 6.2 4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-          </svg>
-        </span>
-        <span>
-          <span class="mobile-sidebar-nav-title">组织</span>
-          <span class="mobile-sidebar-nav-subtitle">成员与空间管理</span>
-        </span>
-      </router-link>
-    </nav>
-
     <!-- 会话列表 -->
     <div class="session-list">
       <div v-if="sess.sessions.length === 0" class="session-empty">暂无历史对话</div>
