@@ -107,6 +107,28 @@ if grep -Eq "请改成|填你的|your-" .env; then
   exit 1
 fi
 
+set_env_var() {
+  key="$1"
+  value="$2"
+  if grep -q "^${key}=" .env; then
+    sed -i "s#^${key}=.*#${key}=${value}#" .env
+  else
+    printf "\n%s=%s\n" "$key" "$value" >> .env
+  fi
+}
+
+echo "[INFO] Normalizing host port bindings to avoid conflicts with existing services..."
+set_env_var "APP_PORT" "127.0.0.1:18080"
+set_env_var "FRONTEND_PORT" "127.0.0.1:14173"
+set_env_var "PG_PORT" "127.0.0.1:15432"
+set_env_var "REDIS_PORT" "127.0.0.1:16379"
+
+echo "[INFO] Removing legacy aiagent containers that may still occupy ports..."
+docker rm -f aiagent-app aiagent-frontend aiagent-redis aiagent-postgres 2>/dev/null || true
+
+echo "[INFO] Stopping current compose services before recreate..."
+compose down --remove-orphans
+
 echo "[INFO] Building and starting containers..."
 compose up -d --build
 

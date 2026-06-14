@@ -26,6 +26,7 @@ logs/
 # ===== 环境变量（绝对不能提交！） =====
 .env
 .env.local
+.deploy/
 application-local.yml
 src/main/resources/application-key.yml
 

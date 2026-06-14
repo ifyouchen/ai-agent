@@ -21,7 +21,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${PG_PASSWORD:-postgres}
     ports:
-      - "${PG_PORT:-5432}:5432"
+      - "${PG_PORT:-127.0.0.1:15432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -46,7 +46,7 @@ services:
         fi
       '
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${REDIS_PORT:-127.0.0.1:16379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -124,7 +124,7 @@ services:
       ALERT_DINGTALK_ENABLED: ${ALERT_DINGTALK_ENABLED:-false}
       ALERT_DINGTALK_WEBHOOK: ${ALERT_DINGTALK_WEBHOOK:-}
     ports:
-      - "${APP_PORT:-8080}:8080"
+      - "${APP_PORT:-127.0.0.1:18080}:8080"
     volumes:
       - app_logs:/app/logs
     healthcheck:
@@ -147,7 +147,7 @@ services:
       app:
         condition: service_healthy
     ports:
-      - "${FRONTEND_PORT:-5173}:4173"
+      - "${FRONTEND_PORT:-127.0.0.1:14173}:4173"
     restart: unless-stopped
 
 volumes:

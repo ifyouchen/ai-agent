@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$HostName,
-    [string]$User = "root",
+    [string]$HostName = "43.155.132.161",
+    [string]$User,
     [int]$Port = 22,
     [string]$RepoUrl = "https://github.com/ifyouchen/ai-agent.git",
     [string]$Branch = "main",
@@ -18,12 +18,17 @@ function Quote-Bash {
     return "'" + ($Value -replace "'", "'\''") + "'"
 }
 
-if (-not $HostName) {
-    $HostName = Read-Host "Server IP or domain"
-}
-
 if (-not $HostName -or $HostName.Trim().Length -eq 0) {
     throw "HostName is required. Example: .\scripts\remote_deploy.ps1 -HostName 1.2.3.4 -User root"
+}
+
+if (-not $User -or $User.Trim().Length -eq 0) {
+    $inputUser = Read-Host "Server username [root]"
+    if ($inputUser -and $inputUser.Trim().Length -gt 0) {
+        $User = $inputUser.Trim()
+    } else {
+        $User = "root"
+    }
 }
 
 $ssh = Get-Command ssh -ErrorAction SilentlyContinue
@@ -136,6 +141,28 @@ if grep -Eq "请改成|填你的|your-" .env; then
   exit 1
 fi
 
+set_env_var() {
+  key="$1"
+  value="$2"
+  if grep -q "^${key}=" .env; then
+    sed -i "s#^${key}=.*#${key}=${value}#" .env
+  else
+    printf "\n%s=%s\n" "$key" "$value" >> .env
+  fi
+}
+
+echo "[INFO] Normalizing host port bindings to avoid conflicts with existing services..."
+set_env_var "APP_PORT" "127.0.0.1:18080"
+set_env_var "FRONTEND_PORT" "127.0.0.1:14173"
+set_env_var "PG_PORT" "127.0.0.1:15432"
+set_env_var "REDIS_PORT" "127.0.0.1:16379"
+
+echo "[INFO] Removing legacy aiagent containers that may still occupy ports..."
+docker rm -f aiagent-app aiagent-frontend aiagent-redis aiagent-postgres 2>/dev/null || true
+
+echo "[INFO] Stopping current compose services before recreate..."
+compose down --remove-orphans
+
 echo "[INFO] Building and starting containers..."
 compose up -d --build
 
@@ -168,8 +195,10 @@ $target = "$User@$HostName"
 $remoteCommand = "$remoteEnv bash -s"
 
 Write-Host "[INFO] Connecting to $target ..."
+Write-Host "[INFO] Server IP is fixed as $HostName"
 Write-Host "[INFO] If asked, enter the server password."
-$remoteScript | & ssh -p $Port $target $remoteCommand
+$remoteScript | & $ssh.Source -p $Port $target $remoteCommand
+
 if ($LASTEXITCODE -ne 0) {
     throw "Remote deploy failed. SSH exit code: $LASTEXITCODE"
 }
