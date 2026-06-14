@@ -107,6 +107,53 @@ export function formatMarkdown(text) {
     return DOMPurify.sanitize(html, PURIFY_CONFIG);
 }
 
+export async function copyText(text) {
+    const value = String(text ?? '');
+    if (!value) return false;
+
+    if (navigator.clipboard?.writeText) {
+        try {
+            await navigator.clipboard.writeText(value);
+            return true;
+        } catch {
+            // Some mobile browsers expose the API but reject outside secure contexts.
+        }
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.top = '-1000px';
+    textarea.style.left = '-1000px';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+
+    const selection = document.getSelection();
+    const selectedRange = selection && selection.rangeCount > 0
+        ? selection.getRangeAt(0)
+        : null;
+
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+
+    let ok = false;
+    try {
+        ok = document.execCommand('copy');
+    } catch {
+        ok = false;
+    } finally {
+        document.body.removeChild(textarea);
+        if (selectedRange && selection) {
+            selection.removeAllRanges();
+            selection.addRange(selectedRange);
+        }
+    }
+
+    return ok;
+}
+
 function normalizeMarkdownText(text) {
     const normalized = String(text)
         .replace(/\r\n?/g, '\n')
@@ -235,12 +282,16 @@ function normalizeJsonCode(code) {
  * 代码块复制：事件委托处理器（挂载到 document 上）
  * 在 App.vue 的 onMounted 中调用 setupCopyCodeHandler() 一次即可
  */
-export function setupCopyCodeHandler() {
+export function setupCopyCodeHandler(onCopyFailure = null) {
     document.addEventListener('click', (e) => {
         const btn = e.target.closest('.copy-code-btn');
         if (!btn) return;
         const code = decodeURIComponent(btn.dataset.code || '');
-        navigator.clipboard.writeText(code).then(() => {
+        copyText(code).then((ok) => {
+            if (!ok) {
+                onCopyFailure?.();
+                return;
+            }
             const label = btn.querySelector('span') || btn;
             const orig = label.textContent;
             label.textContent = '已复制';

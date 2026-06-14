@@ -1,17 +1,36 @@
 <template>
   <div class="app-layout">
-    <Sidebar :collapsed="sidebarCollapsed" @toggle="sidebarCollapsed = !sidebarCollapsed" />
+    <Sidebar :collapsed="sidebarCollapsed" @toggle="toggleSidebar" @close="closeSidebar" />
+    <button
+      v-if="isMobile && !sidebarCollapsed"
+      class="sidebar-drawer-backdrop"
+      type="button"
+      aria-label="关闭历史会话"
+      @click="closeSidebar"
+    ></button>
     <main class="main" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
       <!-- 顶栏：P3-18 侧边栏收起时显示当前页名称 -->
       <div class="topbar">
         <div class="topbar-left">
-          <span v-if="sidebarCollapsed" class="topbar-page-title">{{ currentPageTitle }}</span>
+          <button
+            v-if="isMobile"
+            class="mobile-sidebar-btn"
+            type="button"
+            title="打开历史会话"
+            aria-label="打开历史会话"
+            @click="openSidebar"
+          >
+            <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
+              <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <span v-if="isMobile || sidebarCollapsed" class="topbar-page-title">{{ currentPageTitle }}</span>
           <span v-else class="topbar-title">{{ sess.currentSessionTitle }}</span>
         </div>
         <div class="topbar-actions">
           <!-- 对话页专属操作按钮 -->
           <template v-if="route.path === '/chat'">
-            <button class="topbar-btn" type="button" @click="openShareDialog" title="分享当前会话快照">
+            <button class="topbar-btn topbar-share-btn" type="button" @click="openShareDialog" title="分享当前会话快照">
               <svg viewBox="0 0 24 24" fill="none" width="13" height="13">
                 <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                 <path d="M16 6 12 2 8 6M12 2v13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -19,12 +38,12 @@
               分享
             </button>
           </template>
-          <router-link class="topbar-btn" to="/chat">对话</router-link>
-          <router-link class="topbar-btn" to="/kb">知识库</router-link>
-          <router-link class="topbar-btn" to="/org">组织</router-link>
+          <router-link class="topbar-btn topbar-chat-link" to="/chat">对话</router-link>
+          <router-link class="topbar-btn topbar-kb-link" to="/kb">知识库</router-link>
+          <router-link class="topbar-btn topbar-org-link" to="/org">组织</router-link>
           <template v-if="auth.isAdmin">
-            <router-link class="topbar-btn" to="/monitor">监控</router-link>
-            <router-link class="topbar-btn" to="/admin">用户管理</router-link>
+            <router-link class="topbar-btn topbar-admin-link" to="/monitor">监控</router-link>
+            <router-link class="topbar-btn topbar-admin-link" to="/admin">用户管理</router-link>
           </template>
         </div>
       </div>
@@ -82,7 +101,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { RouterView, useRoute } from 'vue-router';
 import Sidebar from './Sidebar.vue';
 import Toast from '../ui/Toast.vue';
@@ -92,7 +111,7 @@ import { useSessionStore } from '../../stores/sessions.js';
 import { useKbStore } from '../../stores/kb.js';
 import { useOrgStore } from '../../stores/org.js';
 import { useUiStore } from '../../stores/ui.js';
-import { setupCopyCodeHandler } from '../../js/utils.js';
+import { copyText, setupCopyCodeHandler } from '../../js/utils.js';
 
 const auth  = useAuthStore();
 const sess  = useSessionStore();
@@ -101,22 +120,35 @@ const org   = useOrgStore();
 const ui    = useUiStore();
 const route = useRoute();
 
-const sidebarCollapsed = ref(false);
+const initialMobile = window.matchMedia('(max-width: 860px)').matches;
+const isMobile = ref(initialMobile);
+const sidebarCollapsed = ref(initialMobile);
 const shareDialogVisible = ref(false);
 const shareLoading = ref(false);
 const shareInfo = ref(null);
+let mobileMediaQuery = null;
 
 // P3-18：侧边栏收起时显示当前页标题
 const currentPageTitle = computed(() => route.meta?.title || sess.currentSessionTitle || '');
 
 onMounted(async () => {
+  setupResponsiveSidebar();
+
   // 初始化数据
   await auth.refreshProfile();
   await org.loadOrgs();
   await sess.init();
 
   // 全局代码块复制处理
-  setupCopyCodeHandler();
+  setupCopyCodeHandler(() => ui.showToast('warning', '复制失败，请手动复制'));
+});
+
+onBeforeUnmount(() => {
+  if (mobileMediaQuery?.removeEventListener) {
+    mobileMediaQuery.removeEventListener('change', handleViewportChange);
+  } else {
+    mobileMediaQuery?.removeListener?.(handleViewportChange);
+  }
 });
 
 // P2-13：组织切换时自动刷新知识库
@@ -125,6 +157,37 @@ watch(() => org.currentOrgId, (newOrgId) => {
   if (newOrgId) kb.loadKbs(newOrgId, { reset: true });
   else kb.resetSelection();
 });
+
+watch(() => route.fullPath, () => {
+  if (isMobile.value) closeSidebar();
+});
+
+function setupResponsiveSidebar() {
+  mobileMediaQuery = window.matchMedia('(max-width: 860px)');
+  handleViewportChange(mobileMediaQuery);
+  if (mobileMediaQuery.addEventListener) {
+    mobileMediaQuery.addEventListener('change', handleViewportChange);
+  } else {
+    mobileMediaQuery.addListener?.(handleViewportChange);
+  }
+}
+
+function handleViewportChange(event) {
+  isMobile.value = event.matches;
+  sidebarCollapsed.value = event.matches;
+}
+
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value;
+}
+
+function openSidebar() {
+  sidebarCollapsed.value = false;
+}
+
+function closeSidebar() {
+  if (isMobile.value) sidebarCollapsed.value = true;
+}
 
 function openShareDialog() {
   shareInfo.value = null;
@@ -141,8 +204,8 @@ async function createShare() {
   try {
     shareInfo.value = await sess.createShareLink();
     if (shareInfo.value?.url) {
-      await navigator.clipboard.writeText(shareInfo.value.url);
-      ui.showToast('success', '分享链接已创建并复制');
+      const copied = await copyText(shareInfo.value.url);
+      ui.showToast(copied ? 'success' : 'warning', copied ? '分享链接已创建并复制' : '分享链接已创建，复制失败，请手动复制');
     }
   } catch (err) {
     ui.showToast('error', err.message || '创建分享失败');
@@ -153,8 +216,8 @@ async function createShare() {
 
 async function copyShareLink() {
   if (!shareInfo.value?.url) return;
-  await navigator.clipboard.writeText(shareInfo.value.url);
-  ui.showToast('success', '分享链接已复制');
+  const copied = await copyText(shareInfo.value.url);
+  ui.showToast(copied ? 'success' : 'warning', copied ? '分享链接已复制' : '复制失败，请手动复制');
 }
 
 async function revokeShare() {

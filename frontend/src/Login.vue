@@ -234,7 +234,7 @@
 
 <script setup>
 import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref } from 'vue';
-import { getToken, login, register, sendEmailCode, forgotPassword, resetPassword } from './services/api.js';
+import { clearAuth, getProfile, getToken, login, register, sendEmailCode, forgotPassword, resetPassword } from './services/api.js';
 
 const LogoMark = defineComponent({
   setup: () => () => h('svg', { viewBox: '0 0 32 32', fill: 'currentColor' }, [
@@ -285,8 +285,14 @@ const codeButtonText = computed(() => {
   return '发送验证码';
 });
 
-onMounted(() => {
-  if (getToken()) location.replace(getRedirectTarget());
+onMounted(async () => {
+  if (!getToken()) return;
+  try {
+    await getProfile({ skipAuthRedirect: true });
+    location.replace(getRedirectTarget());
+  } catch {
+    clearAuth();
+  }
 });
 
 onUnmounted(() => {

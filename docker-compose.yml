@@ -35,17 +35,22 @@ services:
   redis:
     image: redis:7-alpine
     container_name: ai-agent-redis
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     command: >
-      redis-server
-      --requirepass ${REDIS_PASSWORD:-}
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
+      sh -c '
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          exec redis-server --requirepass "$$REDIS_PASSWORD" --maxmemory 256mb --maxmemory-policy allkeys-lru;
+        else
+          exec redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru;
+        fi
+      '
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -100,6 +105,19 @@ services:
       # LLM API Key
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      QIANFAN_API_KEY: ${QIANFAN_API_KEY:-}
+      QIANFAN_BASE_URL: ${QIANFAN_BASE_URL:-https://qianfan.baidubce.com/v2}
+      QIANFAN_EMBEDDING_MODEL: ${QIANFAN_EMBEDDING_MODEL:-bge-large-zh}
+      # 邮件验证码
+      SPRING_MAIL_HOST: ${MAIL_HOST:-}
+      SPRING_MAIL_PORT: ${MAIL_PORT:-465}
+      SPRING_MAIL_USERNAME: ${MAIL_USERNAME:-}
+      SPRING_MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-true}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_ENABLE: ${MAIL_SMTP_SSL_ENABLE:-true}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: ${MAIL_SMTP_STARTTLS_ENABLE:-false}
+      AUTH_EMAIL_FROM: ${MAIL_FROM:-}
+      APP_FRONTEND_URL: ${APP_FRONTEND_URL:-http://localhost:5173}
       # Spring Profile
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-deepseek}
       # 告警（可选）

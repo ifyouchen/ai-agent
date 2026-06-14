@@ -58,6 +58,7 @@ import { nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import MessageBubble from '../components/chat/MessageBubble.vue';
 import MessageInput  from '../components/chat/MessageInput.vue';
+import { copyText } from '../js/utils.js';
 import { useSessionStore } from '../stores/sessions.js';
 import { useKbStore } from '../stores/kb.js';
 import { useUiStore } from '../stores/ui.js';
@@ -98,8 +99,8 @@ async function handleQuickShare() {
   try {
     const share = await sess.createShareLink();
     if (!share?.url) return;
-    await navigator.clipboard.writeText(share.url);
-    ui.showToast('success', '分享链接已复制');
+    const copied = await copyText(share.url);
+    ui.showToast(copied ? 'success' : 'warning', copied ? '分享链接已复制' : '复制失败，请手动复制');
   } catch (err) {
     ui.showToast('error', err.message || '创建分享失败');
   }

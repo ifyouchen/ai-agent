@@ -405,6 +405,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { copyText } from '../js/utils.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useOrgStore } from '../stores/org.js';
 import { useUiStore } from '../stores/ui.js';
@@ -543,12 +544,8 @@ function requestStatusClass(status) {
 }
 
 async function copyOrgId(orgId) {
-  try {
-    await navigator.clipboard.writeText(orgId);
-    ui.showToast('success', '组织 ID 已复制');
-  } catch {
-    ui.showToast('info', orgId);
-  }
+  const copied = await copyText(orgId);
+  ui.showToast(copied ? 'success' : 'warning', copied ? '组织 ID 已复制' : '复制失败，请手动复制');
 }
 
 async function handleSelectOrg(orgId) {

@@ -7,7 +7,7 @@
         <button class="icon-btn" type="button" title="搜索" @click="openSearch">
           <svg viewBox="0 0 24 24" fill="none"><path d="m21 21-4.2-4.2m2.2-5.3a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
-        <button class="icon-btn" type="button" title="收起侧边栏" @click="$emit('toggle')">
+        <button class="icon-btn" type="button" title="收起侧边栏" @click="emit('toggle')">
           <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="14" rx="3" stroke="currentColor" stroke-width="2"/><path d="M10 5v14M15 9l-3 3 3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
       </div>
@@ -44,6 +44,21 @@
         </button>
       </div>
     </div>
+
+    <nav class="mobile-sidebar-nav" aria-label="移动端导航">
+      <router-link class="mobile-sidebar-nav-item" to="/org" @click="handleNavClick">
+        <span class="mobile-sidebar-nav-icon">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M8 11a4 4 0 1 1 8 0v2h1.5a2.5 2.5 0 0 1 0 5H6.5a2.5 2.5 0 0 1 0-5H8v-2Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            <path d="M9.5 8.2a4.5 4.5 0 0 0-6.2 4.2M14.5 8.2a4.5 4.5 0 0 1 6.2 4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <span>
+          <span class="mobile-sidebar-nav-title">组织</span>
+          <span class="mobile-sidebar-nav-subtitle">成员与空间管理</span>
+        </span>
+      </router-link>
+    </nav>
 
     <!-- 会话列表 -->
     <div class="session-list">
@@ -119,7 +134,7 @@
           <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
         </svg>
         <div v-if="userMenuOpen" class="user-dropdown" @click.stop>
-          <router-link class="user-dropdown-item" to="/profile" @click="userMenuOpen = false">
+          <router-link class="user-dropdown-item" to="/profile" @click="handleProfileClick">
             <svg viewBox="0 0 24 24" fill="none" width="14" height="14">
               <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8"/>
               <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
@@ -165,7 +180,7 @@
   </aside>
 
   <!-- 展开按钮（侧边栏收起时） -->
-  <button v-if="collapsed" class="sidebar-expand-btn" type="button" title="展开侧边栏" @click="$emit('toggle')">
+  <button v-if="collapsed" class="sidebar-expand-btn" type="button" title="展开侧边栏" @click="emit('toggle')">
     <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="14" rx="3" stroke="currentColor" stroke-width="2"/><path d="M10 5v14M13 9l3 3-3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
   </button>
 
@@ -235,7 +250,7 @@ import { useSessionStore } from '../../stores/sessions.js';
 import { useUiStore } from '../../stores/ui.js';
 
 const props = defineProps({ collapsed: { type: Boolean, default: false } });
-defineEmits(['toggle']);
+const emit = defineEmits(['toggle', 'close']);
 
 const router = useRouter();
 const auth = useAuthStore();
@@ -327,11 +342,13 @@ function handleNewSession() {
   exitBulkMode();
   sess.newSession();
   router.push('/chat');
+  emit('close');
 }
 
 function handleSwitchSession(id) {
   sess.switchSession(id);
   router.push('/chat');
+  emit('close');
 }
 
 function handleSessionClick(id) {
@@ -449,6 +466,18 @@ function openSearchResult(id) {
   sess.switchSession(id);
   router.push('/chat');
   closeSearch();
+  emit('close');
+}
+
+function handleProfileClick() {
+  userMenuOpen.value = false;
+  emit('close');
+}
+
+function handleNavClick() {
+  exitBulkMode();
+  userMenuOpen.value = false;
+  emit('close');
 }
 
 // 输入变化时 debounce 调用服务端搜索

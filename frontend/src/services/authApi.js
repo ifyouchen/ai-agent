@@ -33,8 +33,8 @@ export async function searchUsers(keyword) {
   return data;
 }
 
-export async function getProfile() {
-  const { data } = await http.get('/api/v1/auth/profile');
+export async function getProfile(config = {}) {
+  const { data } = await http.get('/api/v1/auth/profile', config);
   return data;
 }
 

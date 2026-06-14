@@ -131,7 +131,8 @@
 
 <script setup>
 import { computed, ref } from 'vue';
-import { formatMarkdown } from '../../js/utils.js';
+import { copyText, formatMarkdown } from '../../js/utils.js';
+import { useUiStore } from '../../stores/ui.js';
 
 const props = defineProps({
   message:   { type: Object,  required: true },
@@ -141,6 +142,7 @@ const props = defineProps({
 defineEmits(['regenerate', 'feedback', 'edit', 'share']);
 
 const copyState = ref(false);
+const ui = useUiStore();
 
 const displayHtml = computed(() => {
   const html = props.message.html || '';
@@ -168,13 +170,16 @@ function formatTime(ts) {
   return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 }
 
-function copyMessage() {
+async function copyMessage() {
   const tmp = document.createElement('div');
   tmp.innerHTML = displayHtml.value;
   const text = tmp.innerText || tmp.textContent || '';
-  navigator.clipboard.writeText(text).then(() => {
-    copyState.value = true;
-    setTimeout(() => { copyState.value = false; }, 1800);
-  }).catch(() => {});
+  const ok = await copyText(text);
+  if (!ok) {
+    ui.showToast('warning', '复制失败，请手动复制');
+    return;
+  }
+  copyState.value = true;
+  setTimeout(() => { copyState.value = false; }, 1800);
 }
 </script>
