@@ -313,7 +313,7 @@ async function submitLogin() {
     await login({ username: loginForm.username, password: loginForm.password });
     location.replace(getRedirectTarget());
   } catch (error) {
-    globalError.value = error.message || '用户名或密码错误';
+    globalError.value = error.message || '账号不存在或密码错误';
   } finally {
     loading.value = false;
   }
@@ -399,7 +399,7 @@ async function sendForgotCode() {
     globalSuccess.value = '验证码已发送至邮箱，请查收';
     startCodeCountdown();
   } catch (error) {
-    globalError.value = error.message || '验证码发送失败，请稍后重试';
+    globalError.value = error.message || '该邮箱未注册账号';
   } finally {
     codeSending.value = false;
   }

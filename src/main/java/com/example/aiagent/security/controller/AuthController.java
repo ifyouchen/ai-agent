@@ -145,8 +145,7 @@ public class AuthController {
         log.info("[AUTH] 忘记密码 email={}", request.email());
         try {
             authService.forgotPassword(request.email());
-            // 统一返回文案，避免邮箱枚举
-            return ResponseEntity.ok(Map.of("message", "如果该邮箱已注册，验证码将很快送达"));
+            return ResponseEntity.ok(Map.of("message", "验证码已发送至邮箱，请查收"));
         } catch (IllegalArgumentException e) {
             log.warn("[AUTH] 忘记密码失败 email={} reason={}", request.email(), e.getMessage());
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));

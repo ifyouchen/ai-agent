@@ -9,6 +9,7 @@ import com.example.aiagent.security.mapper.SysUserMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -44,6 +45,11 @@ public class AuthService {
      * @throws AuthenticationException 用户名/密码错误时由 Spring Security 抛出
      */
     public AuthResponse login(LoginRequest request) {
+        if (!sysUserMapper.existsByUsername(request.username())) {
+            log.warn("[AUTH] 登录失败：账号不存在 username={}", request.username());
+            throw new BadCredentialsException("账号不存在");
+        }
+
         // 委托给 Spring Security 做认证（内部调用 UserDetailsServiceImpl.loadUserByUsername）
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
@@ -126,8 +132,7 @@ public class AuthService {
     /**
      * 忘记密码：发送重置验证码。
      *
-     * <p>为防止邮箱枚举，无论邮箱是否存在都返回相同提示，
-     * 只有数据库中存在对应用户时才会真正发送邮件。
+     * <p>产品要求前端明确提示邮箱是否存在，因此邮箱未注册时直接返回业务错误。
      */
     public void forgotPassword(String email) {
         String normalizedEmail = email != null ? email.strip().toLowerCase(Locale.ROOT) : "";
@@ -136,13 +141,13 @@ public class AuthService {
         }
         log.info("[AUTH] 忘记密码 email={}", maskEmail(normalizedEmail));
         sysUserMapper.findByEmail(normalizedEmail)
-                .ifPresentOrElse(
-                        user -> {
-                            emailVerificationService.sendResetPasswordCode(normalizedEmail);
-                            log.info("[AUTH] 忘记密码：验证码已发送 email={}", maskEmail(normalizedEmail));
-                        },
-                        () -> log.warn("[AUTH] 忘记密码：邮箱不存在 email={}", maskEmail(normalizedEmail))
-                );
+                .orElseThrow(() -> {
+                    log.warn("[AUTH] 忘记密码：邮箱不存在 email={}", maskEmail(normalizedEmail));
+                    return new IllegalArgumentException("该邮箱未注册账号");
+                });
+
+        emailVerificationService.sendResetPasswordCode(normalizedEmail);
+        log.info("[AUTH] 忘记密码：验证码已发送 email={}", maskEmail(normalizedEmail));
     }
 
     /**
