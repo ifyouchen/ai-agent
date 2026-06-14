@@ -926,6 +926,29 @@
     gap: 8px;
   }
 
+  .kb-list-empty {
+    min-height: 172px;
+    padding: 24px 16px;
+    gap: 8px;
+    justify-content: flex-start;
+  }
+
+  .kb-list-empty .empty-state-icon {
+    width: 54px;
+    height: 54px;
+    border-radius: 16px;
+    margin-bottom: 2px;
+  }
+
+  .kb-list-empty .empty-state-hint {
+    line-height: 1.5;
+  }
+
+  .kb-empty-create-btn {
+    margin-top: 2px;
+    padding: 8px 16px;
+  }
+
   .kb-card {
     min-width: 140px;
     padding: 12px 14px;
