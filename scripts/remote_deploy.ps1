@@ -35,6 +35,10 @@ $ssh = Get-Command ssh -ErrorAction SilentlyContinue
 if (-not $ssh) {
     throw "ssh command not found. Install OpenSSH Client first."
 }
+$scp = Get-Command scp -ErrorAction SilentlyContinue
+if (-not $scp) {
+    throw "scp command not found. Install OpenSSH Client first."
+}
 
 $forceResetValue = if ($ForceReset) { "true" } else { "false" }
 $followLogsValue = if ($FollowLogs) { "true" } else { "false" }
@@ -156,6 +160,7 @@ set_env_var "APP_PORT" "127.0.0.1:18080"
 set_env_var "FRONTEND_PORT" "127.0.0.1:14173"
 set_env_var "PG_PORT" "127.0.0.1:15432"
 set_env_var "REDIS_PORT" "127.0.0.1:16379"
+set_env_var "FRONTEND_API_BASE_URL" ""
 
 echo "[INFO] Removing legacy aiagent containers that may still occupy ports..."
 docker rm -f aiagent-app aiagent-frontend aiagent-redis aiagent-postgres 2>/dev/null || true
@@ -211,7 +216,24 @@ $remoteCommand = "$remoteEnv bash -s"
 Write-Host "[INFO] Connecting to $target ..."
 Write-Host "[INFO] Server IP is fixed as $HostName"
 Write-Host "[INFO] If asked, enter the server password."
-$remoteScript | & $ssh.Source -p $Port $target $remoteCommand
+
+$localTempScript = Join-Path $env:TEMP ("aiagent-remote-deploy-" + [guid]::NewGuid().ToString("N") + ".sh")
+$remoteTempScript = "/tmp/aiagent-remote-deploy-" + [guid]::NewGuid().ToString("N") + ".sh"
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($localTempScript, ($remoteScript -replace "`r`n", "`n"), $utf8NoBom)
+
+try {
+    Write-Host "[INFO] Uploading deploy script to $remoteTempScript ..."
+    & $scp.Source -P $Port $localTempScript "${target}:$remoteTempScript"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to upload remote deploy script. SCP exit code: $LASTEXITCODE"
+    }
+
+    $remoteRunCommand = "chmod +x $(Quote-Bash $remoteTempScript) && $remoteEnv bash $(Quote-Bash $remoteTempScript); code=`$?; rm -f $(Quote-Bash $remoteTempScript); exit `$code"
+    & $ssh.Source -p $Port $target $remoteRunCommand
+} finally {
+    Remove-Item -LiteralPath $localTempScript -Force -ErrorAction SilentlyContinue
+}
 
 if ($LASTEXITCODE -ne 0) {
     throw "Remote deploy failed. SSH exit code: $LASTEXITCODE"

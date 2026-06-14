@@ -122,6 +122,7 @@ set_env_var "APP_PORT" "127.0.0.1:18080"
 set_env_var "FRONTEND_PORT" "127.0.0.1:14173"
 set_env_var "PG_PORT" "127.0.0.1:15432"
 set_env_var "REDIS_PORT" "127.0.0.1:16379"
+set_env_var "FRONTEND_API_BASE_URL" ""
 
 echo "[INFO] Removing legacy aiagent containers that may still occupy ports..."
 docker rm -f aiagent-app aiagent-frontend aiagent-redis aiagent-postgres 2>/dev/null || true
