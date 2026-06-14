@@ -4,6 +4,7 @@ const TOKEN_KEY = 'ai_agent_token';
 const USER_KEY = 'ai_agent_user';
 const PUBLIC_AUTH_PATHS = new Set([
   '/api/v1/auth/login',
+  '/api/v1/auth/email-login',
   '/api/v1/auth/register',
   '/api/v1/auth/email-code',
   '/api/v1/auth/forgot-password',

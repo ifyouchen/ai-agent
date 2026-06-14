@@ -412,7 +412,7 @@ body {
   .form-box {
     max-width: 100%;
     max-height: 100%;
-    overflow-y: hidden;
+    overflow-y: auto;
   }
   .form-title { font-size: 24px; line-height: 1.25; margin-bottom: 7px; letter-spacing: 0; }
   .form-subtitle { font-size: 14px; color: #7A8494; margin-bottom: 18px; }
@@ -435,13 +435,32 @@ body {
   .form-label { font-size: 13px; color: #374151; margin-bottom: 6px; }
   .form-input { min-height: 46px; padding: 11px 15px; border-radius: 10px; border-color: #E5EAF2; font-size: 15px; }
   .form-input:focus { border-color: #6B83FF; box-shadow: 0 0 0 4px rgba(77,107,254,.12); }
-  .verification-row { gap: 8px; }
-  .code-btn { min-height: 46px; min-width: 106px; padding: 0 12px; }
+  .verification-row {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .verification-input {
+    flex: 1 1 150px;
+  }
+  .code-btn {
+    min-height: 46px;
+    min-width: 106px;
+    padding: 0 12px;
+    flex: 0 0 auto;
+  }
   .submit-btn { min-height: 48px; margin-top: 6px; border-radius: 10px; font-size: 15px; box-shadow: 0 10px 22px rgba(77,107,254,.22); }
   .form-extra { margin-top: 12px; }
 }
 
 @media (max-width: 380px) {
   .form-panel { padding-left: 18px; padding-right: 18px; }
-  .code-btn { min-width: 96px; padding: 0 10px; font-size: 12px; }
+  .verification-input {
+    flex-basis: 100%;
+  }
+  .code-btn {
+    width: 100%;
+    min-width: 0;
+    padding: 0 10px;
+    font-size: 12px;
+  }
 }

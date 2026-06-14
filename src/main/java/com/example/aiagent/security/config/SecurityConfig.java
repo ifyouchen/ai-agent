@@ -66,7 +66,7 @@ public class SecurityConfig {
     @PostConstruct
     public void init() {
         log.info("[SECURITY] SecurityConfig 初始化 corsOrigins=* session=STATELESS auth=JWT");
-        log.info("[SECURITY] 公开路径: /api/v1/auth/login, /api/v1/auth/register, /api/v1/auth/email-code, " +
+        log.info("[SECURITY] 公开路径: /api/v1/auth/login, /api/v1/auth/email-login, /api/v1/auth/register, /api/v1/auth/email-code, " +
                 "/api/v1/auth/forgot-password, /api/v1/auth/reset-password, /actuator/health, /actuator/prometheus");
         log.info("[SECURITY] 管理接口要求 ADMIN 角色: /api/v1/admin/**, /actuator/**");
         log.info("[SECURITY] 前端地址 frontendUrl={}", frontendUrl.isEmpty() ? "未配置" : frontendUrl);
@@ -94,6 +94,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/v1/chat/share/**").permitAll()
                 .requestMatchers(
                     "/api/v1/auth/login",
+                    "/api/v1/auth/email-login",
                     "/api/v1/auth/register",
                     "/api/v1/auth/email-code",
                     "/api/v1/auth/forgot-password",

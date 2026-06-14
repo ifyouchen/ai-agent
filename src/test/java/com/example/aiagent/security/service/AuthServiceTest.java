@@ -1,5 +1,6 @@
 package com.example.aiagent.security.service;
 
+import com.example.aiagent.security.dto.EmailLoginRequest;
 import com.example.aiagent.security.dto.RegisterRequest;
 import com.example.aiagent.security.entity.Organization;
 import com.example.aiagent.security.entity.SysUser;
@@ -100,8 +101,67 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("已登录用户修改密码时只校验邮箱验证码并更新新密码")
-    void changePasswordUsesEmailCodeWithoutOldPassword() {
+    @DisplayName("邮箱验证码登录成功时校验登录验证码并返回 JWT")
+    void emailLoginVerifiesLoginCodeAndReturnsToken() {
+        SysUser user = SysUser.builder()
+                .userId("user-1")
+                .username("alice")
+                .email("alice@example.com")
+                .roles("ROLE_USER")
+                .enabled(1)
+                .build();
+        when(sysUserMapper.findByEmail("alice@example.com")).thenReturn(java.util.Optional.of(user));
+        when(jwtService.generateToken("user-1", "alice", java.util.List.of("ROLE_USER")))
+                .thenReturn("email-jwt");
+        when(jwtService.getExpirationSeconds()).thenReturn(86400L);
+
+        var response = authService.emailLogin(new EmailLoginRequest("Alice@Example.com", "123456"));
+
+        verify(emailVerificationService).verifyLoginCode("alice@example.com", "123456");
+        assertThat(response.token()).isEqualTo("email-jwt");
+        assertThat(response.username()).isEqualTo("alice");
+    }
+
+    @Test
+    @DisplayName("邮箱验证码登录拒绝未注册邮箱且不消耗验证码")
+    void emailLoginRejectsUnknownEmailBeforeVerifyCode() {
+        when(sysUserMapper.findByEmail("missing@example.com")).thenReturn(java.util.Optional.empty());
+
+        assertThatThrownBy(() -> authService.emailLogin(new EmailLoginRequest("missing@example.com", "123456")))
+                .isInstanceOf(org.springframework.security.authentication.BadCredentialsException.class)
+                .hasMessageContaining("该邮箱未注册账号");
+
+        verify(emailVerificationService, never()).verifyLoginCode(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    @DisplayName("发送登录验证码前要求邮箱已注册")
+    void sendLoginCodeRequiresRegisteredEmail() {
+        when(sysUserMapper.existsByEmail("alice@example.com")).thenReturn(true);
+
+        authService.sendEmailCode("Alice@Example.com", "login");
+
+        verify(emailVerificationService).sendLoginCode("alice@example.com");
+    }
+
+    @Test
+    @DisplayName("登录验证码不会发送给未注册邮箱")
+    void sendLoginCodeRejectsUnknownEmail() {
+        when(sysUserMapper.existsByEmail("missing@example.com")).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.sendEmailCode("missing@example.com", "login"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("该邮箱未注册账号");
+
+        verify(emailVerificationService, never()).sendLoginCode(
+                org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    @DisplayName("已登录用户修改密码时更新新密码")
+    void changePasswordUpdatesNewPassword() {
         SysUser user = SysUser.builder()
                 .userId("user-1")
                 .email("alice@example.com")
@@ -109,30 +169,26 @@ class AuthServiceTest {
                 .build();
         when(sysUserMapper.findByUserId("user-1")).thenReturn(java.util.Optional.of(user));
 
-        authService.changePassword("user-1", "new-secret", "123456");
+        authService.changePassword("user-1", "new-secret");
 
-        verify(emailVerificationService).verifyChangePasswordCode("alice@example.com", "123456");
         ArgumentCaptor<String> hashCaptor = ArgumentCaptor.forClass(String.class);
         verify(sysUserMapper).updatePassword(eq("user-1"), hashCaptor.capture());
         assertThat(passwordEncoder.matches("new-secret", hashCaptor.getValue())).isTrue();
     }
 
     @Test
-    @DisplayName("未绑定邮箱时不能通过验证码修改密码")
-    void changePasswordRejectsUserWithoutEmail() {
+    @DisplayName("修改密码拒绝过短的新密码")
+    void changePasswordRejectsShortPassword() {
         SysUser user = SysUser.builder()
                 .userId("user-1")
                 .passwordHash(passwordEncoder.encode("old-secret"))
                 .build();
         when(sysUserMapper.findByUserId("user-1")).thenReturn(java.util.Optional.of(user));
 
-        assertThatThrownBy(() -> authService.changePassword("user-1", "new-secret", "123456"))
+        assertThatThrownBy(() -> authService.changePassword("user-1", "12345"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("未绑定邮箱");
+                .hasMessageContaining("新密码长度不能少于 6 位");
 
-        verify(emailVerificationService, never()).verifyChangePasswordCode(
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyString());
         verify(sysUserMapper, never()).updatePassword(
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyString());

@@ -71,8 +71,54 @@
             <span v-if="loading" class="spinner"></span>{{ loading ? '登录中' : '登录' }}
           </button>
           <div class="form-extra">
+            <button class="text-link" type="button" @click="switchTab('emailLogin')">使用邮箱验证码登录</button>
+          </div>
+          <div class="form-extra">
             <span class="muted-text">还没有账号？</span>
             <button class="text-link" type="button" @click="switchTab('register')">去注册</button>
+          </div>
+        </form>
+
+        <form v-else-if="activeTab === 'emailLogin'" class="auth-form active" novalidate @submit.prevent="submitEmailLogin">
+          <div class="form-group">
+            <label class="form-label" for="emailLoginEmail">邮箱</label>
+            <input
+              id="emailLoginEmail"
+              v-model.trim="emailLoginForm.email"
+              class="form-input"
+              :class="{ error: fieldErrors.emailLoginEmail }"
+              type="email"
+              placeholder="输入注册邮箱"
+              autocomplete="email"
+            >
+            <div v-if="fieldErrors.emailLoginEmail" class="form-error visible">{{ fieldErrors.emailLoginEmail }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="emailLoginCode">邮箱验证码</label>
+            <div class="verification-row">
+              <input
+                id="emailLoginCode"
+                v-model.trim="emailLoginForm.emailCode"
+                class="form-input verification-input"
+                :class="{ error: fieldErrors.emailLoginCode }"
+                type="text"
+                inputmode="numeric"
+                maxlength="6"
+                placeholder="6 位验证码"
+                autocomplete="one-time-code"
+              >
+              <button class="code-btn" type="button" :disabled="!canSendLoginCode || isCodeSending('emailLogin') || codeCountdowns.emailLogin > 0" @click="sendLoginCode">
+                <span v-if="isCodeSending('emailLogin')" class="spinner code-spinner"></span>
+                {{ codeButtonText('emailLogin') }}
+              </button>
+            </div>
+            <div v-if="fieldErrors.emailLoginCode" class="form-error visible">{{ fieldErrors.emailLoginCode }}</div>
+          </div>
+          <button class="submit-btn" type="submit" :disabled="loading">
+            <span v-if="loading" class="spinner"></span>{{ loading ? '登录中' : '登录' }}
+          </button>
+          <div class="form-extra">
+            <button class="text-link" type="button" @click="switchTab('login')">返回密码登录</button>
           </div>
         </form>
 
@@ -117,9 +163,9 @@
                 placeholder="6 位验证码"
                 autocomplete="one-time-code"
               >
-              <button class="code-btn" type="button" :disabled="!canSendCode || codeSending || codeCountdown > 0" @click="sendCode">
-                <span v-if="codeSending" class="spinner code-spinner"></span>
-                {{ codeButtonText }}
+              <button class="code-btn" type="button" :disabled="!canSendCode || isCodeSending('register') || codeCountdowns.register > 0" @click="sendCode">
+                <span v-if="isCodeSending('register')" class="spinner code-spinner"></span>
+                {{ codeButtonText('register') }}
               </button>
             </div>
             <div v-if="fieldErrors.regEmailCode" class="form-error visible">{{ fieldErrors.regEmailCode }}</div>
@@ -187,9 +233,9 @@
                 placeholder="6 位验证码"
                 autocomplete="one-time-code"
               >
-              <button class="code-btn" type="button" :disabled="!canSendForgotCode || codeSending || codeCountdown > 0" @click="sendForgotCode">
-                <span v-if="codeSending" class="spinner code-spinner"></span>
-                {{ codeButtonText }}
+              <button class="code-btn" type="button" :disabled="!canSendForgotCode || isCodeSending('forgot') || codeCountdowns.forgot > 0" @click="sendForgotCode">
+                <span v-if="isCodeSending('forgot')" class="spinner code-spinner"></span>
+                {{ codeButtonText('forgot') }}
               </button>
             </div>
             <div v-if="fieldErrors.forgotEmailCode" class="form-error visible">{{ fieldErrors.forgotEmailCode }}</div>
@@ -234,7 +280,7 @@
 
 <script setup>
 import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref } from 'vue';
-import { clearAuth, getProfile, getToken, login, register, sendEmailCode, forgotPassword, resetPassword } from './services/api.js';
+import { clearAuth, emailLogin, getProfile, getToken, login, register, sendEmailCode, forgotPassword, resetPassword } from './services/api.js';
 
 const LogoMark = defineComponent({
   setup: () => () => h('svg', { viewBox: '0 0 32 32', fill: 'currentColor' }, [
@@ -255,16 +301,18 @@ const globalError = ref('');
 const globalSuccess = ref('');
 const fieldErrors = reactive({});
 const loginForm   = reactive({ username: '', password: '' });
+const emailLoginForm = reactive({ email: '', emailCode: '' });
 const registerForm = reactive({ username: '', email: '', emailCode: '', password: '', confirm: '' });
 const forgotForm   = reactive({ email: '', emailCode: '', password: '', confirm: '' });
-const codeSending = ref(false);
-const codeCountdown = ref(0);
-let codeTimer = null;
+const codeSendingPurpose = ref('');
+const codeCountdowns = reactive({ register: 0, emailLogin: 0, forgot: 0 });
+const codeTimers = {};
 
 const formTitle = computed(() => {
   switch (activeTab.value) {
     case 'register': return '创建账号';
     case 'forgot':   return '找回密码';
+    case 'emailLogin': return '邮箱验证码登录';
     default:         return '欢迎回来';
   }
 });
@@ -273,17 +321,14 @@ const formSubtitle = computed(() => {
   switch (activeTab.value) {
     case 'register': return '注册后即可开始使用';
     case 'forgot':   return '通过邮箱验证码重置密码';
+    case 'emailLogin': return '无需密码，通过邮箱验证码继续使用';
     default:         return '登录以继续使用 AI Agent';
   }
 });
 
 const canSendCode = computed(() => isValidEmail(registerForm.email));
+const canSendLoginCode = computed(() => isValidEmail(emailLoginForm.email));
 const canSendForgotCode = computed(() => isValidEmail(forgotForm.email));
-const codeButtonText = computed(() => {
-  if (codeSending.value) return '发送中';
-  if (codeCountdown.value > 0) return `${codeCountdown.value}s`;
-  return '发送验证码';
-});
 
 onMounted(async () => {
   if (!getToken()) return;
@@ -296,7 +341,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-  if (codeTimer) clearInterval(codeTimer);
+  Object.values(codeTimers).forEach(timer => clearInterval(timer));
 });
 
 function switchTab(tab) {
@@ -314,6 +359,20 @@ async function submitLogin() {
     location.replace(getRedirectTarget());
   } catch (error) {
     globalError.value = error.message || '账号不存在或密码错误';
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function submitEmailLogin() {
+  clearErrors();
+  if (!validateEmailLogin()) return;
+  loading.value = true;
+  try {
+    await emailLogin(emailLoginForm.email, emailLoginForm.emailCode);
+    location.replace(getRedirectTarget());
+  } catch (error) {
+    globalError.value = error.message || '邮箱或验证码不正确';
   } finally {
     loading.value = false;
   }
@@ -373,15 +432,35 @@ async function sendCode() {
     fieldErrors.regEmail = '请输入正确的邮箱地址';
     return;
   }
-  codeSending.value = true;
+  codeSendingPurpose.value = 'register';
   try {
     await sendEmailCode(registerForm.email, 'register');
     globalSuccess.value = '验证码已发送至邮箱，请查收';
-    startCodeCountdown();
+    startCodeCountdown('register');
   } catch (error) {
     globalError.value = error.message || '验证码发送失败，请稍后重试';
   } finally {
-    codeSending.value = false;
+    codeSendingPurpose.value = '';
+  }
+}
+
+async function sendLoginCode() {
+  globalError.value = '';
+  globalSuccess.value = '';
+  delete fieldErrors.emailLoginEmail;
+  if (!isValidEmail(emailLoginForm.email)) {
+    fieldErrors.emailLoginEmail = '请输入正确的邮箱地址';
+    return;
+  }
+  codeSendingPurpose.value = 'emailLogin';
+  try {
+    await sendEmailCode(emailLoginForm.email, 'login');
+    globalSuccess.value = '验证码已发送至邮箱，请查收';
+    startCodeCountdown('emailLogin');
+  } catch (error) {
+    globalError.value = error.message || '该邮箱未注册账号';
+  } finally {
+    codeSendingPurpose.value = '';
   }
 }
 
@@ -393,21 +472,31 @@ async function sendForgotCode() {
     fieldErrors.forgotEmail = '请输入正确的邮箱地址';
     return;
   }
-  codeSending.value = true;
+  codeSendingPurpose.value = 'forgot';
   try {
     await forgotPassword(forgotForm.email);
     globalSuccess.value = '验证码已发送至邮箱，请查收';
-    startCodeCountdown();
+    startCodeCountdown('forgot');
   } catch (error) {
     globalError.value = error.message || '该邮箱未注册账号';
   } finally {
-    codeSending.value = false;
+    codeSendingPurpose.value = '';
   }
 }
 
 function validateLogin() {
   if (!loginForm.username) fieldErrors.loginUsername = '请输入用户名';
   if (!loginForm.password) fieldErrors.loginPassword = '请输入密码';
+  return !Object.keys(fieldErrors).length;
+}
+
+function validateEmailLogin() {
+  if (!isValidEmail(emailLoginForm.email)) {
+    fieldErrors.emailLoginEmail = '请输入正确的邮箱地址';
+  }
+  if (!/^\d{6}$/.test(emailLoginForm.emailCode || '')) {
+    fieldErrors.emailLoginCode = '请输入 6 位邮箱验证码';
+  }
   return !Object.keys(fieldErrors).length;
 }
 
@@ -456,15 +545,25 @@ function isValidEmail(email) {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email || '');
 }
 
-function startCodeCountdown() {
-  if (codeTimer) clearInterval(codeTimer);
-  codeCountdown.value = 60;
-  codeTimer = setInterval(() => {
-    codeCountdown.value -= 1;
-    if (codeCountdown.value <= 0) {
-      clearInterval(codeTimer);
-      codeTimer = null;
-      codeCountdown.value = 0;
+function isCodeSending(purpose) {
+  return codeSendingPurpose.value === purpose;
+}
+
+function codeButtonText(purpose) {
+  if (isCodeSending(purpose)) return '发送中';
+  if (codeCountdowns[purpose] > 0) return `${codeCountdowns[purpose]}s`;
+  return '发送验证码';
+}
+
+function startCodeCountdown(purpose) {
+  if (codeTimers[purpose]) clearInterval(codeTimers[purpose]);
+  codeCountdowns[purpose] = 60;
+  codeTimers[purpose] = setInterval(() => {
+    codeCountdowns[purpose] -= 1;
+    if (codeCountdowns[purpose] <= 0) {
+      clearInterval(codeTimers[purpose]);
+      delete codeTimers[purpose];
+      codeCountdowns[purpose] = 0;
     }
   }, 1000);
 }

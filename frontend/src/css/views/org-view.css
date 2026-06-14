@@ -796,6 +796,7 @@
 
   .org-sidebar-panel {
     gap: 12px;
+    padding: 14px;
   }
 
   .org-list {
@@ -810,38 +811,79 @@
 
   .org-list-item {
     flex: 0 0 min(78vw, 280px);
+    min-height: 64px;
     scroll-snap-align: start;
   }
 
   .org-detail-panel {
-    padding: 18px;
+    padding: 16px;
   }
 }
 
 @media (max-width: 640px) {
   .org-view {
-    padding: 14px;
-    gap: 12px;
+    padding: 10px 12px 18px;
+    gap: 10px;
   }
 
   .org-sidebar-panel {
-    padding: 18px 18px 14px;
+    padding: 12px;
     border-radius: 14px;
+    gap: 10px;
+  }
+
+  .org-sidebar-header {
+    align-items: center;
+  }
+
+  .org-title {
+    font-size: 17px;
+  }
+
+  .org-subtitle {
+    display: none;
+  }
+
+  .org-icon-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
   }
 
   .org-list {
     margin-inline: -2px;
+    padding-bottom: 2px;
   }
 
   .org-list-item {
     flex-basis: min(86vw, 260px);
-    padding: 12px;
+    min-height: 58px;
+    padding: 10px;
+    border-radius: 12px;
   }
 
   .org-list-icon {
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
     border-radius: 11px;
+  }
+
+  .org-list-name {
+    font-size: 13px;
+  }
+
+  .org-list-meta {
+    font-size: 11px;
+  }
+
+  .org-current-dot {
+    width: 7px;
+    height: 7px;
+  }
+
+  .org-detail-panel {
+    padding: 14px;
+    border-radius: 14px;
   }
 
   .org-detail-header,
@@ -858,6 +900,92 @@
   .org-apply-card {
     display: flex;
     grid-template-columns: none;
+  }
+
+  .org-detail-heading {
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .org-detail-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+  }
+
+  .org-detail-heading h3 {
+    font-size: 18px;
+    line-height: 1.25;
+  }
+
+  .org-detail-heading p {
+    font-size: 12px;
+  }
+
+  .org-id-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .org-id-label {
+    width: 44px;
+    line-height: 26px;
+  }
+
+  .org-id-value {
+    flex: 1 1 min(100%, 180px);
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+    padding: 4px 8px;
+  }
+
+  .org-id-copy {
+    min-height: 26px;
+    padding: 4px 8px;
+  }
+
+  .org-section-tabs {
+    margin-top: 14px;
+    padding: 4px;
+    gap: 4px;
+    border-radius: 12px;
+  }
+
+  .org-section-tab {
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 12px;
+    border-radius: 9px;
+  }
+
+  .org-notice,
+  .org-invite-panel,
+  .org-members-panel {
+    margin-top: 14px;
+    padding: 14px;
+    border-radius: 12px;
+  }
+
+  .org-empty,
+  .org-detail-empty {
+    min-height: 96px;
+    padding: 18px 0;
+  }
+
+  .org-empty.compact {
+    min-height: 72px;
+  }
+
+  .section-heading {
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .section-heading h4 {
+    font-size: 14px;
   }
 
   .org-detail-actions,
@@ -877,6 +1005,19 @@
 
   .join-request-actions {
     justify-content: stretch;
+  }
+
+  .invitation-row,
+  .member-row {
+    gap: 10px;
+    padding: 12px;
+    border-radius: 12px;
+  }
+
+  .member-main,
+  .invitation-main {
+    width: 100%;
+    min-width: 0;
   }
 
   .member-search-row .org-member-input {

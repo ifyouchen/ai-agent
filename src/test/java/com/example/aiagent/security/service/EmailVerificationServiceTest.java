@@ -75,6 +75,26 @@ class EmailVerificationServiceTest {
     }
 
     @Test
+    @DisplayName("发送登录验证码使用独立 LOGIN 用途")
+    void sendLoginCodeUsesLoginPurpose() {
+        when(codeMapper.findLatestByEmailAndPurpose("user@example.com", "LOGIN"))
+                .thenReturn(Optional.empty());
+        when(mailSenderProvider.getIfAvailable()).thenReturn(mailSender);
+
+        service.sendLoginCode("User@Example.com");
+
+        ArgumentCaptor<MailMessage> mailCaptor = ArgumentCaptor.forClass(MailMessage.class);
+        verify(asyncMailSender).send(mailCaptor.capture());
+        assertThat(mailCaptor.getValue().getTo()).isEqualTo("user@example.com");
+        assertThat(mailCaptor.getValue().getSubject()).isEqualTo("AI Agent 登录账号验证码");
+
+        ArgumentCaptor<EmailVerificationCode> codeCaptor = ArgumentCaptor.forClass(EmailVerificationCode.class);
+        verify(codeMapper).insert(codeCaptor.capture());
+        assertThat(codeCaptor.getValue().getEmail()).isEqualTo("user@example.com");
+        assertThat(codeCaptor.getValue().getPurpose()).isEqualTo("LOGIN");
+    }
+
+    @Test
     @DisplayName("60 秒内重复发送验证码会被拒绝")
     void sendRegisterCodeRejectsCooldown() {
         when(codeMapper.findLatestByEmailAndPurpose("user@example.com", "REGISTER"))

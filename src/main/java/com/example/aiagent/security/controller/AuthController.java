@@ -2,6 +2,7 @@ package com.example.aiagent.security.controller;
 
 import com.example.aiagent.security.dto.AuthResponse;
 import com.example.aiagent.security.dto.EmailCodeRequest;
+import com.example.aiagent.security.dto.EmailLoginRequest;
 import com.example.aiagent.security.dto.ForgotPasswordRequest;
 import com.example.aiagent.security.dto.LoginRequest;
 import com.example.aiagent.security.dto.RegisterRequest;
@@ -31,8 +32,9 @@ import java.util.Map;
 /**
  * 认证接口
  *
-     * POST /api/v1/auth/login     → 登录，返回 JWT
-     * POST /api/v1/auth/register  → 注册，返回 JWT
+     * POST /api/v1/auth/login       → 用户名密码登录，返回 JWT
+     * POST /api/v1/auth/email-login → 邮箱验证码登录，返回 JWT
+     * POST /api/v1/auth/register    → 注册，返回 JWT
      * POST /api/v1/auth/email-code → 发送注册邮箱验证码
  *
  * 这两个接口在 SecurityConfig 中设置为 permitAll()，无需 Token 即可访问。
@@ -79,9 +81,40 @@ public class AuthController {
     }
 
     /**
+     * 邮箱验证码登录。
+     *
+     * 请求体：{"email": "alice@example.com", "emailCode": "123456"}
+     * 响应体：同用户名密码登录。
+     */
+    @PostMapping("/email-login")
+    public ResponseEntity<?> emailLogin(@Valid @RequestBody EmailLoginRequest request,
+                                        HttpServletRequest httpRequest) {
+        String clientIp = getClientIp(httpRequest);
+        try {
+            AuthResponse response = authService.emailLogin(request);
+
+            auditLogService.log(AuditLogService.EventType.LOGIN_SUCCESS,
+                    response.userId(), null, clientIp, true,
+                    Map.of("email", request.email(), "loginType", "email_code"));
+
+            return ResponseEntity.ok(response);
+
+        } catch (AuthenticationException | IllegalArgumentException e) {
+            log.warn("[AUTH] 邮箱验证码登录失败 email={} ip={} reason={}", request.email(), clientIp, e.getMessage());
+
+            auditLogService.log(AuditLogService.EventType.LOGIN_FAILED,
+                    null, null, clientIp, false,
+                    Map.of("email", request.email(), "loginType", "email_code", "reason", e.getMessage()));
+
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
      * 发送邮箱验证码。
      *
-     * <p>purpose 支持 register（默认）、reset_password。
+     * <p>purpose 支持 register（默认）、reset_password、login。
      */
     @PostMapping("/email-code")
     public ResponseEntity<?> sendEmailCode(@Valid @RequestBody EmailCodeRequest request) {

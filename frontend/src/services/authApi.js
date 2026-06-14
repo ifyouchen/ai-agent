@@ -6,6 +6,12 @@ export async function login(payload) {
   return data;
 }
 
+export async function emailLogin(email, emailCode) {
+  const { data } = await http.post('/api/v1/auth/email-login', { email, emailCode });
+  saveAuth(data);
+  return data;
+}
+
 export async function register(payload) {
   const { data } = await http.post('/api/v1/auth/register', payload);
   saveAuth(data);

@@ -22,7 +22,7 @@ import java.util.regex.Pattern;
 /**
  * 邮箱验证码服务。
  *
- * <p>支持注册、重置密码、修改密码三种用途。验证码生成与校验同步执行，
+ * <p>支持注册、重置密码、邮箱登录等用途。验证码生成与校验同步执行，
  * 邮件发送通过 {@link MailSender} 异步化，避免阻塞 HTTP 请求线程。
  */
 @Slf4j
@@ -60,12 +60,21 @@ public class EmailVerificationService {
         sendCode(email, EmailVerificationPurpose.RESET_PASSWORD);
     }
 
+    @Transactional
+    public void sendLoginCode(String email) {
+        sendCode(email, EmailVerificationPurpose.LOGIN);
+    }
+
     public void verifyRegisterCode(String email, String code) {
         verifyCode(email, code, EmailVerificationPurpose.REGISTER);
     }
 
     public void verifyResetPasswordCode(String email, String code) {
         verifyCode(email, code, EmailVerificationPurpose.RESET_PASSWORD);
+    }
+
+    public void verifyLoginCode(String email, String code) {
+        verifyCode(email, code, EmailVerificationPurpose.LOGIN);
     }
 
     // ─────────────── 核心实现 ───────────────

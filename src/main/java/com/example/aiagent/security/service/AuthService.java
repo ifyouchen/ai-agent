@@ -1,6 +1,7 @@
 package com.example.aiagent.security.service;
 
 import com.example.aiagent.security.dto.AuthResponse;
+import com.example.aiagent.security.dto.EmailLoginRequest;
 import com.example.aiagent.security.dto.LoginRequest;
 import com.example.aiagent.security.dto.RegisterRequest;
 import com.example.aiagent.security.entity.Organization;
@@ -68,6 +69,35 @@ public class AuthService {
     }
 
     /**
+     * 邮箱验证码登录。
+     *
+     * <p>仅允许已注册邮箱登录，验证码用途与注册/重置密码隔离。
+     */
+    public AuthResponse emailLogin(EmailLoginRequest request) {
+        String normalizedEmail = normalizeEmail(request.email());
+        SysUser user = sysUserMapper.findByEmail(normalizedEmail)
+                .orElseThrow(() -> {
+                    log.warn("[AUTH] 邮箱验证码登录失败：邮箱不存在 email={}", maskEmail(normalizedEmail));
+                    return new BadCredentialsException("该邮箱未注册账号");
+                });
+
+        if (user.getEnabled() != null && user.getEnabled() == 0) {
+            log.warn("[AUTH] 邮箱验证码登录失败：账号已禁用 userId={} email={}", user.getUserId(), maskEmail(normalizedEmail));
+            throw new BadCredentialsException("账号已被禁用");
+        }
+
+        emailVerificationService.verifyLoginCode(normalizedEmail, request.emailCode());
+
+        List<String> roles = user.getRoleList();
+        String token = jwtService.generateToken(user.getUserId(), user.getUsername(), roles);
+
+        log.info("[AUTH] 邮箱验证码登录成功 userId={} email={}", user.getUserId(), maskEmail(normalizedEmail));
+
+        return AuthResponse.of(token, jwtService.getExpirationSeconds(),
+                user.getUserId(), user.getUsername(), roles);
+    }
+
+    /**
      * 用户注册
      *
      * @throws IllegalArgumentException 用户名已存在
@@ -124,6 +154,12 @@ public class AuthService {
             emailVerificationService.sendRegisterCode(email);
         } else if ("reset_password".equals(p)) {
             emailVerificationService.sendResetPasswordCode(email);
+        } else if ("login".equals(p)) {
+            String normalizedEmail = normalizeEmail(email);
+            if (!sysUserMapper.existsByEmail(normalizedEmail)) {
+                throw new IllegalArgumentException("该邮箱未注册账号");
+            }
+            emailVerificationService.sendLoginCode(normalizedEmail);
         } else {
             emailVerificationService.sendRegisterCode(email);
         }
@@ -196,6 +232,14 @@ public class AuthService {
             return "***" + email.substring(Math.max(at, 0));
         }
         return email.charAt(0) + "***" + email.substring(at);
+    }
+
+    private String normalizeEmail(String email) {
+        String normalized = email != null ? email.strip().toLowerCase(Locale.ROOT) : "";
+        if (!normalized.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            throw new IllegalArgumentException("邮箱格式不正确");
+        }
+        return normalized;
     }
 
     /**
