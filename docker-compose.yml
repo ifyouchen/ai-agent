@@ -95,10 +95,16 @@ services:
       PG_DB: aiagent
       PG_USER: postgres
       PG_PASSWORD: ${PG_PASSWORD:-postgres}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/aiagent
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: ${PG_PASSWORD:-postgres}
       # Redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       # JWT（生产环境必须修改！）
       JWT_SECRET: ${JWT_SECRET:-change-this-secret-key-in-production-min-32-chars}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-86400}

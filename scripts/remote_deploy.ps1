@@ -163,13 +163,27 @@ docker rm -f aiagent-app aiagent-frontend aiagent-redis aiagent-postgres 2>/dev/
 echo "[INFO] Stopping current compose services before recreate..."
 compose down --remove-orphans
 
-echo "[INFO] Building and starting containers..."
-compose up -d --build
+echo "[INFO] Building and starting backend dependencies..."
+if ! compose up -d --build postgres redis app; then
+  echo "[ERROR] Backend services failed to start. Recent backend logs:"
+  docker logs --tail=200 ai-agent-app || true
+  exit 1
+fi
 
 echo "[INFO] Container status:"
 compose ps
 
 wait_for_app || exit 1
+
+echo "[INFO] Starting frontend..."
+if ! compose up -d --build frontend; then
+  echo "[ERROR] Frontend failed to start. Recent frontend logs:"
+  docker logs --tail=120 ai-agent-frontend || true
+  exit 1
+fi
+
+echo "[INFO] Final container status:"
+compose ps
 
 echo "[INFO] Recent backend logs:"
 docker logs --tail=120 ai-agent-app || true
