@@ -85,6 +85,16 @@ public class DocumentIngestService {
     @Value("${agent.rag.embedding-batch-size:16}")
     private int embeddingBatchSize;
 
+    @Value("${qianfan.embedding.model:bge-large-zh}")
+    private String embeddingModelName;
+
+    /**
+     * 是否在日志中打印切片正文预览。
+     * 生产环境默认关闭，避免用户上传文档内容进入应用日志。
+     */
+    @Value("${agent.rag.log-chunk-preview:false}")
+    private boolean logChunkPreview;
+
     /**
      * 导入上传的文件到指定知识库（支持 PDF、Word、TXT 等）
      *
@@ -159,10 +169,12 @@ public class DocumentIngestService {
                               String fileName, Long fileSize, String contentType,
                               Long docEntityId, Path asyncDir) {
         try {
-            log.info("[ASYNC] 开始后台解析文档 docId={} file={}", docEntityId, fileName);
+            log.info("[RAG][开始] 后台导入文档 docId={} tenantId={} kbId={} file={} size={} contentType={}",
+                    docEntityId, tenantId, kbId, fileName, fileSize, contentType);
 
             // 更新状态 → PARSING
             documentMapper.updateParseStatus(docEntityId, "PARSING");
+            log.info("[RAG][进度] docId={} status=PARSING step=1/4 开始解析文档", docEntityId);
 
             // 解析文档：.txt/.md 等纯文本文件直接读取，避免 Tika 对大文件返回空内容
             dev.langchain4j.data.document.Document document;
@@ -185,6 +197,8 @@ public class DocumentIngestService {
 
             // 更新状态 → CHUNKING
             documentMapper.updateParseStatus(docEntityId, "CHUNKING");
+            log.info("[RAG][进度] docId={} status=CHUNKING step=2/4 开始切片 chunkSize={} chunkOverlap={}",
+                    docEntityId, chunkSize, chunkOverlap);
 
             // 切片 + 向量化 + 写入 PgVector / Lucene
             int chunkCount = ingestSingleDocument(document, tenantId, kbId,
@@ -195,9 +209,11 @@ public class DocumentIngestService {
             documentMapper.updateChunkCount(docEntityId, chunkCount);
             updateKbDocCount(kbId);
 
-            log.info("[ASYNC] 文档解析完成 docId={} chunks={}", docEntityId, chunkCount);
+            log.info("[RAG][完成] 文档导入完成 docId={} tenantId={} kbId={} file={} chunks={}",
+                    docEntityId, tenantId, kbId, fileName, chunkCount);
         } catch (Exception e) {
-            log.error("[ASYNC] 文档解析失败 docId={} file={}: {}", docEntityId, fileName, e.getMessage(), e);
+            log.error("[RAG][失败] 文档导入失败 docId={} tenantId={} kbId={} file={} reason={}",
+                    docEntityId, tenantId, kbId, fileName, e.getMessage(), e);
             documentMapper.updateParseStatusWithError(docEntityId, "FAILED", e.getMessage());
         } finally {
             // 清理临时文件目录
@@ -399,8 +415,8 @@ public class DocumentIngestService {
             docEntityId = docEntity.getId();
         }
 
-        // 更新状态 → EMBEDDING
-        documentMapper.updateParseStatus(docEntityId, "EMBEDDING");
+        logChunkResult(docEntityId, tenantId, kbId, fileName, segments);
+        documentMapper.updateChunkCount(docEntityId, segments.size());
 
         // 为每个切片附加 tenantId/kbId 到 metadata，并写入 kb_chunk 表
         for (int i = 0; i < segments.size(); i++) {
@@ -431,7 +447,17 @@ public class DocumentIngestService {
 
             // 更新 segment metadata 中的 chunkId 为数据库生成的 ID
             segment.metadata().put("chunkId", String.valueOf(chunkEntity.getId()));
+
+            if (shouldLogProgress(i + 1, segments.size())) {
+                log.info("[RAG][进度] docId={} status=CHUNK_SAVED saved={}/{} latestChunkId={} chunkIndex={}",
+                        docEntityId, i + 1, segments.size(), chunkEntity.getId(), i);
+            }
         }
+
+        // 更新状态 → EMBEDDING
+        documentMapper.updateParseStatus(docEntityId, "EMBEDDING");
+        log.info("[RAG][进度] docId={} status=EMBEDDING step=3/4 切片已入库，开始调用 Embedding 模型 model={} chunks={}",
+                docEntityId, embeddingModelName, segments.size());
 
         // 向量化 + 存入 PgVector（分批调用，避免超出 API 单次批次限制）
         embedAllInBatches(segments);
@@ -460,6 +486,8 @@ public class DocumentIngestService {
             log.info("[BM25] 切片索引完成，共 {} 个", segments.size());
         }
 
+        log.info("[RAG][进度] docId={} status=DONE step=4/4 切片与向量索引完成 chunks={}",
+                docEntityId, segments.size());
         return segments.size();
     }
 
@@ -518,24 +546,85 @@ public class DocumentIngestService {
     private void embedAllInBatches(List<TextSegment> segments) {
         int total = segments.size();
         int batchSize = Math.max(1, embeddingBatchSize);
-        log.info("[Embed] 开始分批向量化，共 {} 个切片，每批 {} 条", total, batchSize);
+        int totalBatches = (int) Math.ceil((double) total / batchSize);
+        log.info("[Embed] 开始调用 Embedding 模型 model={}，共 {} 个切片，每批 {} 条，共 {} 批",
+                embeddingModelName, total, batchSize, totalBatches);
 
         for (int start = 0; start < total; start += batchSize) {
             int end = Math.min(start + batchSize, total);
             List<TextSegment> batch = segments.subList(start, end);
+            int batchNo = (start / batchSize) + 1;
 
             try {
+                log.info("[Embed] 批次 {}/{} 开始，范围 {}-{}，本批 {} 条",
+                        batchNo, totalBatches, start, end - 1, batch.size());
                 var embeddings = embeddingModel.embedAll(batch).content();
                 embeddingStore.addAll(embeddings, batch);
-                log.debug("[Embed] 批次 {}/{} 完成（{}-{}）",
-                        (start / batchSize) + 1, (int) Math.ceil((double) total / batchSize),
-                        start, end - 1);
+                log.info("[Embed] 批次 {}/{} 完成，范围 {}-{}，已写入向量库 {}/{}",
+                        batchNo, totalBatches, start, end - 1, end, total);
             } catch (Exception e) {
                 log.error("[Embed] 批次 {}-{} 向量化失败：{}", start, end - 1, e.getMessage(), e);
                 throw e;  // 重新抛出，让外层事务回滚
             }
         }
         log.info("[Embed] 向量化完成，共 {} 个切片已写入向量库", total);
+    }
+
+    private void logChunkResult(Long docEntityId, String tenantId, Long kbId,
+                                String fileName, List<TextSegment> segments) {
+        int totalChars = segments.stream()
+                .map(TextSegment::text)
+                .filter(text -> text != null)
+                .mapToInt(String::length)
+                .sum();
+        int totalTokens = segments.stream()
+                .map(TextSegment::text)
+                .filter(text -> text != null)
+                .mapToInt(this::estimateTokenCount)
+                .sum();
+        int maxChars = segments.stream()
+                .map(TextSegment::text)
+                .filter(text -> text != null)
+                .mapToInt(String::length)
+                .max()
+                .orElse(0);
+
+        log.info("[RAG][切片结果] docId={} tenantId={} kbId={} file={} chunks={} totalChars={} estimatedTokens={} maxChunkChars={} chunkSize={} chunkOverlap={}",
+                docEntityId, tenantId, kbId, fileName, segments.size(), totalChars,
+                totalTokens, maxChars, chunkSize, chunkOverlap);
+
+        int sampleSize = Math.min(segments.size(), 5);
+        for (int i = 0; i < sampleSize; i++) {
+            String text = segments.get(i).text();
+            int chars = text != null ? text.length() : 0;
+            int tokens = text != null ? estimateTokenCount(text) : 0;
+            if (logChunkPreview) {
+                log.info("[RAG][切片样例] docId={} index={} chars={} estimatedTokens={} preview={}",
+                        docEntityId, i, chars, tokens, previewText(text));
+            } else {
+                log.info("[RAG][切片样例] docId={} index={} chars={} estimatedTokens={} preview=disabled",
+                        docEntityId, i, chars, tokens);
+            }
+        }
+    }
+
+    private boolean shouldLogProgress(int current, int total) {
+        if (total <= 0) {
+            return false;
+        }
+        if (current == 1 || current == total) {
+            return true;
+        }
+        int interval = Math.max(10, total / 5);
+        return current % interval == 0;
+    }
+
+    private String previewText(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        String normalized = text.replaceAll("\\s+", " ").trim();
+        return normalized.length() <= 120 ? normalized : normalized.substring(0, 120) + "...";
     }
 
     /** 校验知识库存在且属于该租户 */

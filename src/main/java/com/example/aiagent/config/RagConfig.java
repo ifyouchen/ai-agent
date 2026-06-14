@@ -29,6 +29,7 @@ public class RagConfig {
             @Value("${qianfan.api-key}") String apiKey,
             @Value("${qianfan.base-url:https://qianfan.baidubce.com/v2}") String baseUrl,
             @Value("${qianfan.embedding.model:bge-large-zh}") String modelName) {
+        log.info("[Embedding] 使用模型 model={} baseUrl={}", modelName, baseUrl);
         return OpenAiEmbeddingModel.builder()
                 .baseUrl(baseUrl)
                 .apiKey(apiKey)
