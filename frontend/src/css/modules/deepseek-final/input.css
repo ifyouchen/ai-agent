@@ -50,7 +50,7 @@
     border-radius: 19px;
     border: 1px solid #dce4f5;
     background: #ffffff;
-    color: #4f67f5;
+    color: #687386;
     font-size: 14px;
     font-weight: 500;
     gap: 6px;
@@ -64,11 +64,19 @@
 .tool-chip.active {
     background: #edf3ff;
     border-color: #c7d5ff;
+    color: #4f67f5;
 }
 
 .tool-chip:hover {
-    background: #f0f4ff;
-    border-color: #c0ceff;
+    background: #f6f8fc;
+    border-color: #d8dee9;
+    color: #566174;
+}
+
+.tool-chip.active:hover {
+    background: #edf3ff;
+    border-color: #c7d5ff;
+    color: #4f67f5;
 }
 
 .composer-actions {

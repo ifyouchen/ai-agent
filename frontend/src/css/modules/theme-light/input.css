@@ -72,6 +72,12 @@
 }
 
 .tool-chip:hover {
+    background: #f6f8fc;
+    border-color: #d8dee9;
+    color: #566174;
+}
+
+.tool-chip.active:hover {
     background: #edf3ff;
     border-color: #cbd9ff;
     color: var(--primary);

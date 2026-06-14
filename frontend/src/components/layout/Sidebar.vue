@@ -19,7 +19,7 @@
         <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="2"/><path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         开启新对话
       </button>
-      <div v-if="sess.sessions.length" class="session-bulk-toolbar" :class="{ managing: bulkMode }">
+      <div v-if="showBulkActions && sess.sessions.length" class="session-bulk-toolbar" :class="{ managing: bulkMode }">
         <template v-if="bulkMode">
           <span class="session-bulk-count">已选 {{ selectedCount }}</span>
           <button class="session-bulk-btn" type="button" @click="toggleSelectAll">
@@ -117,6 +117,42 @@
               <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
             </svg>
           </button>
+          <button
+            v-if="editingSessionId !== session.id && !bulkMode"
+            class="session-more"
+            type="button"
+            title="更多操作"
+            aria-label="更多操作"
+            @click.stop="toggleSessionMenu(session.id)"
+          >
+            <svg viewBox="0 0 24 24" fill="none">
+              <circle cx="5" cy="12" r="1.7" fill="currentColor"/>
+              <circle cx="12" cy="12" r="1.7" fill="currentColor"/>
+              <circle cx="19" cy="12" r="1.7" fill="currentColor"/>
+            </svg>
+          </button>
+          <div v-if="actionMenuSessionId === session.id" class="session-action-menu" @click.stop>
+            <button type="button" @click="handleRenameFromMenu(session)">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16v4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                <path d="m13.5 6.5 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+              重命名
+            </button>
+            <button type="button" @click="handleShareFromMenu(session)">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                <path d="M16 6 12 2 8 6M12 2v13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              分享
+            </button>
+            <button type="button" class="danger" @click="handleDeleteFromMenu(session)">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M6 7h12M10 11v6M14 11v6M9 7l1-3h4l1 3M8 7l1 13h6l1-13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              删除
+            </button>
+          </div>
         </div>
       </template>
     </div>
@@ -248,6 +284,7 @@ import Avatar from '../ui/Avatar.vue';
 import { useAuthStore } from '../../stores/auth.js';
 import { useSessionStore } from '../../stores/sessions.js';
 import { useUiStore } from '../../stores/ui.js';
+import { copyText } from '../../js/utils.js';
 
 const props = defineProps({ collapsed: { type: Boolean, default: false } });
 const emit = defineEmits(['toggle', 'close']);
@@ -269,12 +306,14 @@ const userMenuOpen = ref(false);
 
 function closeUserMenuOnOutsideClick() {
   userMenuOpen.value = false;
+  closeSessionMenu();
 }
 
 function handleGlobalKeydown(event) {
   if (event.key !== 'Escape') return;
   userMenuOpen.value = false;
   modelMenuOpen.value = false;
+  closeSessionMenu();
   exitBulkMode();
 }
 
@@ -328,7 +367,9 @@ const groupedSessions = computed(() => {
 
 // ── 会话操作 ────────────────────────────────────────────────────────
 const bulkMode = ref(false);
+const showBulkActions = false;
 const selectedSessionIds = ref(new Set());
+const actionMenuSessionId = ref(null);
 const selectedCount = computed(() => selectedSessionIds.value.size);
 const visibleSessionIds = computed(() =>
   groupedSessions.value.flatMap(group => group.items.map(session => session.id))
@@ -356,7 +397,16 @@ function handleSessionClick(id) {
     toggleSessionSelection(id);
     return;
   }
+  closeSessionMenu();
   handleSwitchSession(id);
+}
+
+function toggleSessionMenu(id) {
+  actionMenuSessionId.value = actionMenuSessionId.value === id ? null : id;
+}
+
+function closeSessionMenu() {
+  actionMenuSessionId.value = null;
 }
 
 function enterBulkMode() {
@@ -367,6 +417,7 @@ function enterBulkMode() {
 function exitBulkMode() {
   bulkMode.value = false;
   selectedSessionIds.value = new Set();
+  closeSessionMenu();
 }
 
 function toggleSessionSelection(id) {
@@ -424,6 +475,7 @@ const editingTitle     = ref('');
 const titleInputEl     = ref(null);
 
 async function startEditTitle(session) {
+  closeSessionMenu();
   editingSessionId.value = session.id;
   editingTitle.value     = session.title;
   await nextTick();
@@ -440,6 +492,31 @@ async function saveTitle(id) {
 
 function cancelEditTitle() {
   editingSessionId.value = null;
+}
+
+async function handleRenameFromMenu(session) {
+  await startEditTitle(session);
+}
+
+async function handleShareFromMenu(session) {
+  closeSessionMenu();
+  sess.switchSession(session.id);
+  router.push('/chat');
+  await nextTick();
+  try {
+    const share = await sess.createShareLink();
+    if (!share?.url) return;
+    const copied = await copyText(share.url);
+    ui.showToast(copied ? 'success' : 'warning', copied ? '分享链接已复制' : '分享链接已创建，请手动复制');
+    emit('close');
+  } catch (err) {
+    ui.showToast('error', err.message || '创建分享失败');
+  }
+}
+
+async function handleDeleteFromMenu(session) {
+  closeSessionMenu();
+  await sess.removeSession(session.id);
 }
 
 // ── 搜索（P2-9：优先调用服务端接口，客户端兜底） ────────────────────────

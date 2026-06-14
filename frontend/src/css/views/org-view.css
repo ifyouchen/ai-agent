@@ -780,22 +780,68 @@
 @media (max-width: 960px) {
   .org-view {
     grid-template-columns: 1fr;
+    align-content: start;
+    align-items: start;
+    height: auto;
+    min-height: 100%;
     overflow-y: auto;
   }
 
   .org-sidebar-panel,
   .org-detail-panel {
+    width: 100%;
+    min-height: auto;
     overflow: visible;
   }
 
+  .org-sidebar-panel {
+    gap: 12px;
+  }
+
   .org-list {
-    max-height: 320px;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-direction: row;
+    gap: 10px;
+    padding: 0 2px 4px 0;
+    scroll-snap-type: x proximity;
+  }
+
+  .org-list-item {
+    flex: 0 0 min(78vw, 280px);
+    scroll-snap-align: start;
+  }
+
+  .org-detail-panel {
+    padding: 18px;
   }
 }
 
 @media (max-width: 640px) {
   .org-view {
     padding: 14px;
+    gap: 12px;
+  }
+
+  .org-sidebar-panel {
+    padding: 18px 18px 14px;
+    border-radius: 14px;
+  }
+
+  .org-list {
+    margin-inline: -2px;
+  }
+
+  .org-list-item {
+    flex-basis: min(86vw, 260px);
+    padding: 12px;
+  }
+
+  .org-list-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
   }
 
   .org-detail-header,

@@ -135,6 +135,11 @@
 .session-item:hover .session-delete { display: block; }
 .session-delete:hover { background: rgba(220,38,38,.25); color: #f87171; }
 
+.session-more,
+.session-action-menu {
+    display: none;
+}
+
 /* 回答中动态指示器（三点跳动）*/
 @keyframes session-dot-bounce {
     0%, 80%, 100% { transform: translateY(0); opacity: .4; }

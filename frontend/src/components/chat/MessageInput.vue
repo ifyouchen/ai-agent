@@ -53,7 +53,7 @@
             class="quick-prompt tool-chip"
             type="button"
             :class="{ active: sess.reactEnabled }"
-            @click="sess.toggleExpertMode()"
+            @click="toggleThinkingMode"
           >
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="m13 2-8 12h6l-1 8 9-13h-6l1-7Z"/></svg>
             深度思考
@@ -148,15 +148,13 @@
         {{ currentKbName }}
         <button class="kb-active-clear" type="button" title="取消关联知识库" @click.stop="sess.currentKbId = null">×</button>
       </span>
-      <span class="hint-text">
-        {{ sess.enterToSend ? 'Enter 发送 · Shift+Enter 换行' : 'Ctrl+Enter 发送 · Enter 换行' }}
-      </span>
+      <span class="hint-text">{{ inputHintText }}</span>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useSessionStore } from '../../stores/sessions.js';
 import { useKbStore } from '../../stores/kb.js';
 import { useOrgStore } from '../../stores/org.js';
@@ -172,7 +170,9 @@ const mentionOpen = ref(false);
 const mentionQuery = ref('');
 const mentionStart = ref(-1);
 const mentionActiveIndex = ref(0);
+const isMobileInput = ref(window.matchMedia('(max-width: 860px), (pointer: coarse)').matches);
 let mentionCloseTimer = null;
+let mobileInputMediaQuery = null;
 
 const inputText = computed({
   get: () => sess.messageInput ?? '',
@@ -196,6 +196,34 @@ const isEditing = computed(() => !!sess.editingMessageId);
 const enterToSendHint = computed(() =>
   '给 AI Agent 发送消息'
 );
+const inputHintText = computed(() =>
+  isMobileInput.value
+    ? '点击发送按钮发送 · 回车换行'
+    : (sess.enterToSend ? 'Enter 发送 · Shift+Enter 换行' : 'Ctrl+Enter 发送 · Enter 换行')
+);
+
+onMounted(() => {
+  mobileInputMediaQuery = window.matchMedia('(max-width: 860px), (pointer: coarse)');
+  isMobileInput.value = mobileInputMediaQuery.matches;
+  if (mobileInputMediaQuery.addEventListener) {
+    mobileInputMediaQuery.addEventListener('change', handleMobileInputChange);
+  } else {
+    mobileInputMediaQuery.addListener?.(handleMobileInputChange);
+  }
+});
+
+onBeforeUnmount(() => {
+  if (!mobileInputMediaQuery) return;
+  if (mobileInputMediaQuery.removeEventListener) {
+    mobileInputMediaQuery.removeEventListener('change', handleMobileInputChange);
+  } else {
+    mobileInputMediaQuery.removeListener?.(handleMobileInputChange);
+  }
+});
+
+function handleMobileInputChange(event) {
+  isMobileInput.value = event.matches;
+}
 
 function autoResize() {
   const el = inputEl.value;
@@ -293,6 +321,7 @@ function handleMentionKeydown(event) {
 function handleKeydown(event) {
   if (handleMentionKeydown(event)) return;
   if (event.key === 'Enter') {
+    if (isMobileInput.value) return;
     if (sess.enterToSend) {
       if (event.shiftKey) return;
       event.preventDefault();
@@ -338,6 +367,11 @@ async function handleSend() {
     if (el) el.style.height = 'auto';
   });
   await sess.sendMessage(text, effectiveKbId, message);
+}
+
+function toggleThinkingMode() {
+  if (sess.reactEnabled) sess.setQuickMode();
+  else sess.setExpertMode();
 }
 
 function handleCancelEdit() {
