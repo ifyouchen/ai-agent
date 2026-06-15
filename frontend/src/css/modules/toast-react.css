@@ -147,6 +147,20 @@
     border-left: 0;
 }
 
+/* 工具调用中的 loading 状态（tool-call 已收到，tool-result 尚未回来） */
+.react-tool-pending {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #9aa3b1;
+    font-size: 12px;
+    padding: 3px 0 2px 0;
+}
+
+.react-tool-pending span:last-child {
+    font-style: italic;
+}
+
 .react-thought span,
 .react-tool span,
 .react-obs span {

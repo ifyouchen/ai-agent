@@ -70,6 +70,16 @@ public class ReActChatController {
     private int streamFlushMinChars;
 
     /**
+     * ReAct 专属 flush 配置：pro 模型生成速度慢，使用更小的阈值让 token 更及时地推送到前端。
+     * fallback 到 stream 配置，确保未显式配置时仍有合理默认值。
+     */
+    @Value("${chat.react.flush-interval-ms:${chat.stream.flush-interval-ms:20}}")
+    private long reactFlushIntervalMs;
+
+    @Value("${chat.react.flush-min-chars:${chat.stream.flush-min-chars:3}}")
+    private int reactFlushMinChars;
+
+    /**
      * SSE 流式推理专属线程池（有界，防止高并发下 OOM）
      *
      * <p>通过 AppConfig#sseTaskExecutor Bean 注入，核心10/最大50/队列200，
@@ -338,8 +348,8 @@ public class ReActChatController {
                 private int reasoningIteration;
                 private final SseDeltaBuffer answerBuffer = new SseDeltaBuffer(
                         "answer-token",
-                        streamFlushMinChars,
-                        streamFlushIntervalMs,
+                        reactFlushMinChars,
+                        reactFlushIntervalMs,
                         data -> data,
                         (eventName, data) -> sendSseEvent(emitter, completed, eventName, data));
 
@@ -347,8 +357,8 @@ public class ReActChatController {
                     reasoningIteration = iteration;
                     return new SseDeltaBuffer(
                             "reasoning-token",
-                            streamFlushMinChars,
-                            streamFlushIntervalMs,
+                            reactFlushMinChars,
+                            reactFlushIntervalMs,
                             data -> toJsonPayload(Map.of(
                                     "iteration", iteration,
                                     "token", data != null ? data : ""

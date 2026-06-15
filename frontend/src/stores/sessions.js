@@ -769,6 +769,7 @@ async function doStreamChat(reqId, text, kbId) {
       const step = ensureReactStep(data.iteration);
       step.toolName = String(data.toolName || '');
       step.toolArgs = String(data.toolArgs || '');
+      step.pending = true;   // 标记工具正在执行中，触发 loading 动画
       scheduleRender();
     });
     es.addEventListener('tool-result', ev => {
@@ -778,6 +779,7 @@ async function doStreamChat(reqId, text, kbId) {
       const step = ensureReactStep(data.iteration);
       step.toolName = String(data.toolName || step.toolName || '');
       step.observation = String(data.observation || '');
+      step.pending = false;  // 工具执行完毕，清除 loading 动画
       scheduleRender();
     });
     es.addEventListener('step', ev => {

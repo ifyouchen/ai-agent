@@ -42,6 +42,7 @@ export function renderReactBubble(steps, answer, durationMs, answerStreaming = f
       <div class="react-step-label">第 ${step.iteration} 步${step.toolName ? ` · ${escapeHtml(step.toolName)}` : ''}</div>
       ${step.thought ? `<div class="react-thought"><span>思考摘要</span>${escapeHtml(trimText(step.thought, 220))}</div>` : ''}
       ${step.toolName ? `<div class="react-tool"><span>工具调用</span>${escapeHtml(step.toolName)}(${escapeHtml(step.toolArgs || '')})</div>` : ''}
+      ${step.pending ? `<div class="react-tool-pending"><span class="typing-dots">●●●</span><span>执行中…</span></div>` : ''}
       ${step.observation ? `<div class="react-obs"><span>观察结果</span>${escapeHtml(trimText(step.observation, 260))}</div>` : ''}
     </div>`).join('');
   const label = hasAnswer

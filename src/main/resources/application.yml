@@ -48,6 +48,11 @@ chat:
   stream:
     flush-interval-ms: 50
     flush-min-chars: 40
+  react:
+    # 专业模式（ReAct）使用更小的 flush 阈值，避免慢模型产生的卡顿感
+    # pro 模型生成速度慢，40 字阈值会让每批次内容极少，视觉上每 50ms 才跳出几个字
+    flush-interval-ms: 20    # 每 20ms 一次 flush（比快速模式更激进）
+    flush-min-chars: 3       # 积累 3 个字即发出，不等满 40 个字
 
 # 链路追踪（Zipkin）
 # 开发环境未启动 Zipkin 时设为 never，避免连接错误日志
