@@ -619,6 +619,9 @@ async function doStreamChat(reqId, text, kbId) {
     let rafId = null;
     let pendingDurationMs = null;
     let pendingForceAnswer = false;
+    // 追踪当前正在流式输出的 reasoning 轮次；
+    // 后端 reasoning-token 已改为发裸文本（去掉 JSON 封装），前端从 reasoning-start 事件中获取轮次。
+    let currentReasoningIteration = null;
 
     function isActive() {
       return rt.eventSource === es && rt.requestId === rid && !rt.cancelled;
@@ -741,16 +744,31 @@ async function doStreamChat(reqId, text, kbId) {
       if (!isActive()) return;
       const data = parseReactPayload(ev.data);
       touchEvent();
+      currentReasoningIteration = data.iteration;  // 记录当前推理轮次，供 reasoning-token 使用
       ensureReactStep(data.iteration);
       scheduleRender();
     });
     es.addEventListener('reasoning-token', ev => {
       if (!isActive()) return;
-      const data = parseReactPayload(ev.data);
       touchEvent();
-      const step = ensureReactStep(data.iteration);
-      step.thought = `${step.thought || ''}${data.token || ''}`;
-      scheduleRender();
+      // 后端已改为发裸文本（去掉 JSON 封装），ev.data 就是本批次的 token 文本
+      const step = ensureReactStep(currentReasoningIteration);
+      step.thought = `${step.thought || ''}${ev.data || ''}`;
+
+      // 快速路径：直接更新 DOM 中的 thought 文本节点，跳过 renderReactBubble 全量重建。
+      // renderReactBubble 会替换整个 bubble 的 innerHTML，代价较高；
+      // 而 thought 文本是 reasoning-token 阶段唯一高频变化的内容，可以精准更新。
+      const thoughtEl = document.querySelector(`[data-thought-iter="${currentReasoningIteration}"]`);
+      if (thoughtEl) {
+        const t = step.thought;
+        // 与 trimText(t, 220) 逻辑保持一致；textContent 赋值不需要 HTML 转义
+        thoughtEl.textContent = t.length > 220 ? t.slice(0, 220) + '…' : t;
+        scrollToBottom();
+      } else {
+        // 首个 token 或 DOM 尚未就绪（reasoning-start 后首次渲染前）：
+        // 走全量重建，同时创建带 data-thought-iter 的元素，后续 token 走快速路径
+        scheduleRender();
+      }
     });
     es.addEventListener('reasoning-done', ev => {
       if (!isActive()) return;

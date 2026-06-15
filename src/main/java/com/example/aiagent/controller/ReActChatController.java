@@ -355,14 +355,13 @@ public class ReActChatController {
 
                 private SseDeltaBuffer newReasoningBuffer(int iteration) {
                     reasoningIteration = iteration;
+                    // reasoning-start 事件已告知前端当前轮次，token 本身只需发原始文本。
+                    // 去掉 JSON 封装可以减少每次 flush 的序列化开销，前端用 currentReasoningIteration 追踪轮次。
                     return new SseDeltaBuffer(
                             "reasoning-token",
                             reactFlushMinChars,
                             reactFlushIntervalMs,
-                            data -> toJsonPayload(Map.of(
-                                    "iteration", iteration,
-                                    "token", data != null ? data : ""
-                            )),
+                            data -> data,
                             (eventName, data) -> sendSseEvent(emitter, completed, eventName, data));
                 }
 
