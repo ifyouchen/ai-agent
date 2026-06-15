@@ -1,12 +1,61 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# ── Default parameter values ──────────────────────────────────────────────────
+HOST_NAME="${HOST_NAME:-43.155.132.161}"
+USER_NAME="${USER_NAME:-}"
+PORT="${PORT:-22}"
 REPO_URL="${REPO_URL:-https://github.com/ifyouchen/ai-agent.git}"
 BRANCH="${BRANCH:-main}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/aiagent}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 FORCE_RESET="${FORCE_RESET:-false}"
 FOLLOW_LOGS="${FOLLOW_LOGS:-false}"
+
+# ── Parse named arguments ──────────────────────────────────────────────────────
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --host|-H)       HOST_NAME="$2";  shift 2 ;;
+    --user|-u)       USER_NAME="$2";  shift 2 ;;
+    --port|-p)       PORT="$2";       shift 2 ;;
+    --repo)          REPO_URL="$2";   shift 2 ;;
+    --branch|-b)     BRANCH="$2";     shift 2 ;;
+    --remote-dir)    REMOTE_DIR="$2"; shift 2 ;;
+    --compose-file)  COMPOSE_FILE="$2"; shift 2 ;;
+    --force-reset)   FORCE_RESET="true"; shift ;;
+    --follow-logs)   FOLLOW_LOGS="true"; shift ;;
+    *) echo "[ERROR] Unknown argument: $1"; exit 1 ;;
+  esac
+done
+
+# ── Validate host ──────────────────────────────────────────────────────────────
+if [[ -z "${HOST_NAME}" ]]; then
+  echo "[ERROR] HostName is required. Example: ./scripts/server_deploy.sh --host 1.2.3.4 --user root"
+  exit 1
+fi
+
+# ── Prompt for username if not provided ───────────────────────────────────────
+if [[ -z "${USER_NAME}" ]]; then
+  read -rp "Server username [root]: " input_user
+  if [[ -n "${input_user// /}" ]]; then
+    USER_NAME="${input_user}"
+  else
+    USER_NAME="root"
+  fi
+fi
+
+# ── Check required local commands ─────────────────────────────────────────────
+if ! command -v ssh >/dev/null 2>&1; then
+  echo "[ERROR] ssh command not found. Install OpenSSH Client first."
+  exit 1
+fi
+if ! command -v scp >/dev/null 2>&1; then
+  echo "[ERROR] scp command not found. Install OpenSSH Client first."
+  exit 1
+fi
+
+# ── Remote deploy script (executed on the server) ─────────────────────────────
+REMOTE_SCRIPT='set -Eeuo pipefail
 
 need_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -21,8 +70,8 @@ compose() {
 
 wait_for_app() {
   echo "[INFO] Waiting for ai-agent-app health check..."
-  for _ in $(seq 1 60); do
-    status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' ai-agent-app 2>/dev/null || true)"
+  for i in $(seq 1 60); do
+    status="$(docker inspect -f '"'"'{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}'"'"' ai-agent-app 2>/dev/null || true)"
     if [ "$status" = "healthy" ]; then
       echo "[OK] ai-agent-app is healthy"
       return 0
@@ -98,7 +147,7 @@ if [ ! -f ".env" ]; then
   if [ -f ".env.example" ]; then
     cp .env.example .env
   fi
-  echo "[ERROR] .env not found. Fill it first, then rerun deploy: nano $REMOTE_DIR/.env"
+  echo "[ERROR] .env not found. I created .env from template if possible. Fill it first, then rerun deploy."
   exit 1
 fi
 
@@ -161,3 +210,28 @@ if [ "$FOLLOW_LOGS" = "true" ]; then
   echo "[INFO] Following backend logs. Press Ctrl+C to stop watching."
   docker logs -f --tail=200 ai-agent-app
 fi
+'
+
+# ── Upload and execute the remote script via SSH ───────────────────────────────
+TARGET="${USER_NAME}@${HOST_NAME}"
+REMOTE_TEMP="/tmp/aiagent-remote-deploy-$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen 2>/dev/null || date +%s%N).sh"
+LOCAL_TEMP="$(mktemp /tmp/aiagent-remote-deploy-XXXXXX.sh)"
+
+printf '%s\n' "${REMOTE_SCRIPT}" > "${LOCAL_TEMP}"
+
+REMOTE_ENV="REPO_URL='${REPO_URL}' BRANCH='${BRANCH}' REMOTE_DIR='${REMOTE_DIR}' COMPOSE_FILE='${COMPOSE_FILE}' FORCE_RESET='${FORCE_RESET}' FOLLOW_LOGS='${FOLLOW_LOGS}'"
+
+echo "[INFO] Connecting to ${TARGET} ..."
+echo "[INFO] Server IP is fixed as ${HOST_NAME}"
+echo "[INFO] If asked, enter the server password."
+
+cleanup() {
+  rm -f "${LOCAL_TEMP}"
+}
+trap cleanup EXIT
+
+echo "[INFO] Uploading deploy script to ${REMOTE_TEMP} ..."
+scp -P "${PORT}" "${LOCAL_TEMP}" "${TARGET}:${REMOTE_TEMP}"
+
+ssh -p "${PORT}" "${TARGET}" \
+  "chmod +x '${REMOTE_TEMP}' && ${REMOTE_ENV} bash '${REMOTE_TEMP}'; code=\$?; rm -f '${REMOTE_TEMP}'; exit \$code"
