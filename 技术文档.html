@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>墨枢 InkAxis - 技术方案文档 V1.0</title>
+    <style>
+        /* 复用原样式，省略重复部分 */
+        :root {
+            --bg: #fafaf9; --surface: #ffffff; --surface-secondary: #f5f5f4;
+            --text: #1c1917; --text-secondary: #57534e; --text-tertiary: #78716c;
+            --border: #e7e5e4; --border-light: #f0efed; --accent: #6366f1;
+            --accent-light: #eef2ff; --accent-dark: #4f46e5;
+            --code-bg: #1e1e2e; --code-text: #cdd6f4; --code-surface: #f4f4f5;
+            --table-header: #fafaf9; --table-stripe: #fafaf9;
+            --tag-bg: #eef2ff; --tag-text: #4f46e5;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.04); --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+            --radius-md: 10px; --max-width: 880px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; font-size: 16px; }
+        body { font-family: var(--font-sans); background: var(--bg); color: var(--text); line-height: 1.7; }
+        .doc-header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; position: sticky; top: 0; z-index: 100; backdrop-filter: blur(12px); box-shadow: var(--shadow-sm); }
+        .doc-header-inner { max-width: var(--max-width); margin: 0 auto; display: flex; align-items: center; justify-content: space-between; }
+        .logo { font-weight: 700; font-size: 1.15rem; color: var(--accent); }
+        .badge { padding: 0.2em 0.65em; font-size: 0.75rem; font-weight: 600; border-radius: 999px; background: var(--tag-bg); color: var(--tag-text); }
+        .badge.version { background: var(--accent); color: #fff; }
+        .doc-container { max-width: var(--max-width); margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+        .doc-content h1 { font-size: 2rem; font-weight: 800; }
+        .doc-content h2 { font-size: 1.4rem; font-weight: 700; margin-top: 2.5rem; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid var(--border); color: var(--accent-dark); }
+        .doc-content h3 { font-size: 1.1rem; font-weight: 700; margin-top: 1.8rem; }
+        .doc-content h4 { font-size: 1rem; font-weight: 600; margin-top: 1.4rem; color: var(--text-secondary); }
+        .doc-content pre { background: var(--code-bg); color: var(--code-text); padding: 1.2rem 1.3rem; border-radius: var(--radius-md); overflow-x: auto; font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.6; margin: 1rem 0; border: 1px solid var(--border); }
+        .doc-content code { font-family: var(--font-mono); font-size: 0.85em; background: var(--code-surface); padding: 0.15em 0.4em; border-radius: 4px; color: var(--accent-dark); }
+        .doc-content pre code { background: none; padding: 0; color: var(--code-text); }
+        .doc-content table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm); }
+        .doc-content th { padding: 0.6rem 0.85rem; text-align: left; font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-secondary); border-bottom: 2px solid var(--border); background: var(--table-header); }
+        .doc-content td { padding: 0.55rem 0.85rem; border-bottom: 1px solid var(--border-light); }
+        .ascii-block { background: var(--surface-secondary); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem 1.3rem; margin: 1rem 0; font-family: var(--font-mono); font-size: 0.75rem; white-space: pre; overflow-x: auto; color: var(--text-secondary); }
+        .highlight-box { background: var(--accent-light); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.8rem 1.2rem; margin: 0.8rem 0; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <header class="doc-header">
+        <div class="doc-header-inner">
+            <span class="logo">🖋️ 墨枢 InkAxis</span>
+            <div class="meta-badges">
+                <span class="badge version">TSD V1.0</span>
+                <span class="badge status">技术方案</span>
+                <span class="badge">2026-06-15</span>
+            </div>
+        </div>
+    </header>
+    <div class="doc-container">
+        <main class="doc-content">
+            <h1>墨枢 InkAxis - 技术方案文档</h1>
+            <p><strong>版本</strong>：TSD V1.0 &nbsp;|&nbsp; <strong>关联 PRD</strong>：V2.1</p>
+            <div class="highlight-box">
+                本文档描述技术架构、Prompt链、锚点系统及异常处理。产品功能定义见《产品需求文档》，交互细节见《交互设计文档》。
+            </div>
+            <hr>
+
+            <h2>1. 技术架构</h2>
+            <h3>1.1 技术栈</h3>
+            <table>
+                <thead><tr><th>层级</th><th>技术</th><th>理由</th></tr></thead>
+                <tbody>
+                    <tr><td>前端</td><td>Next.js 14 + TypeScript</td><td>SSR/SSG</td></tr>
+                    <tr><td>编辑器</td><td>TipTap (ProseMirror)</td><td>插件化，支持协作与版本</td></tr>
+                    <tr><td>状态管理</td><td>Zustand</td><td>轻量，适合高频更新</td></tr>
+                    <tr><td>样式</td><td>Tailwind CSS + Radix UI</td><td>快速开发，无障碍</td></tr>
+                    <tr><td>后端</td><td>Python + FastAPI</td><td>AI生态，异步性能好</td></tr>
+                    <tr><td>LLM网关</td><td>LiteLLM</td><td>多模型统一调用</td></tr>
+                    <tr><td>数据库</td><td>PostgreSQL + pgvector</td><td>关系+向量一体</td></tr>
+                    <tr><td>缓存/队列</td><td>Redis + Celery</td><td>异步任务与缓存</td></tr>
+                    <tr><td>存储</td><td>S3兼容 (MinIO/R2)</td><td>导出/上传</td></tr>
+                    <tr><td>部署</td><td>Docker + K8s</td><td>弹性伸缩</td></tr>
+                </tbody>
+            </table>
+            <h3>1.2 系统架构图</h3>
+            <div class="ascii-block">CDN → Next.js SSR → API Gateway (FastAPI)
+→ 用户服务 / AI编排 / 任务队列 / 导出服务
+→ PostgreSQL+pgvector / Redis / S3 / LLM API</div>
+
+            <h3>1.3 模型选用策略</h3>
+            <table>
+                <thead><tr><th>任务</th><th>模型</th><th>温度</th></tr></thead>
+                <tbody>
+                    <tr><td>段落分类/场景分割/锚点提取</td><td>GPT-4o-mini</td><td>0.1-0.2</td></tr>
+                    <tr><td>续写/润色/剧本改编</td><td>Claude 3.5 Sonnet</td><td>0.4-0.7</td></tr>
+                    <tr><td>一致性审查</td><td>GPT-4o</td><td>0.2</td></tr>
+                    <tr><td>向量嵌入</td><td>text-embedding-3-small</td><td>-</td></tr>
+                </tbody>
+            </table>
+
+            <h2>2. 小说转剧本 Prompt 链</h2>
+            <h3>2.1 完整流程</h3>
+            <p>预处理 → 段落分类 → 场景分割 → 逐场改编（含心理外化） → 格式组装。</p>
+            <pre><code>def novel_to_script(novel_text, user_strategy_choices=None):
+    # Step 1-5 完整代码，与原文档一致
+    ...</code></pre>
+            <h3>2.2 并行一致性保障</h3>
+            <ul>
+                <li>共享锚点：每个并行请求注入角色语气卡和前场摘要。</li>
+                <li>关键场景串行：importance>0.7的场景强制串行。</li>
+                <li>后置校验：全剧本扫描语气漂移和状态冲突，调用轻量模型修复。</li>
+            </ul>
+            <h3>2.3 工程优化</h3>
+            <table>
+                <thead><tr><th>优化项</th><th>方案</th><th>风险控制</th><th>收益</th></tr></thead>
+                <tbody>
+                    <tr><td>并行处理</td><td>普通场景并行，注入上下文</td><td>前场摘要+后置修复</td><td>5场30s→8s</td></tr>
+                    <tr><td>模型分层</td><td>轻量模型做分类，强模型创意</td><td>-</td><td>成本降60%</td></tr>
+                    <tr><td>缓存/增量</td><td>相同输入缓存，只改修改章节</td><td>-</td><td>重复成本低</td></tr>
+                </tbody>
+            </table>
+
+            <h2>3. 上下文锚点系统</h2>
+            <h3>3.1 数据模型</h3>
+            <pre><code>-- 角色表示例
+CREATE TABLE characters (
+    id UUID PRIMARY KEY,
+    project_id UUID,
+    name VARCHAR(200),
+    attributes JSONB,
+    is_locked BOOLEAN DEFAULT FALSE,
+    ...
+);</code></pre>
+            <h3>3.2 动态组装引擎</h3>
+            <pre><code>def assemble_context(chapter_id, task_type, project_id):
+    # 基础信息 + 近期摘要 + 关键词匹配 + 语义检索
+    # 锁定优先，Token预算分配
+    ...</code></pre>
+            <h3>3.3 重要性评分</h3>
+            <pre><code>def score_anchor_importance(anchors, current_context_text):
+    # 关键词匹配(30) + 语义相关(20) + 锁定(20) + 活跃度(15) + 中心度(15)
+    ...</code></pre>
+            <h3>3.4 向量检索</h3>
+            <p>使用 pgvector，嵌入模型 text-embedding-3-small，对角色关键事件建立嵌入索引。</p>
+            <h3>3.5 演进路线</h3>
+            <p>V1.0 关键词匹配 → V1.5 向量检索 → V2.0 关系图谱 → V2.5 主动预测。</p>
+
+            <h2>4. 异常处理策略</h2>
+            <h3>4.1 异常分级与处理</h3>
+            <table>
+                <thead><tr><th>级别</th><th>触发条件</th><th>后端动作</th><th>前端反馈</th></tr></thead>
+                <tbody>
+                    <tr><td>A 服务不可用</td><td>超时>30s/网络错误</td><td>自动重试，切换备用模型</td><td>顶部横幅，离线写作</td></tr>
+                    <tr><td>B 结果不可用</td><td>JSON解析失败/安全完全拦截</td><td>降温度重试，切换模型</td><td>错误卡片，重新生成</td></tr>
+                    <tr><td>C 质量低</td><td>过短/重复/逻辑断裂</td><td>标记结果，记录日志</td><td>弱提示，保留并编辑</td></tr>
+                    <tr><td>D 部分拦截</td><td>敏感词替换</td><td>位置标记，允许恢复</td><td>黄底高亮，hover原文</td></tr>
+                </tbody>
+            </table>
+            <h3>4.2 降级与兜底</h3>
+            <ul>
+                <li>模型降级链：Claude 3.5 Sonnet → GPT-4o，若均不可用则阻断质量敏感任务。</li>
+                <li>流式断点续传：记录最后token序列，恢复连接后继续推送。</li>
+                <li>超长截断：达到最大token后优雅截断并提供续写按钮。</li>
+            </ul>
+            <h3>4.3 监控告警</h3>
+            <p>10分钟内错误率>5%触发告警，记录操作上下文。</p>
+
+            <h2>5. 数据模型与存储</h2>
+            <h3>5.1 核心表结构</h3>
+            <pre><code>-- 用户、项目、卷、章节、角色、道具、AI日志、剧本版本等
+CREATE TABLE users (...);
+CREATE TABLE projects (...);
+...</code></pre>
+            <h3>5.2 向量存储</h3>
+            <pre><code>CREATE EXTENSION vector;
+CREATE TABLE character_event_embeddings (
+    embedding VECTOR(1536)
+);
+CREATE INDEX ...</code></pre>
+
+            <h2>6. 基础设施与部署</h2>
+            <p>应用服务器 4C8G×2，PostgreSQL 4C16G，Redis 2G，S3 500GB，CDN等，月成本约 ¥6,750。</p>
+            <hr>
+            <div class="highlight-box" style="text-align:center;">
+                📄 技术方案文档结束<br>
+                <small>关联文档：产品需求文档 V2.1 | 交互设计文档 V1.0</small>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

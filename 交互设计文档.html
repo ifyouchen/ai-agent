@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>墨枢 InkAxis - 交互设计文档 V1.0</title>
+    <style>
+        /* 复用原样式 */
+        :root {
+            --bg: #fafaf9; --surface: #ffffff; --surface-secondary: #f5f5f4;
+            --text: #1c1917; --text-secondary: #57534e; --text-tertiary: #78716c;
+            --border: #e7e5e4; --border-light: #f0efed; --accent: #6366f1;
+            --accent-light: #eef2ff; --accent-dark: #4f46e5;
+            --code-bg: #1e1e2e; --code-text: #cdd6f4; --code-surface: #f4f4f5;
+            --table-header: #fafaf9; --table-stripe: #fafaf9; --tag-bg: #eef2ff;
+            --tag-text: #4f46e5; --warning-bg: #fffbeb; --warning-border: #fde68a;
+            --success-bg: #f0fdf4; --success-text: #16a34a;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.04); --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+            --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px;
+            --max-width: 880px;
+        }
+        /* 基础重置与版式一致，略 */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; font-size: 16px; }
+        body { font-family: var(--font-sans); background: var(--bg); color: var(--text); line-height: 1.7; }
+        .doc-header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; position: sticky; top: 0; z-index: 100; backdrop-filter: blur(12px); box-shadow: var(--shadow-sm); }
+        .doc-header-inner { max-width: var(--max-width); margin: 0 auto; display: flex; align-items: center; justify-content: space-between; }
+        .logo { font-weight: 700; font-size: 1.15rem; color: var(--accent); }
+        .meta-badges { display: flex; gap: 0.5rem; }
+        .badge { padding: 0.2em 0.65em; font-size: 0.75rem; font-weight: 600; border-radius: 999px; background: var(--tag-bg); color: var(--tag-text); }
+        .badge.version { background: var(--accent); color: #fff; }
+        .doc-container { max-width: var(--max-width); margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+        .doc-content h1 { font-size: 2rem; font-weight: 800; }
+        .doc-content h2 { font-size: 1.4rem; font-weight: 700; margin-top: 2.5rem; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid var(--border); color: var(--accent-dark); }
+        .doc-content h3 { font-size: 1.1rem; font-weight: 700; margin-top: 1.8rem; }
+        .doc-content h4 { font-size: 1rem; font-weight: 600; margin-top: 1.4rem; color: var(--text-secondary); }
+        .doc-content table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm); }
+        .doc-content th { padding: 0.6rem 0.85rem; text-align: left; font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-secondary); border-bottom: 2px solid var(--border); background: var(--table-header); }
+        .doc-content td { padding: 0.55rem 0.85rem; border-bottom: 1px solid var(--border-light); }
+        .doc-content tbody tr:nth-child(even) { background: var(--table-stripe); }
+        .ascii-block { background: var(--surface-secondary); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem 1.3rem; margin: 1rem 0; font-family: var(--font-mono); font-size: 0.75rem; white-space: pre; overflow-x: auto; color: var(--text-secondary); }
+        .highlight-box { background: var(--accent-light); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.8rem 1.2rem; margin: 0.8rem 0; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <header class="doc-header">
+        <div class="doc-header-inner">
+            <span class="logo">🖋️ 墨枢 InkAxis</span>
+            <div class="meta-badges">
+                <span class="badge version">IDD V1.0</span>
+                <span class="badge status">交互设计</span>
+                <span class="badge">2026-06-15</span>
+            </div>
+        </div>
+    </header>
+    <div class="doc-container">
+        <main class="doc-content">
+            <h1>墨枢 InkAxis - 交互设计文档</h1>
+            <p><strong>版本</strong>：IDD V1.0 &nbsp;|&nbsp; <strong>关联 PRD</strong>：V2.1</p>
+            <div class="highlight-box">
+                本文档描述墨枢产品的用户界面与交互细节，功能定义与业务逻辑见《产品需求文档》。
+            </div>
+            <hr>
+
+            <h2>1. 设计原则</h2>
+            <ul>
+                <li><strong>沉浸优先</strong>：写作是深度工作，UI 应消隐，内容应凸显</li>
+                <li><strong>渐进披露</strong>：高级功能不主动打扰，需要时自然出现</li>
+                <li><strong>即时反馈</strong>：AI 操作流式输出，不出现空白等待</li>
+                <li><strong>可逆操作</strong>：所有 AI 修改可回滚，消除恐惧感</li>
+            </ul>
+
+            <h2>2. 编辑器布局</h2>
+            <h3>2.1 整体布局</h3>
+            <div class="ascii-block">┌─────────────────────────────────────────────┐
+│ 📚 墨枢 InkAxis       作品名 ▼  [分享] [导出] │
+├────┬────────────────────────────────┬────────┤
+│ 📁 │                                │        │
+│ 作品│     ┌─ 章节标题 ──────────┐    │        │
+│ 列表│     │ 第45章 决战前夕      │    │        │
+│    │     └─────────────────────┘    │  右侧  │
+│ 📖 │                                │  面板  │
+│ 大纲│     正文编辑区域                │  (可收 │
+│    │                                │   纳)  │
+│ 👤 │     [AI生成内容以不同底色       │  AI    │
+│ 角色│      标识，方便区分]           │  建议  │
+│ 库  │                                │        │
+│ 🎬 │                                │  锚点  │
+│ 剧本│                                │  信息  │
+│ ⚙️ │     字数: 2,345    状态:草稿   │        │
+│ 设置│                                │        │
+├────┴────────────────────────────────┴────────┤
+│ 💡 输入指令或继续写作...        [续写] [审查] │
+└─────────────────────────────────────────────┘</div>
+            <h3>2.2 配色方案</h3>
+            <table>
+                <thead><tr><th>区域</th><th>背景色</th><th>文字色</th><th>说明</th></tr></thead>
+                <tbody>
+                    <tr><td>主编辑区</td><td><code>#1A1A1A</code></td><td><code>#D4D4D4</code></td><td>暗色护眼</td></tr>
+                    <tr><td>AI 生成内容</td><td><code>#1A2A1A</code></td><td><code>#B8D4B8</code></td><td>微绿底区分</td></tr>
+                    <tr><td>侧边栏</td><td><code>#121212</code></td><td><code>#A0A0A0</code></td><td>更低亮度</td></tr>
+                    <tr><td>选中高亮</td><td><code>#264F78</code></td><td><code>#FFFFFF</code></td><td>VS Code蓝</td></tr>
+                    <tr><td>AI 建议卡片</td><td><code>#252525</code></td><td><code>#E0E0E0</code></td><td>卡片浮层</td></tr>
+                </tbody>
+            </table>
+
+            <h2>3. 选中即操作</h2>
+            <p>用户选中文字后浮窗出现（延迟 200ms），包含字数统计和操作按钮。按钮项：基础校正、风格重塑 ▸（展开子菜单）、扩写、缩写、转为对话、检查一致性。</p>
+            <div class="ascii-block">┌──────────────────────┐
+│ ✨ AI 助手           │
+│ 📝 基础校正          │
+│ 🎨 风格重塑    ▸     │
+│ 📏 扩写              │
+│ 📐 缩写              │
+│ 💬 转为对话          │
+│ 📋 检查一致性        │
+└──────────────────────┘</div>
+            <p>AI 处理结果以<strong>侧边批注</strong>形式呈现，用户逐条 接受 / 拒绝 / 修改。</p>
+
+            <h2>4. AI 生成内容标识</h2>
+            <p>采用<strong>左侧色条 + 底部小标签</strong>方案。AI 生成段落左侧有绿色竖线，底部显示“[AI生成] [接受] [重写] [编辑]”操作栏。</p>
+
+            <h2>5. 版本快照系统</h2>
+            <p>每次 AI 大改前自动创建快照，用户可手动创建。快照列表显示时间、标题、字数变化。支持 diff 对比视图（左右分栏，高亮差异）。</p>
+
+            <h2>6. 渐进式用户引导</h2>
+            <ul>
+                <li><strong>欢迎页</strong>：选择身份（网文作者/短剧编剧/新人），给出对应快速开始路径。</li>
+                <li><strong>新建作品</strong>：输入书名+简介，AI 生成可选世界观设定卡片，点击选用。</li>
+                <li><strong>空状态</strong>：编辑区中心显示占位提示“写下你的故事，或点击续写让AI帮你起头”。</li>
+                <li><strong>功能发现</strong>：写够500字，在选中文字时弹出提示“试试选中文字使用AI助手”；写够3000字，顶部出现“🎬 将此章节改编为剧本”按钮。</li>
+            </ul>
+
+            <h2>7. 剧本改编工作台</h2>
+            <div class="ascii-block">┌──────────────────────────────────────────────────┐
+│ 🎬 剧本改编工作台          《剑道独尊》第1-5章    │
+├────────────┬──────────────────┬─────────────────┤
+│  原文      │   剧本（可编辑）   │  AI 建议        │
+├────────────┼──────────────────┼─────────────────┤
+│            │【1. 外 树林 -    │ 🧠 心理外化     │
+│ 午夜，废弃 │  午夜】          │                 │
+│ 工厂。     │                  │ 原文：他感到绝望 │
+│            │赵无极蹲在角落，  │                 │
+│ 他蹲在角落│双手微微发抖。    │ ○ A.动作 ⭐推荐  │
+│ ，心想这次│                  │ 双手捂脸，肩膀   │
+│ 可能逃不掉│"出来吧。"        │ 颤抖             │
+│ 了。       │                  │                 │
+│            │一个低沉的声音从  │ ○ B.对白         │
+│ "出来吧， │黑暗中传来。      │ 闷头灌酒，说没   │
+│ 我知道你在│                  │ 意义了           │
+│ 。"        │赵无极猛地抬头。  │                 │
+│            │                  │ ○ C.独白(OS)     │
+│ 他的手心全│                  │ 眼前一切在褪色   │
+│ 是汗。     │                  │                 │
+│            │                  │ ○ D.跳过        │
+│            │                  │ [应用] [全部推荐]│
+├────────────┴──────────────────┴─────────────────┤
+│ 当前场次: 1/12   格式: 中文标准   [预览] [导出] │
+└──────────────────────────────────────────────────┘</div>
+            <p>三栏布局，原文与剧本高亮联动。心理外化策略可选择后实时预览。</p>
+
+            <h2>8. 命令面板</h2>
+            <p>快捷键 <code>Cmd/Ctrl + K</code> 呼出，支持模糊搜索命令。分类：续写、润色、剧本、其他。</p>
+
+            <h2>9. 异常状态 UI</h2>
+            <p>具体处理逻辑见《技术方案文档》，此处仅列交互样式：</p>
+            <ul>
+                <li><strong>A级服务不可用</strong>：顶部横幅提示，带重试和离线写作按钮。</li>
+                <li><strong>B级结果不可用</strong>：原区域显示错误卡片，可重新生成。</li>
+                <li><strong>C级质量低</strong>：生成内容下方显示浅黄色提示条。</li>
+                <li><strong>D级部分拦截</strong>：被改词高亮为黄底，hover可查看原文。</li>
+            </ul>
+            <hr>
+            <div class="highlight-box" style="text-align:center;">
+                📄 交互设计文档结束<br>
+                <small>关联文档：产品需求文档 V2.1 | 技术方案文档 V1.0</small>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>墨枢 InkAxis - 产品需求文档 V2.1</title>
+    <style>
+        :root {
+            --bg: #fafaf9;
+            --surface: #ffffff;
+            --surface-secondary: #f5f5f4;
+            --text: #1c1917;
+            --text-secondary: #57534e;
+            --text-tertiary: #78716c;
+            --border: #e7e5e4;
+            --border-light: #f0efed;
+            --accent: #6366f1;
+            --accent-light: #eef2ff;
+            --accent-dark: #4f46e5;
+            --code-bg: #1e1e2e;
+            --code-text: #cdd6f4;
+            --code-surface: #f4f4f5;
+            --table-header: #fafaf9;
+            --table-stripe: #fafaf9;
+            --tag-bg: #eef2ff;
+            --tag-text: #4f46e5;
+            --warning-bg: #fffbeb;
+            --warning-border: #fde68a;
+            --success-bg: #f0fdf4;
+            --success-text: #16a34a;
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            --max-width: 880px;
+            --font-sans: 'Inter', 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', 'Helvetica Neue', system-ui, -apple-system, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Menlo', 'Consolas', monospace;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0f0f13;
+                --surface: #1a1a22;
+                --surface-secondary: #22222d;
+                --text: #e4e4e7;
+                --text-secondary: #a1a1aa;
+                --text-tertiary: #71717a;
+                --border: #2a2a35;
+                --border-light: #22222d;
+                --accent: #818cf8;
+                --accent-light: #1e1b4b;
+                --accent-dark: #6366f1;
+                --code-bg: #111118;
+                --code-text: #cdd6f4;
+                --code-surface: #1e1e28;
+                --table-header: #1a1a22;
+                --table-stripe: #1e1e28;
+                --tag-bg: #1e1b4b;
+                --tag-text: #a5b4fc;
+                --warning-bg: #1f1800;
+                --warning-border: #5c4500;
+                --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+                --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            font-size: 16px;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            min-height: 100vh;
+        }
+
+        .doc-header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 1.5rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            box-shadow: var(--shadow-sm);
+        }
+        .doc-header-inner {
+            max-width: var(--max-width);
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+        .doc-header .logo {
+            font-weight: 700;
+            font-size: 1.15rem;
+            color: var(--accent);
+            letter-spacing: -0.01em;
+            white-space: nowrap;
+        }
+        .doc-header .meta-badges {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.2em 0.65em;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border-radius: 999px;
+            background: var(--tag-bg);
+            color: var(--tag-text);
+            white-space: nowrap;
+            letter-spacing: 0.01em;
+        }
+        .badge.version {
+            background: var(--accent);
+            color: #fff;
+        }
+        .badge.status {
+            background: var(--success-bg);
+            color: var(--success-text);
+        }
+
+        .doc-container {
+            max-width: var(--max-width);
+            margin: 0 auto;
+            padding: 2rem 1.5rem 4rem;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0;
+        }
+
+        .toc-wrapper {
+            display: none;
+        }
+        @media (min-width: 1200px) {
+            .doc-container {
+                grid-template-columns: 220px 1fr;
+                gap: 2.5rem;
+                max-width: 1100px;
+            }
+            .toc-wrapper {
+                display: block;
+                position: sticky;
+                top: 80px;
+                align-self: start;
+                max-height: calc(100vh - 100px);
+                overflow-y: auto;
+                padding-right: 0.5rem;
+            }
+            .toc-wrapper nav {
+                font-size: 0.82rem;
+                line-height: 1.6;
+            }
+            .toc-wrapper nav a {
+                display: block;
+                color: var(--text-tertiary);
+                text-decoration: none;
+                padding: 0.2em 0;
+                border-left: 2px solid transparent;
+                padding-left: 0.75em;
+                transition: all 0.15s ease;
+            }
+            .toc-wrapper nav a:hover,
+            .toc-wrapper nav a.active {
+                color: var(--accent);
+                border-left-color: var(--accent);
+            }
+            .toc-wrapper nav a.h2 {
+                font-weight: 600;
+                color: var(--text-secondary);
+                margin-top: 0.4em;
+                font-size: 0.8rem;
+            }
+            .toc-wrapper nav a.h3 {
+                padding-left: 1.5em;
+                font-size: 0.76rem;
+            }
+        }
+
+        .doc-content {
+            min-width: 0;
+        }
+        .doc-content h1 {
+            font-size: 2rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.3rem;
+            line-height: 1.3;
+        }
+        .doc-content h2 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-top: 2.5rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--border);
+            letter-spacing: -0.01em;
+            color: var(--accent-dark);
+        }
+        .doc-content h3 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-top: 1.8rem;
+            margin-bottom: 0.6rem;
+            color: var(--text);
+        }
+        .doc-content h4 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-top: 1.4rem;
+            margin-bottom: 0.4rem;
+            color: var(--text-secondary);
+        }
+        .doc-content p {
+            margin-bottom: 0.8rem;
+        }
+        .doc-content a {
+            color: var(--accent);
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.2s;
+        }
+        .doc-content a:hover {
+            border-bottom-color: var(--accent);
+        }
+        .doc-content strong {
+            font-weight: 700;
+            color: var(--text);
+        }
+        .doc-content ul,
+        .doc-content ol {
+            margin-bottom: 0.8rem;
+            padding-left: 1.6em;
+        }
+        .doc-content li {
+            margin-bottom: 0.3rem;
+        }
+        .doc-content blockquote {
+            border-left: 4px solid var(--accent);
+            padding: 0.6rem 1rem;
+            margin: 1rem 0;
+            background: var(--accent-light);
+            border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+        .doc-content hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 2rem 0;
+        }
+
+        .doc-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0 1.2rem;
+            font-size: 0.9rem;
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
+        }
+        .doc-content thead {
+            background: var(--table-header);
+        }
+        .doc-content th {
+            padding: 0.6rem 0.85rem;
+            text-align: left;
+            font-weight: 700;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            color: var(--text-secondary);
+            border-bottom: 2px solid var(--border);
+        }
+        .doc-content td {
+            padding: 0.55rem 0.85rem;
+            border-bottom: 1px solid var(--border-light);
+            vertical-align: top;
+        }
+        .doc-content tbody tr:nth-child(even) {
+            background: var(--table-stripe);
+        }
+        .doc-content tbody tr:hover {
+            background: var(--accent-light);
+        }
+
+        .doc-content pre {
+            background: var(--code-bg);
+            color: var(--code-text);
+            padding: 1.2rem 1.3rem;
+            border-radius: var(--radius-md);
+            overflow-x: auto;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            line-height: 1.6;
+            margin: 1rem 0;
+            border: 1px solid var(--border);
+            position: relative;
+        }
+        .doc-content pre code {
+            background: none;
+            padding: 0;
+            font-family: inherit;
+            font-size: inherit;
+            color: inherit;
+        }
+        .doc-content code {
+            font-family: var(--font-mono);
+            font-size: 0.85em;
+            background: var(--code-surface);
+            padding: 0.15em 0.4em;
+            border-radius: 4px;
+            color: var(--accent-dark);
+        }
+        .doc-content pre code {
+            color: var(--code-text);
+        }
+
+        .ascii-block {
+            background: var(--surface-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 1rem 1.3rem;
+            margin: 1rem 0;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            line-height: 1.5;
+            white-space: pre;
+            overflow-x: auto;
+            color: var(--text-secondary);
+        }
+
+        .info-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 1.2rem 1.5rem;
+            margin: 1rem 0;
+            box-shadow: var(--shadow-sm);
+        }
+        .info-card.warning {
+            background: var(--warning-bg);
+            border-color: var(--warning-border);
+        }
+
+        .highlight-box {
+            background: var(--accent-light);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 0.8rem 1.2rem;
+            margin: 0.8rem 0;
+            font-size: 0.9rem;
+        }
+
+        @media print {
+            body {
+                font-size: 12px;
+                color: #000;
+                background: #fff;
+            }
+            .doc-header {
+                position: static;
+                border-bottom: 2px solid #000;
+                box-shadow: none;
+            }
+            .toc-wrapper {
+                display: none;
+            }
+            .doc-container {
+                max-width: 100%;
+                padding: 0;
+            }
+            pre,
+            .ascii-block {
+                background: #f8f8f8;
+                border: 1px solid #ddd;
+                color: #000;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .doc-content h1 {
+                font-size: 1.5rem;
+            }
+            .doc-content h2 {
+                font-size: 1.2rem;
+            }
+            .doc-content pre {
+                font-size: 0.7rem;
+                padding: 0.8rem;
+            }
+            .ascii-block {
+                font-size: 0.65rem;
+                padding: 0.6rem;
+            }
+            .doc-content table {
+                font-size: 0.75rem;
+            }
+            .doc-content th,
+            .doc-content td {
+                padding: 0.35rem 0.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="doc-header">
+        <div class="doc-header-inner">
+            <span class="logo">🖋️ 墨枢 InkAxis</span>
+            <div class="meta-badges">
+                <span class="badge version">PRD V2.1</span>
+                <span class="badge status">完整设计稿</span>
+                <span class="badge">2026-06-15</span>
+            </div>
+        </div>
+    </header>
+
+    <div class="doc-container">
+        <aside class="toc-wrapper">
+            <nav>
+                <a href="#section-1" class="h2">1. 产品概述</a>
+                <a href="#section-2" class="h2">2. 市场分析与竞品</a>
+                <a href="#section-3" class="h2">3. 用户画像与场景</a>
+                <a href="#section-4" class="h2">4. 核心功能</a>
+                <a href="#section-5" class="h2">5. 运营与商业化</a>
+                <a href="#section-6" class="h2">6. 路线图</a>
+                <a href="#section-7" class="h2">7. 合规与伦理</a>
+            </nav>
+        </aside>
+
+        <main class="doc-content">
+            <h1>墨枢 InkAxis - 产品需求文档</h1>
+            <p><strong>版本</strong>：PRD V2.1 &nbsp;|&nbsp; <strong>最后更新</strong>：2026-06-15</p>
+            <div class="highlight-box">
+                <strong>关联文档</strong><br>
+                交互细节详见《墨枢 InkAxis 交互设计文档 V1.0》<br>
+                技术实现详见《墨枢 InkAxis 技术方案文档 V1.0》
+            </div>
+            <hr>
+
+            <!-- 第1章 产品概述 -->
+            <h2 id="section-1">1. 产品概述</h2>
+            <h3>1.1 产品定位</h3>
+            <p><strong>墨枢（InkAxis）</strong> 是一款专为长篇创作者打造的一站式智能创作平台。以 <strong>"小说转剧本"</strong> 为核心差异化功能，辅助 <strong>"可控长篇续写"</strong> 与 <strong>"分级智能润色"</strong>，打通从灵感到影视化改编的完整创作流。</p>
+            <div class="highlight-box"><strong>一句话价值主张</strong>：让网文作者 10 分钟拿到可用于拍摄的剧本初稿，让编剧从手动改编中解放。</div>
+            <h3>1.2 核心差异化</h3>
+            <table>
+                <thead><tr><th>维度</th><th>墨枢</th><th>现有竞品</th></tr></thead>
+                <tbody>
+                    <tr><td>长篇一致性</td><td>上下文锚点系统，锁定角色/道具</td><td>无记忆或简单向量检索</td></tr>
+                    <tr><td>剧本改编</td><td>专业心理外化策略 + 行业格式导出</td><td>简单对话提取，无格式</td></tr>
+                    <tr><td>创作流整合</td><td>写-改-编一站式，无需跨工具</td><td>功能割裂</td></tr>
+                    <tr><td>文风定制</td><td>用户上传作品学习专属风格</td><td>仅预设模板</td></tr>
+                </tbody>
+            </table>
+            <h3>1.3 产品目标</h3>
+            <ul>
+                <li><strong>V1.0</strong>：验证"小说转剧本"PMF，50%内测用户可直接使用生成剧本</li>
+                <li><strong>V1.1</strong>：形成"写-改-编"最小闭环，完成完整用户链路</li>
+                <li><strong>V2.0</strong>：通过版本快照、角色图谱、文风市场建立资产壁垒</li>
+            </ul>
+
+            <!-- 第2章 市场分析与竞品 -->
+            <h2 id="section-2">2. 市场分析与竞品</h2>
+            <h3>2.1 市场机会</h3>
+            <ul>
+                <li><strong>网文市场规模</strong>：2025年中国网络文学市场规模超 400 亿元，作者群体超 2000 万</li>
+                <li><strong>短剧市场爆发</strong>：2025年短剧市场规模达 500 亿元，大量剧本需求</li>
+                <li><strong>影视改编需求</strong>：每年数百部网文出售影视版权，但专业改编人才稀缺</li>
+                <li><strong>AI写作渗透率</strong>：约 30% 的网文作者尝试过 AI 辅助，但专业工具缺失</li>
+            </ul>
+            <h3>2.2 竞品矩阵</h3>
+            <table>
+                <thead><tr><th>产品</th><th>写作</th><th>润色</th><th>剧本转换</th><th>长处</th><th>弱点</th></tr></thead>
+                <tbody>
+                    <tr><td>ChatGPT</td><td>✅</td><td>✅</td><td>❌</td><td>通用性强</td><td>无长篇记忆，无格式</td></tr>
+                    <tr><td>Claude</td><td>✅</td><td>✅</td><td>❌</td><td>长上下文</td><td>无专业剧本格式</td></tr>
+                    <tr><td>Sudowrite</td><td>✅</td><td>✅</td><td>❌</td><td>小说专项优化</td><td>英文为主，无剧本</td></tr>
+                    <tr><td>笔灵AI</td><td>✅</td><td>✅</td><td>❌</td><td>中文网文理解好</td><td>无剧本功能</td></tr>
+                    <tr><td><strong>墨枢</strong></td><td>✅</td><td>✅</td><td>✅</td><td>写改编一体化</td><td>新品</td></tr>
+                </tbody>
+            </table>
+            <h4>2.2.1 垂直短剧竞品速览</h4>
+            <p>以下工具专攻中文短剧剧本生成，与墨枢「小说转剧本」功能正面竞争：</p>
+            <table>
+                <thead><tr><th>产品</th><th>核心功能</th><th>擅长</th><th>弱点</th><th>对墨枢的威胁</th></tr></thead>
+                <tbody>
+                    <tr><td>剧有料</td><td>输入梗概→生成1分钟短剧完整剧本</td><td>速度快，格式规范，内置爆款模板</td><td>无长篇记忆，无法从小说改编</td><td>抢夺短剧编剧的“从零创作”场景</td></tr>
+                    <tr><td>小剧本</td><td>对话式生成短剧分集</td><td>交互轻量，人设管理简单</td><td>质量不稳定，偏口水化</td><td>可能培养用户“剧本用小程序”习惯</td></tr>
+                    <tr><td>博润通·剧本侠</td><td>爽文转短剧，批量分集导出</td><td>批量处理能力强</td><td>心理外化粗糙</td><td>直接替代方案</td></tr>
+                    <tr><td>编剧助手(阿里内部)</td><td>IP小说提取角色关系、场景拆解</td><td>专业度高</td><td>未公开开放</td><td>若对外开放，形成降维打击</td></tr>
+                </tbody>
+            </table>
+            <p><strong>启示</strong>：它们普遍缺乏心理外化策略的可控性，墨枢应放大这一差异；短剧编剧对“爆款模板”需求强烈，V1.5可加入“热门短剧结构模板库”。</p>
+            <h3>2.3 竞争壁垒</h3>
+            <ol>
+                <li><strong>技术壁垒</strong>：剧本改编 Prompt 链 + 锚点记忆系统</li>
+                <li><strong>数据壁垒</strong>：用户作品数据 → 个人文风模型</li>
+                <li><strong>社区壁垒</strong>：作者角色库、世界观模板沉淀</li>
+            </ol>
+
+            <!-- 第3章 用户画像与场景 -->
+            <h2 id="section-3">3. 用户画像与场景</h2>
+            <h3>3.1 核心用户画像</h3>
+            <p><strong>画像A：网文大神/腰部作者</strong></p>
+            <ul><li>年龄：25-35岁 · 特征：有完本作品，月收入 5000-50000</li><li>痛点：作品售出影视版权但不会写剧本；长篇人设管理困难</li><li>需求：一键剧本转换 + 一致性检查</li></ul>
+            <p><strong>画像B：短剧编剧</strong></p>
+            <ul><li>年龄：22-30岁 · 特征：MCN/短剧公司签约，日产 3-5 集</li><li>痛点：从网文/IP 中提炼剧本效率低；手动改格式耗时</li><li>需求：快速转化 + 标准格式导出</li></ul>
+            <p><strong>画像C：新人作者</strong></p>
+            <ul><li>年龄：18-28岁 · 特征：正在创作第一部作品，卡文频发</li><li>痛点：不知如何推进剧情；人设经常矛盾</li><li>需求：智能续写 + 设定管理</li></ul>
+            <h3>3.2 核心场景</h3>
+            <table>
+                <thead><tr><th>场景</th><th>用户动作</th><th>系统响应</th></tr></thead>
+                <tbody>
+                    <tr><td>灵感起步</td><td>输入"废柴少年捡到魔剑复仇"</td><td>自动生成章纲 + 角色小传 + 世界观</td></tr>
+                    <tr><td>长篇续写</td><td>点击"续写"</td><td>基于锚点 + 大纲续写 800-2000 字</td></tr>
+                    <tr><td>卡文分支</td><td>停在分支点</td><td>提供 2-3 个合理剧情走向</td></tr>
+                    <tr><td>全书润色</td><td>选中文字/全局审查</td><td>分级润色 + 一致性报告</td></tr>
+                    <tr><td>一键转剧本</td><td>点击"改编剧本"</td><td>解析→外化策略→逐场生成→格式化</td></tr>
+                </tbody>
+            </table>
+
+            <!-- 第4章 核心功能 -->
+            <h2 id="section-4">4. 核心功能</h2>
+
+            <!-- 新增功能矩阵总览 -->
+            <h3>4.0 功能矩阵总览</h3>
+            <table>
+                <thead><tr><th>模块</th><th>功能</th><th>用户触发方式</th><th>AI 产出</th><th>用户控制</th></tr></thead>
+                <tbody>
+                    <tr><td rowspan="4"><strong>写</strong></td><td>骨架生成</td><td>输入梗概</td><td>卷-章大纲树</td><td>增删改、拖拽排序</td></tr>
+                    <tr><td>续写</td><td>点击续写 / Cmd+K</td><td>800-2000字正文</td><td>接受 / 重写 / 选分支</td></tr>
+                    <tr><td>卡点分支</td><td>自动触发</td><td>2-3个剧情走向</td><td>选择或跳过</td></tr>
+                    <tr><td>锚点管理</td><td>角色库面板</td><td>自动提取+更新</td><td>锁定 / 解锁 / 手动编辑</td></tr>
+                    <tr><td rowspan="4"><strong>改</strong></td><td>基础校正</td><td>选中文字 → 浮窗</td><td>纠错后文本</td><td>逐条接受 / 拒绝</td></tr>
+                    <tr><td>进阶润色</td><td>选中文字 → 浮窗</td><td>优化后文本</td><td>逐条接受 / 拒绝</td></tr>
+                    <tr><td>风格重塑</td><td>选中文字 → 风格选择</td><td>风格化文本</td><td>预览 → 应用 / 撤销</td></tr>
+                    <tr><td>一致性审查</td><td>命令面板 / 菜单</td><td>矛盾报告</td><td>逐条查看 / 手动修改</td></tr>
+                    <tr><td rowspan="4"><strong>编</strong></td><td>选范围改编</td><td>顶部按钮 / Cmd+K</td><td>完整剧本</td><td>选择全卷 / 章节</td></tr>
+                    <tr><td>心理外化</td><td>改编工作台右侧面板</td><td>四种外化方案</td><td>单选 / 一键推荐</td></tr>
+                    <tr><td>工作台编辑</td><td>三栏视图</td><td>实时同步预览</td><td>直接编辑 / 格式检查</td></tr>
+                    <tr><td>格式导出</td><td>导出按钮</td><td>多格式文件</td><td>选择格式 / 预览</td></tr>
+                </tbody>
+            </table>
+
+            <h3>4.1 项目管理</h3>
+            <p>作品层级：项目 → 卷 → 章节，支持版本快照。详细交互见《交互设计文档》。</p>
+
+            <h3>4.2 AI 写小说</h3>
+            <h4>骨架式生成</h4>
+            <p>用户输入梗概，AI 生成卷-章大纲树，用户确认后逐章生成正文。</p>
+            <h4>分段续写</h4>
+            <p>基于上下文锚点续写，支持流式输出，用户可接受、重写或选择分支。</p>
+            <h4>互动卡点</h4>
+            <p>在关键决策点自动提供 2-3 个剧情走向供选择。</p>
+            <h4>上下文锚点系统</h4>
+            <p>动态组装最小必要上下文包，保证长篇一致性。技术实现见《技术方案文档》。</p>
+
+            <h3>4.3 AI 改小说</h3>
+            <h4>分级润色</h4>
+            <table>
+                <thead><tr><th>级别</th><th>操作</th><th>示例</th></tr></thead>
+                <tbody>
+                    <tr><td>基础</td><td>错别字、标点、的地得</td><td>"他高兴的说" → "他高兴地说"</td></tr>
+                    <tr><td>进阶</td><td>句式优化、消除翻译腔</td><td>"他进行了思考" → "他思索片刻"</td></tr>
+                    <tr><td>风格</td><td>改变叙事节奏/氛围</td><td>舒缓 → 紧张，平实 → 古风</td></tr>
+                </tbody>
+            </table>
+            <h4>全卷一致性审查</h4>
+            <p>扫描角色外貌/设定矛盾、时间线冲突等。</p>
+
+            <h3>4.4 小说转剧本</h3>
+            <h4>核心流程</h4>
+            <p>选择全卷或章节 → AI 改编工作台（原文/剧本/AI建议三栏）→ 心理外化策略选择 → 格式导出。交互细节见《交互设计文档》。</p>
+            <h4>导出格式</h4>
+            <p>中文影视标准格式、Final Draft (.fdx)、简单分镜表。</p>
+
+            <!-- 第5章 运营与商业化 -->
+            <h2 id="section-5">5. 运营与商业化</h2>
+            <h3>5.1 商业模式</h3>
+            <ol>
+                <li><strong>订阅制（核心）</strong>：免费增值，按月/年订阅</li>
+                <li><strong>按量付费</strong>：超出配额可购买字数包（¥9.9/5万字）</li>
+                <li><strong>企业版</strong>：MCN/短剧公司定制方案，API 接入</li>
+            </ol>
+            <h3>5.2 用户配额设计</h3>
+            <table>
+                <thead><tr><th>计划</th><th>月费</th><th>AI 字数配额</th><th>剧本改编</th><th>自定义文风</th></tr></thead>
+                <tbody>
+                    <tr><td>免费版</td><td>¥0</td><td>10,000字/月</td><td>1次/月</td><td>❌</td></tr>
+                    <tr><td>专业版</td><td>¥39/月</td><td>100,000字/月</td><td>10次/月</td><td>1个</td></tr>
+                    <tr><td>大师版</td><td>¥99/月</td><td>500,000字/月</td><td>50次/月</td><td>5个</td></tr>
+                    <tr><td>团队版</td><td>¥299/月</td><td>200万字/月</td><td>不限</td><td>20个</td></tr>
+                </tbody>
+            </table>
+            <h3>5.3 种子用户获取</h3>
+            <p>定向邀请20位网文作者+10位编剧 → 案例营销 → 作者大使计划。</p>
+            <h3>5.4 关键指标（V1.0）</h3>
+            <table>
+                <thead><tr><th>指标</th><th>目标值</th></tr></thead>
+                <tbody>
+                    <tr><td>注册用户</td><td>5,000（3个月）</td></tr>
+                    <tr><td>DAU</td><td>500</td></tr>
+                    <tr><td>付费转化率</td><td>5%</td></tr>
+                    <tr><td>月留存</td><td>40%</td></tr>
+                    <tr><td>剧本改编 NPS</td><td>50+</td></tr>
+                    <tr><td>平均改编修改率</td><td>&lt;30%</td></tr>
+                </tbody>
+            </table>
+
+            <!-- 第6章 路线图 -->
+            <h2 id="section-6">6. 路线图与迭代计划</h2>
+            <div class="ascii-block">2026年
+Q3 (7-9月)        Q4 (10-12月)       2027年 Q1 (1-3月)
+V0.8 内测 ──▶ V1.0 上线 ──▶ V1.5 优化
+·剧本改编PMF      ·写改编闭环      ·锚点V2+向量检索
+                                      │
+                   2027年 Q2 (4-6月)    │
+                   V2.0 生态 ◀─────────┘
+                   ·文风市场·多人协作·API开放</div>
+            <table>
+                <thead><tr><th>版本</th><th>周期</th><th>核心内容</th></tr></thead>
+                <tbody>
+                    <tr><td>V0.8 内测</td><td>4周</td><td>极简网页：粘贴小说→改编剧本</td></tr>
+                    <tr><td>V1.0 正式</td><td>8周</td><td>写-改-编闭环，免费增值上线</td></tr>
+                    <tr><td>V1.5 优化</td><td>8周</td><td>向量检索锚点，移动端响应式</td></tr>
+                    <tr><td>V2.0 生态</td><td>12周</td><td>文风市场，多人协作，API开放</td></tr>
+                </tbody>
+            </table>
+
+            <!-- 第7章 合规与伦理 -->
+            <h2 id="section-7">7. 合规与伦理</h2>
+            <h3>7.1 版权与免责</h3>
+            <ul>
+                <li>用户拥有其输入和生成内容的所有权</li>
+                <li>平台可使用用户内容优化模型（可关闭）</li>
+                <li>导出剧本自动添加“AI辅助生成”标注</li>
+                <li>禁止生成违法违规、侵权、色情内容</li>
+            </ul>
+            <h3>7.2 内容安全</h3>
+            <p>输入/输出实时敏感词过滤，流式替换/阻断，举报+抽检。</p>
+            <h3>7.3 数据隐私</h3>
+            <p>作品默认私有，分享链接24h失效，用户可随时导出数据，注销后30天内彻底删除。</p>
+            <hr>
+            <div class="highlight-box" style="text-align:center;">
+                📄 产品需求文档结束<br>
+                <small>关联文档：交互设计文档 V1.0 | 技术方案文档 V1.0</small>
+            </div>
+        </main>
+    </div>
+</body>
+</html>
