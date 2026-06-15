@@ -94,3 +94,17 @@ export async function updateKbMemberRole(kbId, userId, role, orgId) {
   const { data } = await http.put(`/api/v1/kb/${kbId}/members/${userId}`, { role }, params);
   return data;
 }
+
+// Fix 3: 重新解析失败的文档
+export async function retryDocument(kbId, docId, orgId) {
+  const params = orgId ? { params: { orgId } } : {};
+  const { data } = await http.post(`/api/v1/kb/${kbId}/documents/${docId}/retry`, {}, params);
+  return data;
+}
+
+// Fix 13: 获取知识库统计（文档数、切片数、近期查询次数）
+export async function getKbStats(kbId, orgId) {
+  const params = orgId ? { params: { orgId } } : {};
+  const { data } = await http.get(`/api/v1/kb/${kbId}/stats`, params);
+  return data;
+}

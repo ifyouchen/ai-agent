@@ -39,7 +39,11 @@
             </button>
           </template>
           <router-link class="topbar-btn topbar-chat-link" to="/chat">对话</router-link>
-          <router-link class="topbar-btn topbar-org-link" to="/org">组织</router-link>
+          <!-- Fix 14: 有待处理通知时显示红点角标 -->
+          <router-link class="topbar-btn topbar-org-link topbar-btn-notice" to="/org">
+            组织
+            <span v-if="org.pendingNoticeCount > 0" class="topbar-notice-badge">{{ org.pendingNoticeCount }}</span>
+          </router-link>
           <router-link class="topbar-btn topbar-kb-link" to="/kb">知识库</router-link>
           <template v-if="auth.isAdmin">
             <router-link class="topbar-btn topbar-admin-link" to="/monitor">监控</router-link>
@@ -131,6 +135,8 @@ let mobileMediaQuery = null;
 // P3-18：侧边栏收起时显示当前页标题
 const currentPageTitle = computed(() => route.meta?.title || sess.currentSessionTitle || '');
 
+let _noticeTimer = null;
+
 onMounted(async () => {
   setupResponsiveSidebar();
 
@@ -141,9 +147,13 @@ onMounted(async () => {
 
   // 全局代码块复制处理
   setupCopyCodeHandler(() => ui.showToast('warning', '复制失败，请手动复制'));
+
+  // Fix 14: 每 60 秒刷新一次通知计数（loadOrgs 内已调用过一次，这里是后续轮询）
+  _noticeTimer = setInterval(() => org.refreshNoticeCount(), 60_000);
 });
 
 onBeforeUnmount(() => {
+  if (_noticeTimer) clearInterval(_noticeTimer);
   if (mobileMediaQuery?.removeEventListener) {
     mobileMediaQuery.removeEventListener('change', handleViewportChange);
   } else {

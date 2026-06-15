@@ -107,6 +107,14 @@
         WHERE id = #{id}
     </update>
 
+    <!-- Fix 3: 更新文件存储路径（重试解析时使用） -->
+    <update id="updateFilePath">
+        UPDATE kb_document
+        SET file_path  = #{filePath},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
     <!-- 删除文档 -->
     <delete id="deleteById">
         DELETE FROM kb_document WHERE id = #{id}

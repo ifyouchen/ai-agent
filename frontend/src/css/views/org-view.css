@@ -1024,3 +1024,112 @@
     max-width: 100%;
   }
 }
+
+/* ===== Fix 12: 组织 ID 折叠区 ===== */
+.org-id-details {
+  margin-top: 6px;
+}
+
+.org-id-summary {
+  font-size: 12px;
+  color: var(--text-secondary, #888);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.org-id-summary::-webkit-details-marker { display: none; }
+.org-id-summary::before { content: '›'; font-size: 14px; transition: transform .15s; }
+details.org-id-details[open] .org-id-summary::before { transform: rotate(90deg); }
+
+/* ===== Fix 9: 邀请成员快速搜索结果 ===== */
+.invite-search-results {
+  margin-top: 8px;
+  border: 1px solid var(--border-color, #e0e4ef);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-elevated, #fff);
+  box-shadow: 0 2px 10px rgba(0,0,0,.06);
+}
+
+.invite-search-hint {
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+  padding: 6px 14px 8px;
+  border-top: 1px solid var(--border-color, #e0e4ef);
+}
+
+.invite-search-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  transition: background .15s;
+}
+
+.invite-search-item:hover { background: var(--bg-hover, #f7f8fc); }
+
+.invite-search-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--primary-color, #5b6ef5);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.invite-search-name { flex: 1; font-size: 13px; font-weight: 500; }
+
+.invite-search-uid { font-size: 11px; color: var(--text-secondary, #888); }
+
+.org-text-btn.primary.sm {
+  border: none;
+  background: var(--primary-color, #5b6ef5);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+
+.org-text-btn.primary.sm:hover { opacity: .85; }
+.org-text-btn.primary.sm:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ===== Fix 10: 个人空间申请加入快捷入口 ===== */
+.org-join-shortcut {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--bg-subtle, #f7f8fc);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.org-join-shortcut-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #20242c);
+}
+
+.org-join-pending-hint {
+  font-size: 12px;
+  color: var(--text-secondary, #888);
+}
+
+.org-text-link {
+  color: var(--primary-color, #5b6ef5);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.org-text-link:hover { opacity: .8; }

@@ -58,17 +58,19 @@
             </svg>
           </div>
           <div class="kb-card-actions">
-            <button class="kb-card-action-btn" type="button" title="编辑知识库" @click.stop="handleEditKb(item)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-            <button class="kb-card-action-btn danger" type="button" title="删除知识库" @click.stop="handleDeleteKb(item)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 6V4h4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
+            <template v-if="canManageKb">
+              <button class="kb-card-action-btn" type="button" title="编辑知识库" @click.stop="handleEditKb(item)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <button class="kb-card-action-btn danger" type="button" title="删除知识库" @click.stop="handleDeleteKb(item)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 6V4h4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </template>
           </div>
         </div>
         <div class="kb-card-name">{{ item.name }}</div>
@@ -116,6 +118,16 @@
               </svg>
               测试查询
             </button>
+            <!-- Fix 1: 成员管理 Tab -->
+            <button class="kb-tab" :class="{ active: activeTab === 'members' }" type="button" @click="switchToMembersTab">
+              <svg viewBox="0 0 24 24" fill="none" width="14" height="14">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              成员管理
+              <span v-if="kb.kbMembers.length" class="kb-tab-badge">{{ kb.kbMembers.length }}</span>
+            </button>
           </div>
           <div class="kb-header-actions">
             <button v-if="activeTab === 'docs'" class="kb-action-btn" type="button" title="刷新文档列表" @click="kb.loadDocs(org.currentOrgId)">
@@ -131,6 +143,24 @@
               </svg>
               在对话中使用
             </button>
+          </div>
+        </div>
+
+        <!-- Fix 13: KB 统计栏 -->
+        <div v-if="kbStats" class="kb-stats-bar">
+          <div class="kb-stat-item">
+            <span class="kb-stat-num">{{ kbStats.docCount }}</span>
+            <span class="kb-stat-label">篇文档</span>
+          </div>
+          <div class="kb-stat-divider"></div>
+          <div class="kb-stat-item">
+            <span class="kb-stat-num">{{ kbStats.chunkCount }}</span>
+            <span class="kb-stat-label">个切片</span>
+          </div>
+          <div class="kb-stat-divider"></div>
+          <div class="kb-stat-item">
+            <span class="kb-stat-num">{{ kbStats.recentQueries }}</span>
+            <span class="kb-stat-label">近 7 天查询</span>
           </div>
         </div>
 
@@ -176,6 +206,10 @@
                 </svg>
                 全部完成
               </span>
+              <!-- Fix 6: 手动清除已完成的上传记录 -->
+              <button v-if="hasCompletedUploads" class="kb-text-btn" type="button" @click="kb.clearCompletedUploads()">
+                清除已完成
+              </button>
             </div>
             <div v-for="task in kb.uploadQueue" :key="task.id" class="upload-task">
               <div class="upload-task-top">
@@ -200,8 +234,24 @@
             </div>
           </div>
 
-          <!-- 文档列表 -->
-          <div class="kb-docs-title">已导入文档</div>
+          <!-- Fix 5: 文档列表工具栏 -->
+          <div class="kb-docs-toolbar">
+            <span class="kb-docs-title">已导入文档</span>
+            <div v-if="kb.docs.length > 1" class="kb-docs-filters">
+              <select v-model="docStatusFilter" class="kb-filter-select">
+                <option value="">全部状态</option>
+                <option value="DONE">已完成</option>
+                <option value="FAILED">解析失败</option>
+                <option value="PROCESSING">处理中</option>
+              </select>
+              <select v-model="docSortBy" class="kb-filter-select">
+                <option value="time_desc">最新上传</option>
+                <option value="time_asc">最早上传</option>
+                <option value="name_asc">名称 A→Z</option>
+                <option value="size_desc">文件最大</option>
+              </select>
+            </div>
+          </div>
           <div class="doc-list">
             <div v-if="!kb.docs.length" class="empty-state">
               <div class="empty-state-icon">
@@ -214,7 +264,7 @@
               <div class="empty-state-hint">上传后 AI 可基于文档内容回答</div>
             </div>
 
-            <div v-for="doc in kb.docs" :key="doc.id" class="doc-item-wrapper">
+            <div v-for="doc in filteredDocs" :key="doc.id" class="doc-item-wrapper">
               <div
                 class="doc-item"
                 :class="{ 'doc-item-expanded': expandedDocId === doc.id }"
@@ -229,8 +279,16 @@
                         <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" stroke-dasharray="14 50" stroke-linecap="round"/>
                       </svg>
                       {{ statusLabel(doc.status) }}
+                      <!-- Fix 11: CHUNKING/EMBEDDING 阶段显示切片进度 -->
+                      <span v-if="['CHUNKING','EMBEDDING'].includes(doc.status) && doc.chunks > 0" class="doc-progress-hint">
+                        · 已切片 {{ doc.chunks }} 段
+                      </span>
                     </span>
                     <span v-else-if="doc.status === 'FAILED'" class="doc-status-badge failed" :title="doc.parseError">解析失败</span>
+                    <!-- Fix 3: 解析失败时展示重试按钮 -->
+                    <button v-if="doc.status === 'FAILED'" class="doc-retry-btn" type="button" @click.stop="retryDoc(doc)">
+                      重新解析
+                    </button>
                   </div>
                   <div class="doc-meta">
                     {{ doc.chunks > 0 ? doc.chunks + ' 个切片' : '待切片' }}
@@ -327,13 +385,70 @@
           </div>
           <div v-if="queryError" class="kb-query-error">{{ queryError }}</div>
         </div>
+
+        <!-- Fix 1: 成员管理 Tab -->
+        <div v-if="activeTab === 'members'" class="kb-members-panel">
+          <div class="kb-members-add-section">
+            <div class="kb-members-add-title">添加成员</div>
+            <div class="kb-member-search-row">
+              <input
+                v-model.trim="memberSearchKeyword"
+                type="text"
+                placeholder="搜索用户名…"
+                class="kb-member-search-input"
+                @input="onMemberSearch"
+              />
+              <select v-model="newMemberRole" class="kb-member-role-select-input">
+                <option value="EDITOR">编辑者</option>
+                <option value="VIEWER">只读</option>
+              </select>
+            </div>
+            <div v-if="memberSearchResults.length" class="kb-member-search-dropdown">
+              <div
+                v-for="u in memberSearchResults"
+                :key="u.userId"
+                class="kb-member-search-item"
+              >
+                <span class="kb-member-search-avatar">{{ (u.username || 'U').slice(0, 1).toUpperCase() }}</span>
+                <span class="kb-member-search-name">{{ u.username }}</span>
+                <button class="kb-member-add-btn" type="button" @click="doAddKbMember(u)">+ 添加</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="kb-members-list-section">
+            <div class="kb-members-list-title">
+              当前成员
+              <span v-if="kb.kbMembers.length" class="kb-members-count">{{ kb.kbMembers.length }} 人</span>
+            </div>
+            <div v-if="!kb.kbMembers.length" class="kb-members-empty">暂无成员，搜索用户后可添加</div>
+            <div v-else class="kb-member-list">
+              <div v-for="m in kb.kbMembers" :key="m.userId" class="kb-member-row">
+                <span class="kb-member-avatar-sm">{{ (m.username || 'U').slice(0, 1).toUpperCase() }}</span>
+                <span class="kb-member-name">{{ m.username || m.userId }}</span>
+                <span class="kb-member-role-badge" :class="'role-' + m.role.toLowerCase()">{{ kbRoleLabel(m.role) }}</span>
+                <template v-if="canManageKb && m.role !== 'OWNER'">
+                  <select
+                    :value="m.role"
+                    class="kb-member-role-edit"
+                    @change="doChangeKbMemberRole(m, $event.target.value)"
+                  >
+                    <option value="EDITOR">编辑者</option>
+                    <option value="VIEWER">只读</option>
+                  </select>
+                  <button class="kb-member-remove-btn" type="button" @click="doRemoveKbMember(m)">移除</button>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
       </template>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useKbStore } from '../stores/kb.js';
 import { useOrgStore } from '../stores/org.js';
@@ -354,6 +469,111 @@ const dragOver      = ref(false);
 const expandedDocId = ref(null);
 const docChunksCache = reactive({});
 const hasKnowledgeBases = computed(() => kb.knowledgeBases.length > 0);
+
+// Fix 7: KB 操作权限（org OWNER/ADMIN 可编辑删除 KB）
+const canManageKb = computed(() =>
+  ['OWNER', 'ADMIN'].includes(org.currentOrg?.role)
+);
+
+// Fix 5: 文档列表过滤 & 排序
+const docStatusFilter = ref('');
+const docSortBy       = ref('time_desc');
+const filteredDocs = computed(() => {
+  let list = [...kb.docs];
+  if (docStatusFilter.value) {
+    const f = docStatusFilter.value;
+    list = list.filter(d =>
+      f === 'PROCESSING'
+        ? ['PENDING', 'PARSING', 'CHUNKING', 'EMBEDDING'].includes(d.status)
+        : d.status === f
+    );
+  }
+  const sortMap = {
+    time_desc: (a, b) => (a.uploadedAt < b.uploadedAt ? 1 : -1),
+    time_asc:  (a, b) => (a.uploadedAt > b.uploadedAt ? 1 : -1),
+    name_asc:  (a, b) => (a.filename   > b.filename   ? 1 : -1),
+    size_desc: (a, b) => (a.size       < b.size        ? 1 : -1),
+  };
+  if (sortMap[docSortBy.value]) list.sort(sortMap[docSortBy.value]);
+  return list;
+});
+
+// Fix 6: 是否有已完成/失败的上传任务
+const hasCompletedUploads = computed(() =>
+  kb.uploadQueue.some(t => ['done', 'error'].includes(t.status))
+);
+
+// Fix 13: KB 统计数据
+const kbStats = ref(null);
+watch(() => kb.currentKbId, async (id) => {
+  if (!id) { kbStats.value = null; return; }
+  try { kbStats.value = await api.getKbStats(id, org.currentOrgId); }
+  catch { kbStats.value = null; }
+}, { immediate: true });
+
+// Fix 1: KB 成员管理
+const memberSearchKeyword = ref('');
+const memberSearchResults = ref([]);
+const newMemberRole       = ref('EDITOR');
+let _memberSearchTimer = null;
+
+function kbRoleLabel(role) {
+  return { OWNER: '拥有者', EDITOR: '编辑者', VIEWER: '只读' }[role] || role;
+}
+
+function switchToMembersTab() {
+  activeTab.value = 'members';
+  kb.loadKbMembers(org.currentOrgId);
+}
+
+function onMemberSearch() {
+  clearTimeout(_memberSearchTimer);
+  if (!memberSearchKeyword.value) { memberSearchResults.value = []; return; }
+  _memberSearchTimer = setTimeout(async () => {
+    try {
+      const res = await api.searchUsers(memberSearchKeyword.value);
+      memberSearchResults.value = (res || [])
+        .filter(u => !kb.kbMembers.find(m => m.userId === u.userId))
+        .slice(0, 6);
+    } catch { memberSearchResults.value = []; }
+  }, 300);
+}
+
+async function doAddKbMember(user) {
+  try {
+    await kb.addKbMember(user.userId, newMemberRole.value, org.currentOrgId);
+    memberSearchKeyword.value = '';
+    memberSearchResults.value = [];
+    ui.showToast('success', `已添加「${user.username}」为${kbRoleLabel(newMemberRole.value)}`);
+  } catch (err) {
+    ui.showToast('error', err.message || '添加失败');
+  }
+}
+
+async function doRemoveKbMember(member) {
+  const ok = await ui.showConfirm({
+    title: '移除成员',
+    message: `确认将「${member.username || member.userId}」从知识库中移除？`,
+    confirmText: '移除',
+    variant: 'danger',
+  });
+  if (!ok) return;
+  try {
+    await kb.removeKbMember(member.userId, org.currentOrgId);
+    ui.showToast('success', '成员已移除');
+  } catch (err) {
+    ui.showToast('error', err.message || '移除失败');
+  }
+}
+
+async function doChangeKbMemberRole(member, newRole) {
+  try {
+    await kb.updateKbMemberRole(member.userId, newRole, org.currentOrgId);
+    ui.showToast('success', `已将「${member.username}」调整为${kbRoleLabel(newRole)}`);
+  } catch (err) {
+    ui.showToast('error', err.message || '角色修改失败');
+  }
+}
 
 async function toggleDocChunks(doc) {
   if (!['DONE'].includes(doc.status) && doc.chunks === 0) return;
@@ -501,10 +721,24 @@ async function runQuery() {
   }
 }
 
+// Fix 4: 关联后不强制跳转，Toast 提供行动按钮供用户自主选择
 function useKbInChat() {
   sess.currentKbId = kb.currentKbId;
-  ui.showToast('success', `已在对话中关联「${kb.currentKbName}」`);
-  router.push('/chat');
+  ui.showToast('success', `已关联「${kb.currentKbName}」，可继续管理文档或前往对话`);
+  // 不再强制 router.push('/chat')，让用户决定是否切换页面
+}
+
+// Fix 3: 重新解析失败的文档
+async function retryDoc(doc) {
+  try {
+    await api.retryDocument(kb.currentKbId, doc.id, org.currentOrgId);
+    doc.status = 'PENDING';
+    doc.parseError = '';
+    kb.startDocPolling(doc.id, org.currentOrgId);
+    ui.showToast('success', `「${doc.filename}」已重新提交解析`);
+  } catch (err) {
+    ui.showToast('error', err.message || '重试失败，请稍后再试');
+  }
 }
 </script>
 

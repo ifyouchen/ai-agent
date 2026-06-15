@@ -378,6 +378,35 @@ public class KnowledgeBaseController {
         }
     }
 
+    /**
+     * Fix 3: 重新解析失败文档
+     * POST /api/v1/kb/{kbId}/documents/{docId}/retry
+     *
+     * <p>只有 parseStatus=FAILED 的文档才能重试，需要 EDITOR 或 OWNER 角色
+     */
+    @PostMapping("/{kbId}/documents/{docId}/retry")
+    public ResponseEntity<?> retryDocument(
+            @PathVariable Long kbId,
+            @PathVariable Long docId,
+            @RequestParam(required = false) String orgId,
+            @AuthenticationPrincipal String userId) {
+        try {
+            String tenantId = orgService.resolveOrgId(userId, orgId);
+
+            if (!kbMemberService.canEdit(kbId, userId, tenantId)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "您没有编辑权限，需要 EDITOR 或 OWNER 角色"));
+            }
+
+            kbService.retryDocument(tenantId, docId);
+            return ResponseEntity.ok(Map.of("message", "已重新提交解析", "docId", docId));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        }
+    }
+
     // ── 知识库问答 ────────────────────────────────────────
 
     /**

@@ -195,11 +195,26 @@ export const useKbStore = defineStore('kb', () => {
       await loadDocs(orgId);
       task.status   = 'done';
       task.barWidth = 100;
+      // Fix 6: 成功 3 秒后自动从队列移除
+      setTimeout(() => {
+        const idx = uploadQueue.value.indexOf(task);
+        if (idx !== -1) uploadQueue.value.splice(idx, 1);
+      }, 3000);
     } catch (err) {
       task.status = 'error';
       task.error  = err.message || '上传失败';
       ui.showToast('error', `上传失败：${task.filename}`);
+      // Fix 6: 失败 8 秒后自动从队列移除（给用户足够时间看到错误）
+      setTimeout(() => {
+        const idx = uploadQueue.value.indexOf(task);
+        if (idx !== -1) uploadQueue.value.splice(idx, 1);
+      }, 8000);
     }
+  }
+
+  // Fix 6: 手动清除已完成（done/error）的上传记录
+  function clearCompletedUploads() {
+    uploadQueue.value = uploadQueue.value.filter(t => !['done', 'error'].includes(t.status));
   }
 
   // ── KB 成员 ─────────────────────────────────────────────────────────
@@ -230,7 +245,7 @@ export const useKbStore = defineStore('kb', () => {
     kbMembers, kbMembersVisible, currentKb, currentKbName,
     resetSelection,
     loadKbs, selectKb, createKb, updateKb, deleteKb,
-    loadDocs, uploadFile,
+    loadDocs, uploadFile, clearCompletedUploads,
     startDocPolling, stopDocPolling,
     loadKbMembers, addKbMember, removeKbMember, updateKbMemberRole,
   };

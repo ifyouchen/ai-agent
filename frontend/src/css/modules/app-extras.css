@@ -682,3 +682,26 @@ a.user-dropdown-item:hover { background: var(--sidebar-hover); color: #fff; }
     .chat-messages { padding: 8px; }
 }
 
+
+/* ===== Fix 14: 顶栏通知角标 ===== */
+.topbar-btn-notice {
+    position: relative;
+}
+.topbar-notice-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    background: #e53e3e;
+    color: #fff;
+    border-radius: 9999px;
+    font-size: 9px;
+    font-weight: 700;
+    min-width: 14px;
+    height: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 3px;
+    line-height: 1;
+    pointer-events: none;
+}

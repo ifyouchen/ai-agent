@@ -7,6 +7,7 @@ import com.example.aiagent.kb.mapper.ChunkMapper;
 import com.example.aiagent.kb.mapper.DocumentMapper;
 import com.example.aiagent.kb.mapper.KnowledgeBaseMapper;
 import com.example.aiagent.kb.mapper.RetrievalLogMapper;
+import com.example.aiagent.rag.DocumentIngestService;
 import com.example.aiagent.rag.retrieval.Bm25Retriever;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +43,10 @@ public class KnowledgeBaseService {
     /** BM25 检索器，required=false：未启用时 Bean 不存在，注入 null，不影响启动 */
     @Autowired(required = false)
     private Bm25Retriever bm25Retriever;
+
+    /** Fix 3: 文档解析服务（重试解析用） */
+    @Autowired
+    private DocumentIngestService documentIngestService;
 
     @Autowired(required = false)
     private JdbcTemplate jdbcTemplate;
@@ -250,6 +255,36 @@ public class KnowledgeBaseService {
         });
 
         log.info("文档删除完成 docId={}", docId);
+    }
+
+    /**
+     * Fix 3: 对解析失败的文档发起重试。
+     * 重置状态为 PENDING 并重新触发异步解析链路。
+     *
+     * @throws IllegalArgumentException 若文档不存在或不属于该租户
+     * @throws IllegalStateException    若文档状态不是 FAILED
+     */
+    public void retryDocument(String tenantId, Long docId) {
+        Document doc = documentMapper.findById(docId)
+                .orElseThrow(() -> new IllegalArgumentException("文档不存在：docId=" + docId));
+
+        if (!doc.getTenantId().equals(tenantId)) {
+            throw new IllegalArgumentException(
+                    String.format("文档 %d 不属于租户 %s", docId, tenantId));
+        }
+
+        if (!"FAILED".equals(doc.getParseStatus())) {
+            throw new IllegalStateException(
+                    String.format("文档 %d 状态为 %s，只有 FAILED 状态才能重试", docId, doc.getParseStatus()));
+        }
+
+        // 重置状态为 PENDING，清空错误信息
+        documentMapper.updateParseStatusWithError(docId, "PENDING", null);
+
+        // 异步重新解析
+        documentIngestService.retryIngestAsync(doc);
+
+        log.info("文档重试已提交 docId={} kbId={} name={}", docId, doc.getKbId(), doc.getName());
     }
 
     // ====================================================================

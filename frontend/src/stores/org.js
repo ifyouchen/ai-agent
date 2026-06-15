@@ -6,12 +6,15 @@ import { computed, ref } from 'vue';
 import * as api from '../services/api.js';
 import { useUiStore } from './ui.js';
 
+
 export const useOrgStore = defineStore('org', () => {
   const ui = useUiStore();
 
-  const organizations = ref([]);
-  const currentOrgId  = ref(null);
-  const orgLoading    = ref(false);
+  const organizations      = ref([]);
+  const currentOrgId       = ref(null);
+  const orgLoading         = ref(false);
+  // Fix 14: 待处理通知计数（收到的邀请 + 待处理的加入申请状态）
+  const pendingNoticeCount = ref(0);
 
   const currentOrg = computed(() =>
     organizations.value.find(o => o.orgId === currentOrgId.value) || null
@@ -33,10 +36,27 @@ export const useOrgStore = defineStore('org', () => {
         const personal = organizations.value.find(o => o.orgType === 'PERSONAL');
         currentOrgId.value = personal?.orgId || organizations.value[0].orgId;
       }
+      // Fix 14: 加载完组织后刷新通知计数
+      refreshNoticeCount();
     } catch (err) {
       ui.showToast('error', err.message || '加载组织失败');
     } finally {
       orgLoading.value = false;
+    }
+  }
+
+  // Fix 14: 计算未读通知数（收到的待处理邀请 + 我的待处理申请）
+  async function refreshNoticeCount() {
+    try {
+      const [invites, requests] = await Promise.all([
+        api.listMyInvitations().catch(() => []),
+        api.listMyJoinRequests().catch(() => []),
+      ]);
+      pendingNoticeCount.value =
+        (invites || []).filter(i => i.status === 'PENDING').length +
+        (requests || []).filter(r => r.status === 'PENDING').length;
+    } catch {
+      // 静默失败，不影响正常流程
     }
   }
 
@@ -127,12 +147,13 @@ export const useOrgStore = defineStore('org', () => {
   }
 
   return {
-    organizations, currentOrgId, orgLoading,
+    organizations, currentOrgId, orgLoading, pendingNoticeCount,
     currentOrg, currentOrgName,
     loadOrgs, selectOrg, createOrg, updateOrg, deleteOrg, leaveOrg,
     getOrgMembers, inviteMember, listInvitations, cancelInvitation,
     acceptInvitation, rejectInvitation, listMyInvitations,
     applyJoin, listJoinRequests, approveJoinRequest, rejectJoinRequest, listMyJoinRequests,
     removeMember, updateMemberRole,
+    refreshNoticeCount,
   };
 });

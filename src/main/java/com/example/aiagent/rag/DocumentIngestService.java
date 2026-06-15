@@ -26,6 +26,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.MalformedInputException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.util.List;
@@ -150,6 +151,9 @@ public class DocumentIngestService {
         Document docEntity = createDocumentEntity(tenantId, kbId,
                 file.getOriginalFilename(), file.getSize(), fileHash, file.getContentType());
 
+        // Fix 3: 记录文件存储路径，供解析失败时重试使用
+        documentMapper.updateFilePath(docEntity.getId(), savedFile.toAbsolutePath().toString());
+
         // 3. 后台异步执行解析（不阻塞当前 HTTP 线程）
         // 通过 Spring 代理调用（确保 @Async 生效，避免同类自调用绕过 AOP）
         applicationContext.getBean(DocumentIngestService.class)
@@ -168,6 +172,7 @@ public class DocumentIngestService {
     public void doIngestAsync(Path filePath, String tenantId, Long kbId,
                               String fileName, Long fileSize, String contentType,
                               Long docEntityId, Path asyncDir) {
+        boolean succeeded = false;  // Fix 3: 追踪成功状态，失败时保留文件以供重试
         try {
             log.info("[RAG][开始] 后台导入文档 docId={} tenantId={} kbId={} file={} size={} contentType={}",
                     docEntityId, tenantId, kbId, fileName, fileSize, contentType);
@@ -208,6 +213,7 @@ public class DocumentIngestService {
             documentMapper.updateParseStatus(docEntityId, "DONE");
             documentMapper.updateChunkCount(docEntityId, chunkCount);
             updateKbDocCount(kbId);
+            succeeded = true;  // Fix 3: 标记成功
 
             log.info("[RAG][完成] 文档导入完成 docId={} tenantId={} kbId={} file={} chunks={}",
                     docEntityId, tenantId, kbId, fileName, chunkCount);
@@ -216,10 +222,37 @@ public class DocumentIngestService {
                     docEntityId, tenantId, kbId, fileName, e.getMessage(), e);
             documentMapper.updateParseStatusWithError(docEntityId, "FAILED", e.getMessage());
         } finally {
-            // 清理临时文件目录
-            try { Files.deleteIfExists(filePath); } catch (IOException ignore) {}
-            try { Files.deleteIfExists(asyncDir); } catch (IOException ignore) {}
+            // Fix 3: 成功时清理临时文件；失败时保留，供重试接口使用
+            if (succeeded) {
+                try { Files.deleteIfExists(filePath); } catch (IOException ignore) {}
+                try { Files.deleteIfExists(asyncDir); } catch (IOException ignore) {}
+            }
         }
+    }
+
+    /**
+     * Fix 3: 对解析失败的文档发起重试。
+     * 读取 document.filePath 并重新触发异步解析链路，跳过文件上传步骤。
+     */
+    @Async("documentIngestExecutor")
+    public void retryIngestAsync(Document doc) {
+        if (doc.getFilePath() == null || doc.getFilePath().isBlank()) {
+            log.warn("[RAG][重试失败] 文档无存储路径，无法重试 docId={}", doc.getId());
+            documentMapper.updateParseStatusWithError(doc.getId(), "FAILED",
+                    "原始文件路径缺失，无法重试，请重新上传");
+            return;
+        }
+        Path filePath = Paths.get(doc.getFilePath());
+        if (!Files.exists(filePath)) {
+            log.warn("[RAG][重试失败] 原始文件已丢失 docId={} path={}", doc.getId(), doc.getFilePath());
+            documentMapper.updateParseStatusWithError(doc.getId(), "FAILED",
+                    "原始文件已丢失，无法重试，请重新上传");
+            return;
+        }
+        log.info("[RAG][重试] 开始重新解析文档 docId={} path={}", doc.getId(), doc.getFilePath());
+        applicationContext.getBean(DocumentIngestService.class)
+                .doIngestAsync(filePath, doc.getTenantId(), doc.getKbId(),
+                        doc.getName(), doc.getFileSize(), null, doc.getId(), filePath.getParent());
     }
 
     /**

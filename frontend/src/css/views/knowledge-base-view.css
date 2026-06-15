@@ -1119,3 +1119,292 @@
     opacity: 1;
   }
 }
+
+/* ===== Fix 1: KB 成员管理 Tab ===== */
+.kb-tab-badge {
+  background: var(--primary-color, #5b6ef5);
+  color: #fff;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  margin-left: 4px;
+}
+
+.kb-members-panel {
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.kb-members-add-section,
+.kb-members-list-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kb-members-add-title,
+.kb-members-list-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #20242c);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kb-members-count {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary, #888);
+}
+
+.kb-member-search-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.kb-member-search-input {
+  flex: 1;
+  border: 1px solid var(--border-color, #e0e4ef);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+  outline: none;
+}
+
+.kb-member-search-input:focus {
+  border-color: var(--primary-color, #5b6ef5);
+}
+
+.kb-member-role-select-input {
+  border: 1px solid var(--border-color, #e0e4ef);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+
+.kb-member-search-dropdown {
+  border: 1px solid var(--border-color, #e0e4ef);
+  border-radius: 10px;
+  background: var(--bg-elevated, #fff);
+  box-shadow: 0 4px 16px rgba(0,0,0,.08);
+  overflow: hidden;
+}
+
+.kb-member-search-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background .15s;
+}
+
+.kb-member-search-item:hover { background: var(--bg-hover, #f7f8fc); }
+
+.kb-member-search-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--primary-color, #5b6ef5);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.kb-member-search-name { font-size: 13px; font-weight: 500; flex: 1; }
+
+.kb-member-add-btn {
+  border: none;
+  background: var(--primary-color, #5b6ef5);
+  color: #fff;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+
+.kb-member-add-btn:hover { opacity: .85; }
+
+.kb-member-list { display: flex; flex-direction: column; gap: 2px; }
+
+.kb-member-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: background .15s;
+}
+
+.kb-member-row:hover { background: var(--bg-hover, #f7f8fc); }
+
+.kb-member-avatar-sm {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-subtle, #eef0f8);
+  color: var(--text-primary, #20242c);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.kb-member-name { flex: 1; font-size: 13px; }
+
+.kb-member-role-badge {
+  border-radius: 9999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.kb-member-role-badge.role-owner { background: #fef3c7; color: #92400e; }
+.kb-member-role-badge.role-editor { background: #dbeafe; color: #1e40af; }
+.kb-member-role-badge.role-viewer { background: #f3f4f6; color: #6b7280; }
+
+.kb-member-role-edit {
+  border: 1px solid var(--border-color, #e0e4ef);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+}
+
+.kb-member-remove-btn {
+  border: none;
+  background: transparent;
+  color: #e53e3e;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background .15s;
+}
+
+.kb-member-remove-btn:hover { background: #fff5f5; }
+
+.kb-members-empty {
+  font-size: 13px;
+  color: var(--text-secondary, #888);
+  padding: 12px 0;
+}
+
+/* ===== Fix 3: 重试按钮 ===== */
+.doc-retry-btn {
+  border: none;
+  background: transparent;
+  color: var(--primary-color, #5b6ef5);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-decoration: underline;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.doc-retry-btn:hover { opacity: .75; }
+
+/* ===== Fix 5: 文档工具栏 ===== */
+.kb-docs-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 10px;
+}
+
+.kb-docs-filters {
+  display: flex;
+  gap: 6px;
+}
+
+.kb-filter-select {
+  border: 1px solid var(--border-color, #e0e4ef);
+  border-radius: 7px;
+  padding: 5px 10px;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+  background: var(--bg-elevated, #fff);
+}
+
+/* ===== Fix 6: 清除已完成按钮 ===== */
+.kb-text-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary, #888);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-decoration: underline;
+}
+
+.kb-text-btn:hover { color: var(--text-primary, #333); }
+
+/* ===== Fix 11: 解析进度提示 ===== */
+.doc-progress-hint {
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+  margin-left: 2px;
+}
+
+/* ===== Fix 13: KB 统计栏 ===== */
+.kb-stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 10px 0;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border-color, #e0e4ef);
+}
+
+.kb-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 20px;
+  gap: 2px;
+}
+
+.kb-stat-item:first-child { padding-left: 4px; }
+
+.kb-stat-num {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary, #20242c);
+  line-height: 1.1;
+}
+
+.kb-stat-label {
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+}
+
+.kb-stat-divider {
+  width: 1px;
+  height: 30px;
+  background: var(--border-color, #e0e4ef);
+}

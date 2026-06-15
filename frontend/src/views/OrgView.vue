@@ -74,11 +74,13 @@
             <div>
               <h3>{{ displayOrgName(org.currentOrg) }}</h3>
               <p>{{ orgTypeLabel(org.currentOrg.orgType) }} · 我的角色：{{ orgRoleLabel(org.currentOrg.role) }}</p>
-              <div class="org-id-row">
-                <span class="org-id-label">组织 ID</span>
-                <code class="org-id-value">{{ org.currentOrg.orgId }}</code>
-                <button class="org-id-copy" type="button" @click="copyOrgId(org.currentOrg.orgId)">复制</button>
-              </div>
+              <details class="org-id-details">
+                <summary class="org-id-summary">组织 ID</summary>
+                <div class="org-id-row">
+                  <code class="org-id-value">{{ org.currentOrg.orgId }}</code>
+                  <button class="org-id-copy" type="button" @click="copyOrgId(org.currentOrg.orgId)">复制</button>
+                </div>
+              </details>
             </div>
           </div>
           <div class="org-detail-actions">
@@ -131,7 +133,7 @@
               type="button"
               @click="activeSection = 'orgJoinRequests'"
             >
-              <span>加入申请</span>
+              <span>加入审批</span>
               <span class="org-section-tab-count">{{ pendingJoinRequests.length }}</span>
             </button>
             <button
@@ -141,7 +143,7 @@
               type="button"
               @click="activeSection = 'myJoinRequests'"
             >
-              <span>加入申请</span>
+              <span>我的申请</span>
               <span class="org-section-tab-count">{{ pendingMyJoinRequests.length }}</span>
             </button>
             <button
@@ -163,7 +165,29 @@
             </div>
 
             <div v-if="org.currentOrg.orgType === 'PERSONAL'" class="org-notice inline">
-              个人空间仅自己可见，不支持成员协作。需要协作时请创建企业组织，或在「加入申请」中申请加入其他组织。
+              个人空间仅自己可见，不支持成员协作。需要协作时请创建企业组织，或在下方申请加入已有组织。
+            </div>
+            <!-- Fix 10：个人空间直接展示申请加入表单，无需切 Tab -->
+            <div v-if="org.currentOrg.orgType === 'PERSONAL'" class="org-join-shortcut">
+              <div class="org-join-shortcut-title">申请加入组织</div>
+              <div class="org-apply-row">
+                <input
+                  v-model.trim="applyOrgId"
+                  type="text"
+                  placeholder="输入组织 ID"
+                  class="org-member-input"
+                />
+                <button class="org-primary-btn" type="button" :disabled="!applyOrgId || applySending" @click="doApplyJoin">
+                  <svg v-if="applySending" class="inline-spinner" viewBox="0 0 24 24" fill="none" width="14" height="14">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
+                  </svg>
+                  {{ applySending ? '申请中' : '申请加入' }}
+                </button>
+              </div>
+              <div v-if="pendingMyJoinRequests.length" class="org-join-pending-hint">
+                有 {{ pendingMyJoinRequests.length }} 个待处理申请
+                <span class="org-text-link" @click="activeSection = 'myJoinRequests'">查看详情 →</span>
+              </div>
             </div>
 
             <template v-else>
@@ -246,6 +270,18 @@
                 </svg>
                 {{ inviteSending ? '发送中' : '发送邀请' }}
               </button>
+            </div>
+            <!-- Fix 9: 已注册用户快速搜索结果 -->
+            <div v-if="inviteSearchResults.length" class="invite-search-results">
+              <div class="invite-search-hint">以下用户已注册，可直接添加（无需邮件邀请）</div>
+              <div v-for="u in inviteSearchResults" :key="u.userId" class="invite-search-item">
+                <span class="invite-search-avatar">{{ (u.username || 'U').slice(0,1).toUpperCase() }}</span>
+                <span class="invite-search-name">{{ u.username }}</span>
+                <span class="invite-search-uid">{{ u.userId?.slice(0, 8) }}…</span>
+                <button class="org-text-btn primary sm" type="button" :disabled="inviteSending" @click="quickAddMember(u)">
+                  直接添加
+                </button>
+              </div>
             </div>
           </section>
 
@@ -409,6 +445,7 @@ import { copyText } from '../js/utils.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useOrgStore } from '../stores/org.js';
 import { useUiStore } from '../stores/ui.js';
+import * as api from '../services/api.js';
 
 const auth = useAuthStore();
 const org = useOrgStore();
@@ -418,6 +455,7 @@ const router = useRouter();
 
 const inviteEmailOrUsername = ref('');
 const inviteSending         = ref(false);
+const inviteSearchResults   = ref([]);   // 快速搜索已注册用户结果
 const applyOrgId            = ref('');
 const applySending          = ref(false);
 const activeSection         = ref('members');
@@ -614,6 +652,40 @@ async function doInvite() {
     await loadInvitations();
   } catch (err) {
     ui.showToast('error', err.message || '邀请失败');
+  } finally {
+    inviteSending.value = false;
+  }
+}
+
+// Fix 9：实时搜索已注册用户，支持直接添加（无需发邮件邀请）
+let _inviteSearchTimer = null;
+watch(inviteEmailOrUsername, (val) => {
+  clearTimeout(_inviteSearchTimer);
+  if (!val || val.length < 2 || !canManageMembers.value) {
+    inviteSearchResults.value = [];
+    return;
+  }
+  _inviteSearchTimer = setTimeout(async () => {
+    try {
+      const res = await api.searchUsers(val);
+      inviteSearchResults.value = (res || [])
+        .filter(u => !members.value.find(m => m.userId === u.userId))
+        .slice(0, 5);
+    } catch { inviteSearchResults.value = []; }
+  }, 300);
+});
+
+async function quickAddMember(user) {
+  inviteSending.value = true;
+  try {
+    await org.inviteMember(org.currentOrgId, user.username, 'MEMBER');
+    ui.showToast('success', `「${user.username}」已加入组织`);
+    await loadMembers();
+    inviteEmailOrUsername.value = '';
+    inviteSearchResults.value = [];
+    await loadInvitations();
+  } catch (err) {
+    ui.showToast('error', err.message || '添加失败');
   } finally {
     inviteSending.value = false;
   }
@@ -821,6 +893,7 @@ async function handleAcceptInvite(token) {
 
 function clearInvite() {
   inviteEmailOrUsername.value = '';
+  inviteSearchResults.value = [];
   memberSearch.value = '';
 }
 </script>

@@ -30,6 +30,9 @@ public interface DocumentMapper {
 
     int updateChunkCount(@Param("id") Long id, @Param("chunkCount") int chunkCount);
 
+    /** Fix 3: 更新文件存储路径（供解析失败重试时读取） */
+    int updateFilePath(@Param("id") Long id, @Param("filePath") String filePath);
+
     void insert(Document document);
 
     void deleteById(@Param("id") Long id);
