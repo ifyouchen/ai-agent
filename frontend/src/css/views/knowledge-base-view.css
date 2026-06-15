@@ -1120,50 +1120,44 @@
   }
 }
 
-/* ===== Fix 1: KB 成员管理 Tab ===== */
+
+/* ===================================================================
+   Fix 1: KB 成员管理 Tab 内容
+   =================================================================== */
+
 .kb-tab-badge {
-  background: var(--primary-color, #5b6ef5);
-  color: #fff;
-  border-radius: 9999px;
-  font-size: 10px;
-  font-weight: 700;
-  min-width: 16px;
-  height: 16px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 4px;
-  margin-left: 4px;
+  margin-left: 2px;
 }
 
 .kb-members-panel {
-  padding: 16px 0;
+  padding: 20px 0;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 22px;
 }
 
-.kb-members-add-section,
-.kb-members-list-section {
+.kb-members-add-section {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.kb-members-add-title,
-.kb-members-list-title {
+.kb-members-add-title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--text-primary, #20242c);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.kb-members-count {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--text-secondary, #888);
+  color: var(--text-primary);
+  margin-bottom: 2px;
 }
 
 .kb-member-search-row {
@@ -1172,53 +1166,65 @@
   align-items: center;
 }
 
+/* 复用 .org-member-input 规格 */
 .kb-member-search-input {
   flex: 1;
-  border: 1px solid var(--border-color, #e0e4ef);
-  border-radius: 8px;
-  padding: 7px 12px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-primary);
   font-size: 13px;
+  font-family: inherit;
   outline: none;
+  transition: border-color .15s, box-shadow .15s;
 }
-
 .kb-member-search-input:focus {
-  border-color: var(--primary-color, #5b6ef5);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(79, 103, 245, .08);
 }
+.kb-member-search-input::placeholder { color: var(--text-light); }
 
+/* 角色选择 */
 .kb-member-role-select-input {
-  border: 1px solid var(--border-color, #e0e4ef);
-  border-radius: 8px;
-  padding: 7px 10px;
+  height: 40px;
+  padding: 0 10px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-secondary);
   font-size: 13px;
+  font-family: inherit;
   outline: none;
   cursor: pointer;
+  transition: border-color .15s;
 }
+.kb-member-role-select-input:focus { border-color: var(--primary); }
 
+/* 搜索结果下拉 */
 .kb-member-search-dropdown {
-  border: 1px solid var(--border-color, #e0e4ef);
-  border-radius: 10px;
-  background: var(--bg-elevated, #fff);
-  box-shadow: 0 4px 16px rgba(0,0,0,.08);
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
   overflow: hidden;
 }
-
 .kb-member-search-item {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
-  cursor: pointer;
-  transition: background .15s;
+  padding: 9px 14px;
+  transition: background .12s;
 }
-
-.kb-member-search-item:hover { background: var(--bg-hover, #f7f8fc); }
+.kb-member-search-item:hover { background: var(--surface-soft); }
 
 .kb-member-search-avatar {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  background: var(--primary-color, #5b6ef5);
-  color: #fff;
+  background: var(--primary-light);
+  color: var(--primary);
   font-size: 12px;
   font-weight: 700;
   display: flex;
@@ -1226,185 +1232,269 @@
   justify-content: center;
   flex-shrink: 0;
 }
-
-.kb-member-search-name { font-size: 13px; font-weight: 500; flex: 1; }
-
-.kb-member-add-btn {
-  border: none;
-  background: var(--primary-color, #5b6ef5);
-  color: #fff;
-  border-radius: 6px;
-  padding: 5px 12px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: opacity .15s;
+.kb-member-search-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
 }
+/* 添加按钮 — 复用 .kb-action-btn.primary 风格（胶囊型） */
+.kb-member-add-btn {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 18px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(79, 103, 245, .18);
+}
+.kb-member-add-btn:hover { background: var(--primary-hover); }
 
-.kb-member-add-btn:hover { opacity: .85; }
-
+/* 成员列表 */
+.kb-members-list-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.kb-members-list-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.kb-members-count {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.kb-members-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 16px 0;
+  text-align: center;
+}
 .kb-member-list { display: flex; flex-direction: column; gap: 2px; }
 
+/* 成员行 — 对齐 .member-row */
 .kb-member-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  transition: background .15s;
+  padding: 8px 10px;
+  border-radius: 10px;
+  transition: background .12s;
 }
-
-.kb-member-row:hover { background: var(--bg-hover, #f7f8fc); }
+.kb-member-row:hover { background: var(--surface-soft); }
 
 .kb-member-avatar-sm {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  background: var(--bg-subtle, #eef0f8);
-  color: var(--text-primary, #20242c);
+  background: var(--surface-soft);
+  color: var(--primary);
   font-size: 12px;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  border: 1px solid var(--border-light);
+}
+.kb-member-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-primary);
 }
 
-.kb-member-name { flex: 1; font-size: 13px; }
-
+/* 角色徽章 — 对齐 .member-role-badge */
 .kb-member-role-badge {
-  border-radius: 9999px;
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
+  padding: 3px 9px;
+}
+.kb-member-role-badge.role-owner {
+  color: var(--primary);
+  background: var(--primary-light);
+}
+.kb-member-role-badge.role-editor {
+  color: #2B6CB0;
+  background: #eff6ff;
+}
+.kb-member-role-badge.role-viewer {
+  color: var(--text-muted);
+  background: var(--border-light);
 }
 
-.kb-member-role-badge.role-owner { background: #fef3c7; color: #92400e; }
-.kb-member-role-badge.role-editor { background: #dbeafe; color: #1e40af; }
-.kb-member-role-badge.role-viewer { background: #f3f4f6; color: #6b7280; }
-
+/* 角色修改下拉 */
 .kb-member-role-edit {
-  border: 1px solid var(--border-color, #e0e4ef);
-  border-radius: 6px;
-  padding: 4px 8px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--text-secondary);
   font-size: 12px;
+  font-family: inherit;
   outline: none;
   cursor: pointer;
 }
 
+/* 移除按钮 — 对齐 .member-remove-btn */
 .kb-member-remove-btn {
-  border: none;
-  background: transparent;
-  color: #e53e3e;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: var(--radius-xs);
+  padding: 4px 10px;
   font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: background .15s;
+  transition: all .12s;
+  font-family: inherit;
+}
+.kb-member-remove-btn:hover {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: var(--error);
 }
 
-.kb-member-remove-btn:hover { background: #fff5f5; }
 
-.kb-members-empty {
-  font-size: 13px;
-  color: var(--text-secondary, #888);
-  padding: 12px 0;
-}
+/* ===================================================================
+   Fix 3: 文档解析失败重试按钮
+   =================================================================== */
 
-/* ===== Fix 3: 重试按钮 ===== */
 .doc-retry-btn {
-  border: none;
-  background: transparent;
-  color: var(--primary-color, #5b6ef5);
-  font-size: 11px;
-  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   padding: 2px 8px;
-  border-radius: 4px;
-  text-decoration: underline;
-  margin-left: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .12s;
+  margin-left: 6px;
   vertical-align: middle;
+  font-family: inherit;
+}
+.doc-retry-btn:hover {
+  border-color: var(--primary);
+  background: var(--primary-light);
 }
 
-.doc-retry-btn:hover { opacity: .75; }
 
-/* ===== Fix 5: 文档工具栏 ===== */
+/* ===================================================================
+   Fix 5: 文档列表工具栏（排序 & 过滤）
+   =================================================================== */
+
 .kb-docs-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   gap: 10px;
 }
-
 .kb-docs-filters {
   display: flex;
   gap: 6px;
 }
-
+/* 过滤/排序 select — 对齐 org-section-tabs 风格 */
 .kb-filter-select {
-  border: 1px solid var(--border-color, #e0e4ef);
-  border-radius: 7px;
-  padding: 5px 10px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
   font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
   outline: none;
   cursor: pointer;
-  background: var(--bg-elevated, #fff);
+  transition: border-color .12s;
 }
+.kb-filter-select:hover { border-color: var(--border); }
+.kb-filter-select:focus { border-color: var(--primary); }
 
-/* ===== Fix 6: 清除已完成按钮 ===== */
+
+/* ===================================================================
+   Fix 6: 上传队列"清除已完成"文本按钮
+   =================================================================== */
+
 .kb-text-btn {
   border: none;
   background: transparent;
-  color: var(--text-secondary, #888);
+  color: var(--text-muted);
   font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
   padding: 2px 6px;
-  border-radius: 4px;
-  text-decoration: underline;
+  border-radius: var(--radius-xs);
+  font-family: inherit;
+  transition: color .12s, background .12s;
+}
+.kb-text-btn:hover {
+  color: var(--primary);
+  background: var(--primary-light);
 }
 
-.kb-text-btn:hover { color: var(--text-primary, #333); }
 
-/* ===== Fix 11: 解析进度提示 ===== */
+/* ===================================================================
+   Fix 11: 文档解析进度提示（"已切片 N 段"）
+   =================================================================== */
+
 .doc-progress-hint {
-  font-size: 11px;
-  color: var(--text-secondary, #888);
-  margin-left: 2px;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 400;
 }
 
-/* ===== Fix 13: KB 统计栏 ===== */
+
+/* ===================================================================
+   Fix 13: KB 统计栏
+   =================================================================== */
+
 .kb-stats-bar {
   display: flex;
   align-items: center;
+  padding: 12px 0 14px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border-light);
   gap: 0;
-  padding: 10px 0;
-  margin-bottom: 4px;
-  border-bottom: 1px solid var(--border-color, #e0e4ef);
 }
-
 .kb-stat-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 0 20px;
   gap: 2px;
+  padding: 0 24px;
 }
-
-.kb-stat-item:first-child { padding-left: 4px; }
-
+.kb-stat-item:first-child { padding-left: 0; }
 .kb-stat-num {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
-  color: var(--text-primary, #20242c);
-  line-height: 1.1;
+  color: var(--text-primary);
+  line-height: 1;
 }
-
 .kb-stat-label {
   font-size: 11px;
-  color: var(--text-secondary, #888);
+  color: var(--text-muted);
 }
-
 .kb-stat-divider {
   width: 1px;
-  height: 30px;
-  background: var(--border-color, #e0e4ef);
+  height: 28px;
+  background: var(--border-light);
 }

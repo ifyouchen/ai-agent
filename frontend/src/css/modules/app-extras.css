@@ -683,25 +683,24 @@ a.user-dropdown-item:hover { background: var(--sidebar-hover); color: #fff; }
 }
 
 
-/* ===== Fix 14: 顶栏通知角标 ===== */
-.topbar-btn-notice {
-    position: relative;
-}
+
+/* ===================================================================
+   Fix 14: 顶栏「组织」按钮通知角标
+   =================================================================== */
+
+/* 角标 — 对齐 .org-section-tab-count / .self-badge 的胶囊风格 */
 .topbar-notice-badge {
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    background: #e53e3e;
-    color: #fff;
-    border-radius: 9999px;
-    font-size: 9px;
-    font-weight: 700;
-    min-width: 14px;
-    height: 14px;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0 3px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--error);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
     line-height: 1;
-    pointer-events: none;
+    margin-left: 2px;
 }

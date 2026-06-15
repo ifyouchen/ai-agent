@@ -1025,59 +1025,80 @@
   }
 }
 
-/* ===== Fix 12: 组织 ID 折叠区 ===== */
-.org-id-details {
-  margin-top: 6px;
-}
 
+/* ===================================================================
+   Fix 12: 组织 ID — 折叠为 details/summary，降低视觉权重
+   =================================================================== */
+
+.org-id-details {
+  margin-top: 8px;
+}
 .org-id-summary {
   font-size: 12px;
-  color: var(--text-secondary, #888);
+  color: var(--text-muted);
   cursor: pointer;
   user-select: none;
   list-style: none;
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  padding: 2px 0;
+  transition: color .12s;
 }
-
 .org-id-summary::-webkit-details-marker { display: none; }
-.org-id-summary::before { content: '›'; font-size: 14px; transition: transform .15s; }
-details.org-id-details[open] .org-id-summary::before { transform: rotate(90deg); }
-
-/* ===== Fix 9: 邀请成员快速搜索结果 ===== */
-.invite-search-results {
-  margin-top: 8px;
-  border: 1px solid var(--border-color, #e0e4ef);
-  border-radius: 10px;
-  overflow: hidden;
-  background: var(--bg-elevated, #fff);
-  box-shadow: 0 2px 10px rgba(0,0,0,.06);
+.org-id-summary::before {
+  content: '›';
+  font-size: 14px;
+  transition: transform .15s;
+  display: inline-block;
 }
+details.org-id-details[open] .org-id-summary::before {
+  transform: rotate(90deg);
+}
+.org-id-summary:hover { color: var(--text-secondary); }
 
+
+/* ===================================================================
+   Fix 9: 邀请成员 — 快速搜索已注册用户
+   =================================================================== */
+
+/* 提示文案 */
 .invite-search-hint {
   font-size: 11px;
-  color: var(--text-secondary, #888);
-  padding: 6px 14px 8px;
-  border-top: 1px solid var(--border-color, #e0e4ef);
+  color: var(--text-muted);
+  padding: 4px 12px 8px;
+  border-top: 1px solid var(--border-light);
 }
 
+/* 结果容器 — 对齐 .invitation-list 面板风格 */
+.invite-search-results {
+  margin-top: 8px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+  box-shadow: var(--shadow-xs);
+}
+
+/* 结果行 — 对齐 .invitation-row */
 .invite-search-item {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
-  transition: background .15s;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-light);
+  transition: background .12s;
 }
+.invite-search-item:last-of-type { border-bottom: none; }
+.invite-search-item:hover { background: var(--surface-soft); }
 
-.invite-search-item:hover { background: var(--bg-hover, #f7f8fc); }
-
+/* 头像 — 对齐 .member-avatar */
 .invite-search-avatar {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  background: var(--primary-color, #5b6ef5);
-  color: #fff;
+  background: var(--primary-light);
+  color: var(--primary);
   font-size: 12px;
   font-weight: 700;
   display: flex;
@@ -1085,51 +1106,70 @@ details.org-id-details[open] .org-id-summary::before { transform: rotate(90deg);
   justify-content: center;
   flex-shrink: 0;
 }
-
-.invite-search-name { flex: 1; font-size: 13px; font-weight: 500; }
-
-.invite-search-uid { font-size: 11px; color: var(--text-secondary, #888); }
-
-.org-text-btn.primary.sm {
-  border: none;
-  background: var(--primary-color, #5b6ef5);
-  color: #fff;
-  border-radius: 6px;
-  padding: 4px 12px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: opacity .15s;
+.invite-search-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.invite-search-uid {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
-.org-text-btn.primary.sm:hover { opacity: .85; }
+/* 直接添加按钮 — 对齐 .org-text-btn 但 primary 色 */
+.org-text-btn.primary.sm {
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: #fff;
+  border-radius: 10px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.org-text-btn.primary.sm:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
 .org-text-btn.primary.sm:disabled { opacity: .5; cursor: not-allowed; }
 
-/* ===== Fix 10: 个人空间申请加入快捷入口 ===== */
+
+/* ===================================================================
+   Fix 10: 个人空间 — 申请加入组织快捷入口
+   =================================================================== */
+
+/* 外层容器 — 对齐 .org-apply-card 风格 */
 .org-join-shortcut {
-  margin-top: 16px;
+  margin-top: 14px;
   padding: 16px;
-  background: var(--bg-subtle, #f7f8fc);
+  border: 1px solid var(--border-light);
   border-radius: 12px;
+  background: var(--surface);
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-
 .org-join-shortcut-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary, #20242c);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 2px;
 }
 
+/* 待处理提示行 */
 .org-join-pending-hint {
   font-size: 12px;
-  color: var(--text-secondary, #888);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
-
+/* 查看链接 */
 .org-text-link {
-  color: var(--primary-color, #5b6ef5);
+  color: var(--primary);
   cursor: pointer;
-  text-decoration: underline;
+  font-weight: 500;
+  transition: opacity .12s;
 }
-
-.org-text-link:hover { opacity: .8; }
+.org-text-link:hover { opacity: .75; }
