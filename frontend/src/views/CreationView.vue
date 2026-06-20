@@ -1,0 +1,584 @@
+<template>
+  <div v-if="mode === 'home'" class="creation-view">
+    <header class="creation-header">
+      <div><h1>创作中心</h1><p>写小说、改小说、转短剧分场稿的一体化工作台。</p></div>
+      <button class="creation-primary-btn" type="button" @click="quickCreate('long_novel')">新建作品</button>
+    </header>
+    <section class="creation-grid">
+      <button v-for="item in shortcuts" :key="item.key" class="creation-action-card" type="button" @click="item.action">
+        <span>{{ item.icon }}</span><strong>{{ item.title }}</strong><small>{{ item.desc }}</small>
+      </button>
+    </section>
+    <section v-if="activeTask" class="creation-panel">
+      <div class="creation-section-title">
+        <h2>进行中任务</h2>
+        <div class="creation-row">
+          <button class="creation-secondary-btn" type="button" @click="refreshTask">刷新</button>
+          <button class="creation-secondary-btn" type="button" :disabled="!taskCanCancel" @click="cancelTask">取消</button>
+          <button class="creation-secondary-btn" type="button" :disabled="!taskCanRetry" @click="retryTask">重试</button>
+        </div>
+      </div>
+      <p>{{ activeTask.currentStep || activeTask.status }} · {{ activeTask.progress || 0 }}%</p>
+      <p v-if="activeTask.tokenUsage?.totalTokens" class="creation-muted">预估 Token：{{ activeTask.tokenUsage.totalTokens }}（输入 {{ activeTask.tokenUsage.inputTokens }} / 输出 {{ activeTask.tokenUsage.outputTokens }}）</p>
+      <p v-if="activeTask.errorMessage" class="creation-risk">{{ activeTask.errorMessage }}</p>
+    </section>
+    <ProjectCards title="最近作品" :projects="projects.slice(0, 6)" @script="startScript" />
+  </div>
+
+  <div v-else-if="mode === 'projects'" class="creation-view">
+    <header class="creation-header">
+      <div><h1>作品库</h1><p>统一管理小说项目、改编项目和短剧脚本草稿。</p></div>
+      <div class="creation-row">
+        <button class="creation-secondary-btn" type="button" @click="showImport = true">导入文本/DOCX</button>
+        <button class="creation-primary-btn" type="button" @click="showCreate = true">新建作品</button>
+      </div>
+    </header>
+    <div class="creation-tabs">
+      <button v-for="f in filters" :key="f.value" :class="{ active: filter === f.value }" type="button" @click="filter = f.value">{{ f.label }}</button>
+    </div>
+    <div class="creation-filters">
+      <label>状态<select v-model="statusFilter"><option value="all">全部状态</option><option value="writing">写作中</option><option value="rewriting">改写中</option><option value="adapting">改编中</option><option value="completed">已完成</option></select></label>
+      <label>排序<select v-model="sortOrder"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="title_asc">标题 A-Z</option></select></label>
+    </div>
+    <ProjectCards title="全部作品" :projects="filteredProjects" @script="startScript" />
+  </div>
+
+  <div v-else-if="mode === 'editor'" class="creation-workbench">
+    <aside class="creation-side">
+      <router-link to="/creation/projects">返回作品库</router-link>
+      <h2>{{ project?.title || '作品编辑器' }}</h2>
+      <button class="creation-primary-btn full" type="button" @click="addChapter">新增章节</button>
+      <button v-for="chapter in chapters" :key="chapter.id" class="creation-list-btn" :class="{ active: chapter.id === currentChapter?.id }" type="button" @click="selectChapter(chapter)">{{ chapter.title }}</button>
+    </aside>
+    <main class="creation-editor">
+      <input v-model="chapterForm.title" class="creation-title-input" placeholder="章节标题" />
+      <textarea v-model="chapterForm.content" class="creation-manuscript" placeholder="在这里写小说正文。"></textarea>
+      <footer><span>{{ wordCount }} 字</span><button type="button" @click="saveChapter">保存章节</button></footer>
+    </main>
+    <aside class="creation-ai">
+      <h3>AI 助手</h3>
+      <button v-for="action in aiActions" :key="action.type" type="button" @click="runAi(action.type)">{{ action.label }}</button>
+      <button type="button" @click="startRewrite">改小说三栏对照</button>
+      <button class="creation-primary-btn full" type="button" @click="startScript(project)">转短剧</button>
+      <div class="creation-versions">
+        <h3>版本快照</h3>
+        <button v-for="version in chapterVersions" :key="version.id" type="button" @click="restoreVersion(version)">
+          V{{ version.versionNo }} · {{ version.note || version.source }}
+        </button>
+        <p v-if="currentChapter && !chapterVersions.length">暂无快照</p>
+      </div>
+    </aside>
+  </div>
+
+  <div v-else-if="mode === 'rewrite'" class="creation-view">
+    <header class="creation-header">
+      <div><h1>改小说三栏对照</h1><p>原文、AI 改写稿和修改说明逐段确认。</p></div>
+      <button class="creation-primary-btn" type="button" @click="acceptRewrite">保存为新版本</button>
+    </header>
+    <section class="creation-columns" v-if="rewriteTask">
+      <article><h2>原文</h2><p v-for="(s, i) in rewriteTask.segments" :key="i">{{ s.source }}</p></article>
+      <article><h2>AI 改写稿</h2><div v-for="(s, i) in rewriteTask.segments" :key="i"><textarea v-model="s.rewritten"></textarea><button type="button" @click="s.status = 'accepted'">接受</button><button type="button" @click="s.status = 'rejected'">拒绝</button></div></article>
+      <article>
+        <h2>修改说明</h2>
+        <label class="creation-field">指定要求<textarea v-model="rewriteForm.instruction" rows="4" placeholder="例如：更口语、更狠一点、保留某个设定"></textarea></label>
+        <button class="creation-secondary-btn full" type="button" @click="retryRewrite">按要求再改一次</button>
+        <p v-for="(s, i) in rewriteTask.segments" :key="i">{{ s.note }}</p>
+      </article>
+    </section>
+  </div>
+
+  <div v-else-if="mode === 'script'" class="creation-workbench script-workbench">
+    <aside class="creation-side">
+      <router-link to="/creation/projects">返回作品库</router-link>
+      <h2>{{ draft?.title || '短剧改编' }}</h2>
+      <button class="creation-primary-btn full" type="button" @click="qualityCheck">质检全稿</button>
+      <template v-for="ep in draft?.episodes || []" :key="ep.id">
+        <h3>第{{ ep.episodeNo }}集</h3>
+        <button class="creation-secondary-btn full compact" type="button" @click="addScene(ep)">新增场次</button>
+        <button v-for="scene in ep.scenes" :key="scene.id" class="creation-list-btn" :class="{ active: scene.id === currentScene?.id }" type="button" @click="selectScene(ep, scene)">第{{ scene.sceneNo }}场</button>
+      </template>
+    </aside>
+    <main class="creation-editor script-editor" v-if="currentScene">
+      <input v-model="sceneForm.sceneTitle" class="creation-title-input" />
+      <label>场景<input v-model="sceneForm.location" /></label>
+      <label>人物<input v-model="sceneForm.characters" /></label>
+      <label>本场功能<input v-model="sceneForm.sceneFunction" /></label>
+      <label>画面<textarea v-model="sceneForm.visualAction"></textarea></label>
+      <label>旁白<textarea v-model="sceneForm.narration"></textarea></label>
+      <label>对白<textarea v-model="sceneForm.dialogue"></textarea></label>
+      <label>表演/镜头<textarea v-model="sceneForm.performanceCameraNote"></textarea></label>
+      <label>钩子<textarea v-model="sceneForm.hook"></textarea></label>
+      <footer><span>{{ currentEpisode?.coreHook }}</span><button type="button" @click="saveScene">保存场次</button></footer>
+    </main>
+    <aside class="creation-ai">
+      <h3>短剧助手</h3>
+      <button type="button" @click="improveScene('rewrite')">重写本场</button>
+      <button type="button" @click="improveScene('hook')">补钩子</button>
+      <button type="button" @click="improveScene('dialogue')">对白口语化</button>
+      <button type="button" @click="improveScene('externalize')">心理外化</button>
+      <button type="button" @click="moveScene('up')">上移场次</button>
+      <button type="button" @click="moveScene('down')">下移场次</button>
+      <button type="button" @click="deleteScene">删除场次</button>
+      <router-link class="creation-primary-btn full" :to="`/creation/scripts/${route.params.draftId}/export`">导出预览</router-link>
+      <div v-if="qualityReport" class="creation-quality"><strong>评分 {{ qualityReport.totalScore }}</strong><p v-for="x in qualityReport.mainIssues" :key="x">{{ x }}</p></div>
+      <div v-if="adaptationPlanEntries.length" class="creation-quality">
+        <strong>改编方案</strong>
+        <p v-for="item in adaptationPlanEntries" :key="item.label">{{ item.label }}：{{ item.value }}</p>
+      </div>
+    </aside>
+  </div>
+
+  <div v-else-if="mode === 'export'" class="creation-view">
+    <header class="creation-header">
+      <div><h1>导出预览</h1><p>生成 Markdown/DOCX 导出内容。</p></div>
+      <div class="creation-row">
+        <button class="creation-secondary-btn" type="button" @click="downloadExport">下载文件</button>
+        <button class="creation-primary-btn" type="button" @click="exportDraft">生成导出内容</button>
+      </div>
+    </header>
+    <section class="creation-export">
+      <aside class="creation-panel">
+        <label>格式<select v-model="exportForm.format"><option value="markdown">Markdown</option><option value="docx">DOCX</option></select></label>
+        <label>范围<select v-model="exportForm.scope"><option value="all">全部</option><option value="episode">选中集</option><option value="scene">选中场</option></select></label>
+        <label v-if="exportForm.scope === 'episode'">集数<select v-model.number="exportForm.episodeNo"><option v-for="ep in draft?.episodes || []" :key="ep.id" :value="ep.episodeNo">第{{ ep.episodeNo }}集</option></select></label>
+        <label v-if="exportForm.scope === 'scene'">场次<select v-model.number="exportForm.sceneId"><option v-for="scene in exportScenes" :key="scene.id" :value="scene.id">{{ scene.label }}</option></select></label>
+        <label><input v-model="exportForm.includeQualityReport" type="checkbox" /> 包含质量报告</label>
+        <label><input v-model="exportForm.includeAdaptationPlan" type="checkbox" /> 包含改编方案</label>
+        <label><input v-model="exportForm.includeCharacterTable" type="checkbox" /> 包含人物表</label>
+        <label><input v-model="exportForm.includeSceneDirectory" type="checkbox" /> 包含场次目录</label>
+        <div class="creation-check-list">
+          <strong>导出前检查 · {{ exportIssueCount }} 项待处理</strong>
+          <p v-for="item in exportChecks" :key="item.label" :class="{ pass: item.pass }">{{ item.pass ? '通过' : '待修复' }}：{{ item.label }}</p>
+        </div>
+        <button class="creation-secondary-btn full" type="button" @click="router.push(`/creation/scripts/${route.params.draftId}`)">返回修复</button>
+        <button class="creation-secondary-btn full" type="button" @click="autoFixExportIssues">AI 自动修复可修复项</button>
+      </aside>
+      <main class="creation-panel"><pre>{{ exported?.content || scriptPreview }}</pre></main>
+    </section>
+  </div>
+
+  <div v-if="showCreate" class="creation-modal" @click.self="showCreate = false">
+    <form class="creation-dialog" @submit.prevent="createProject"><h2>新建作品</h2><input v-model="createForm.title" required placeholder="作品名" /><select v-model="createForm.type"><option value="long_novel">长篇小说</option><option value="short_story">短篇故事</option><option value="adaptation">改编项目</option></select><textarea v-model="createForm.description" placeholder="简介"></textarea><button class="creation-primary-btn">创建</button></form>
+  </div>
+  <div v-if="showImport" class="creation-modal" @click.self="showImport = false">
+    <form class="creation-dialog wide" @submit.prevent="previewImport">
+      <h2>导入小说文本</h2>
+      <input v-model="importForm.title" required placeholder="作品名" />
+      <label class="creation-file-field">
+        <span>上传文件</span>
+        <input type="file" accept=".txt,.md,.doc,.docx" @change="onImportFileChange" />
+      </label>
+      <textarea v-model="importForm.content" rows="12" placeholder="或直接粘贴正文"></textarea>
+      <section v-if="importPreview" class="creation-import-preview">
+        <strong>{{ importPreview.detectedTypeLabel }} · {{ importPreview.wordCount }} 字 · {{ importPreview.chapterCount }} 章</strong>
+        <p v-if="importPreview.truncated">仅展示前 20 章预览。</p>
+        <div v-for="chapter in importPreview.chapters" :key="chapter.chapterNo">
+          第{{ chapter.chapterNo }}章 · {{ chapter.title }} · {{ chapter.wordCount }}字
+        </div>
+      </section>
+      <div class="creation-row">
+        <button class="creation-secondary-btn" type="submit">解析预览</button>
+        <button class="creation-primary-btn" type="button" :disabled="!importPreview" @click="confirmImport">确认导入</button>
+      </div>
+    </form>
+  </div>
+</template>
+
+<script setup>
+import { computed, defineComponent, h, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { storyApi } from '../services/storyApi.js';
+import { useUiStore } from '../stores/ui.js';
+
+const ProjectCards = defineComponent({
+  props: { title: String, projects: Array },
+  emits: ['script'],
+  setup(props, { emit }) {
+    return () => h('section', { class: 'creation-panel' }, [
+      h('div', { class: 'creation-section-title' }, [h('h2', props.title)]),
+      !props.projects?.length
+        ? h('div', { class: 'creation-empty' }, '暂无作品')
+        : h('div', { class: 'creation-projects' }, props.projects.map(project => h('article', { class: 'creation-project-card', key: project.id }, [
+            h('span', project.typeLabel || project.type),
+            h('h3', project.title),
+            h('p', project.description || '还没有简介'),
+            h('small', `${project.status || 'writing'} · ${project.chapterCount || 0}章 · ${project.scriptDraftCount || 0}个脚本`),
+            h('div', { class: 'creation-row' }, [
+              h('a', { href: `#/creation/projects/${project.id}/editor` }, '继续写作'),
+              project.latestScriptDraftId ? h('a', { href: `#/creation/scripts/${project.latestScriptDraftId}` }, '查看脚本') : null,
+              h('button', { type: 'button', onClick: () => emit('script', project) }, '转短剧'),
+            ]),
+          ]))),
+    ]);
+  },
+});
+
+const route = useRoute();
+const router = useRouter();
+const ui = useUiStore();
+const projects = ref([]);
+const project = ref(null);
+const chapters = ref([]);
+const currentChapter = ref(null);
+const rewriteTask = ref(null);
+const draft = ref(null);
+const currentEpisode = ref(null);
+const currentScene = ref(null);
+const qualityReport = ref(null);
+const exported = ref(null);
+const chapterVersions = ref([]);
+const activeTask = ref(null);
+const filter = ref('all');
+const statusFilter = ref('all');
+const sortOrder = ref('updated_desc');
+const showCreate = ref(false);
+const showImport = ref(route.query.import === '1');
+const importFileRef = ref(null);
+const importPreview = ref(null);
+const chapterForm = reactive({ title: '', content: '' });
+const createForm = reactive({ title: '', type: 'long_novel', description: '' });
+const importForm = reactive({ title: '', content: '' });
+const rewriteForm = reactive({ instruction: '' });
+const sceneForm = reactive({});
+const exportForm = reactive({
+  format: 'markdown',
+  scope: 'all',
+  episodeNo: null,
+  sceneId: null,
+  includeQualityReport: true,
+  includeAdaptationPlan: true,
+  includeCharacterTable: true,
+  includeSceneDirectory: true,
+});
+const filters = [{ value: 'all', label: '全部' }, { value: 'long_novel', label: '长篇' }, { value: 'short_story', label: '短篇' }, { value: 'adaptation', label: '改编' }, { value: 'short_drama', label: '短剧' }];
+const aiActions = [
+  { type: 'setting', label: '生成设定' },
+  { type: 'characters', label: '生成人物' },
+  { type: 'outline', label: '生成大纲' },
+  { type: 'continue', label: '续写' },
+  { type: 'expand', label: '扩写' },
+  { type: 'shorten', label: '缩写' },
+  { type: 'style', label: '改风格' },
+  { type: 'polish', label: '润色' },
+  { type: 'deslop', label: '去 AI 味' },
+  { type: 'dialogue', label: '对白优化' },
+  { type: 'conflict', label: '强化冲突' },
+  { type: 'review', label: '章节审查' },
+];
+
+const mode = computed(() => route.meta.creationMode || 'home');
+const filteredProjects = computed(() => {
+  const list = projects.value
+    .filter(p => filter.value === 'all' || p.type === filter.value)
+    .filter(p => statusFilter.value === 'all' || p.status === statusFilter.value);
+  return [...list].sort((a, b) => {
+    if (sortOrder.value === 'updated_asc') return String(a.updatedAt || '').localeCompare(String(b.updatedAt || ''));
+    if (sortOrder.value === 'title_asc') return String(a.title || '').localeCompare(String(b.title || ''));
+    return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
+  });
+});
+const wordCount = computed(() => (chapterForm.content || '').replace(/\s/g, '').length);
+const scriptPreview = computed(() => (draft.value?.episodes || []).map(ep => `第${ep.episodeNo}集\n核心爽点：${ep.coreHook}\n结尾钩子：${ep.endingHook}`).join('\n\n'));
+const exportScenes = computed(() => (draft.value?.episodes || []).flatMap(ep => (ep.scenes || []).map(scene => ({
+  ...scene,
+  label: `第${ep.episodeNo}集 第${scene.sceneNo}场 ${scene.sceneTitle || ''}`,
+}))));
+const taskCanCancel = computed(() => activeTask.value && !['completed', 'failed', 'canceled'].includes(activeTask.value.status));
+const taskCanRetry = computed(() => activeTask.value && ['failed', 'canceled', 'completed'].includes(activeTask.value.status));
+const adaptationPlanEntries = computed(() => {
+  const plan = draft.value?.adaptationPlan || {};
+  return [
+    ['故事核', plan.storyCore],
+    ['人物关系', plan.characterRelations],
+    ['情节取舍', plan.plotSelection],
+    ['改编策略', plan.strategy],
+  ].filter(([, value]) => value).map(([label, value]) => ({ label, value }));
+});
+const exportChecks = computed(() => {
+  const episodes = draft.value?.episodes || [];
+  const scenes = episodes.flatMap(ep => ep.scenes || []);
+  const missingSceneFields = scenes.filter(scene => !scene.location || !scene.characters || !scene.sceneFunction || !scene.dialogue || !scene.hook).length;
+  const missingEpisodeHooks = episodes.filter(ep => !ep.coreHook || !ep.mainConflict || !ep.endingHook).length;
+  const report = qualityReport.value || draft.value?.qualityReport || {};
+  return [
+    { label: '分集包含预计时长、核心爽点、本集冲突和结尾钩子', pass: episodes.length > 0 && missingEpisodeHooks === 0 },
+    { label: '每场包含场景、人物、本场功能、对白和钩子', pass: scenes.length > 0 && missingSceneFields === 0 },
+    { label: '已执行短剧质量检查', pass: Boolean(report.totalScore) },
+    { label: '当前导出范围能匹配到内容', pass: selectedExportSceneCount(episodes) > 0 },
+  ];
+});
+const exportIssueCount = computed(() => exportChecks.value.filter(item => !item.pass).length);
+const shortcuts = [
+  { key: 'long', icon: '长', title: '新建长篇', desc: '设定、人物、大纲、章节续写', action: () => quickCreate('long_novel') },
+  { key: 'short', icon: '短', title: '新建短篇', desc: '情绪目标、反转、爆点和结尾', action: () => quickCreate('short_story') },
+  { key: 'import', icon: '导', title: '导入小说', desc: '支持粘贴文本和 DOCX 文件', action: () => router.push('/creation/projects?import=1') },
+  { key: 'rewrite', icon: '改', title: '改写文本', desc: '润色、去 AI 味、爽点增强', action: () => router.push('/creation/projects') },
+  { key: 'script', icon: '剧', title: '转短剧', desc: '生成分集大纲和分场稿', action: () => router.push('/creation/projects') },
+];
+
+function selectedExportSceneCount(episodes) {
+  if (exportForm.scope === 'episode') {
+    return episodes.filter(ep => ep.episodeNo === exportForm.episodeNo).flatMap(ep => ep.scenes || []).length;
+  }
+  if (exportForm.scope === 'scene') {
+    return exportScenes.value.some(scene => scene.id === exportForm.sceneId) ? 1 : 0;
+  }
+  return episodes.flatMap(ep => ep.scenes || []).length;
+}
+
+onMounted(loadByMode);
+watch(() => route.fullPath, loadByMode);
+
+async function loadByMode() {
+  try {
+    if (mode.value === 'projects' && route.query.import === '1') showImport.value = true;
+    if (mode.value === 'home' || mode.value === 'projects') projects.value = await storyApi.listProjects();
+    if (mode.value === 'home') await loadActiveTask();
+    if (mode.value === 'editor') await loadProject();
+    if (mode.value === 'rewrite') rewriteTask.value = await storyApi.getRewrite(route.params.taskId);
+    if (mode.value === 'script' || mode.value === 'export') await loadDraft();
+  } catch (err) {
+    ui.showToast('error', err.message || '加载失败');
+  }
+}
+
+async function quickCreate(type) {
+  const p = await storyApi.createProject({ title: type === 'short_story' ? '未命名短篇' : '未命名长篇', type, description: '从这里开始创作。' });
+  router.push(`/creation/projects/${p.id}/editor`);
+}
+
+async function createProject() {
+  const p = await storyApi.createProject(createForm);
+  showCreate.value = false;
+  router.push(`/creation/projects/${p.id}/editor`);
+}
+
+async function previewImport() {
+  if (!importFileRef.value && !importForm.content.trim()) return ui.showToast('warning', '请上传文件或粘贴正文');
+  importPreview.value = importFileRef.value
+    ? await storyApi.previewImportFile(importFileRef.value, importForm.title)
+    : await storyApi.previewImportText(importForm);
+  importForm.title = importPreview.value.title || importForm.title;
+  ui.showToast('success', '解析预览已生成');
+}
+
+async function confirmImport() {
+  if (!importPreview.value) return ui.showToast('warning', '请先解析预览');
+  const p = await storyApi.importText({
+    title: importPreview.value.title || importForm.title,
+    content: importPreview.value.content || importForm.content,
+  });
+  showImport.value = false;
+  importFileRef.value = null;
+  importPreview.value = null;
+  router.push(`/creation/projects/${p.id}/editor`);
+}
+
+function onImportFileChange(event) {
+  importFileRef.value = event.target.files?.[0] || null;
+  importPreview.value = null;
+  if (importFileRef.value && !importForm.title.trim()) {
+    importForm.title = importFileRef.value.name.replace(/\.[^.]+$/, '');
+  }
+}
+
+async function loadProject() {
+  project.value = await storyApi.getProject(route.params.id);
+  chapters.value = project.value.chapters || [];
+  selectChapter(chapters.value[0] || null);
+}
+
+function selectChapter(chapter) {
+  currentChapter.value = chapter;
+  chapterForm.title = chapter?.title || `第${chapters.value.length + 1}章`;
+  chapterForm.content = chapter?.content || '';
+  loadChapterVersions();
+}
+
+async function addChapter() {
+  const chapter = await storyApi.createChapter(project.value.id, { title: `第${chapters.value.length + 1}章`, content: '' });
+  chapters.value.push(chapter);
+  selectChapter(chapter);
+}
+
+async function saveChapter() {
+  if (!currentChapter.value) await addChapter();
+  const saved = await storyApi.updateChapter(currentChapter.value.id, chapterForm);
+  Object.assign(currentChapter.value, saved);
+  await loadChapterVersions();
+  ui.showToast('success', '章节已保存');
+}
+
+async function loadChapterVersions() {
+  if (!currentChapter.value?.id) {
+    chapterVersions.value = [];
+    return;
+  }
+  chapterVersions.value = await storyApi.listChapterVersions(currentChapter.value.id);
+}
+
+async function restoreVersion(version) {
+  const saved = await storyApi.restoreChapter(currentChapter.value.id, { versionId: version.id });
+  Object.assign(currentChapter.value, saved);
+  chapterForm.title = saved.title;
+  chapterForm.content = saved.content;
+  await loadChapterVersions();
+  ui.showToast('success', `已恢复到 V${version.versionNo}`);
+}
+
+async function runAi(action) {
+  const result = await storyApi.generate(project.value.id, { action, chapterId: currentChapter.value?.id, content: chapterForm.content });
+  chapterForm.content = [chapterForm.content, result.content].filter(Boolean).join(chapterForm.content ? '\n\n' : '');
+}
+
+async function startRewrite() {
+  if (!chapterForm.content.trim()) return ui.showToast('warning', '请先输入正文');
+  const task = await storyApi.createRewrite({ projectId: project.value.id, chapterId: currentChapter.value?.id, sourceText: chapterForm.content, rewriteMode: 'deslop' });
+  router.push(`/creation/rewrite/${task.id}`);
+}
+
+async function acceptRewrite() {
+  const result = await storyApi.acceptRewrite(route.params.taskId, { segments: rewriteTask.value.segments });
+  router.push(`/creation/projects/${result.projectId}/editor`);
+}
+
+async function retryRewrite() {
+  const task = await storyApi.retryRewrite(route.params.taskId, {
+    rewriteMode: rewriteTask.value?.rewriteMode || 'deslop',
+    instruction: rewriteForm.instruction,
+  });
+  rewriteTask.value = task;
+  ui.showToast('success', '已重新改写');
+}
+
+async function startScript(p) {
+  const task = await storyApi.convertToScript({ projectId: p.id, targetEpisodes: 20 });
+  activeTask.value = task;
+  localStorage.setItem('story:lastTaskId', String(task.id));
+  router.push(`/creation/scripts/${task.draftId}`);
+}
+
+async function loadActiveTask() {
+  const taskId = localStorage.getItem('story:lastTaskId');
+  if (!taskId) return;
+  try {
+    activeTask.value = await storyApi.getTask(taskId);
+  } catch {
+    activeTask.value = null;
+  }
+}
+
+async function refreshTask() {
+  if (!activeTask.value?.id) return;
+  activeTask.value = await storyApi.getTask(activeTask.value.id);
+}
+
+async function cancelTask() {
+  if (!activeTask.value?.id) return;
+  activeTask.value = await storyApi.cancelTask(activeTask.value.id);
+}
+
+async function retryTask() {
+  if (!activeTask.value?.id) return;
+  const task = await storyApi.retryTask(activeTask.value.id);
+  activeTask.value = task;
+  localStorage.setItem('story:lastTaskId', String(task.id));
+}
+
+async function loadDraft() {
+  draft.value = await storyApi.getScriptDraft(route.params.draftId);
+  const ep = draft.value.episodes?.[0];
+  selectScene(ep, ep?.scenes?.[0]);
+  if (!exportForm.episodeNo) exportForm.episodeNo = ep?.episodeNo || null;
+  if (!exportForm.sceneId) exportForm.sceneId = ep?.scenes?.[0]?.id || null;
+}
+
+function selectScene(ep, scene) {
+  currentEpisode.value = ep;
+  currentScene.value = scene;
+  Object.assign(sceneForm, scene || {});
+}
+
+async function saveScene() {
+  const saved = await storyApi.updateScene(currentScene.value.id, sceneForm);
+  Object.assign(currentScene.value, saved);
+  ui.showToast('success', '场次已保存');
+}
+
+async function addScene(ep) {
+  const scene = await storyApi.createScene(ep.id, {
+    sceneTitle: '新增场次',
+    location: '内景｜待定｜日',
+    characters: '',
+    sceneFunction: '补充冲突推进',
+  });
+  ep.scenes = [...(ep.scenes || []), scene];
+  selectScene(ep, scene);
+  ui.showToast('success', '场次已新增');
+}
+
+async function deleteScene() {
+  if (!currentScene.value || !currentEpisode.value) return;
+  await storyApi.deleteScene(currentScene.value.id);
+  currentEpisode.value.scenes = (currentEpisode.value.scenes || []).filter(scene => scene.id !== currentScene.value.id);
+  currentEpisode.value.scenes.forEach((scene, index) => { scene.sceneNo = index + 1; });
+  selectScene(currentEpisode.value, currentEpisode.value.scenes[0] || null);
+  ui.showToast('success', '场次已删除');
+}
+
+async function moveScene(direction) {
+  if (!currentScene.value || !currentEpisode.value) return;
+  const scenes = await storyApi.moveScene(currentScene.value.id, { direction });
+  currentEpisode.value.scenes = scenes;
+  const moved = scenes.find(scene => scene.id === currentScene.value.id);
+  selectScene(currentEpisode.value, moved || scenes[0] || null);
+}
+
+async function improveScene(action) {
+  if (!currentScene.value) return;
+  const saved = await storyApi.improveScene(currentScene.value.id, { action, scene: sceneForm });
+  Object.assign(currentScene.value, saved);
+  Object.assign(sceneForm, saved);
+  ui.showToast('success', '场次已更新');
+}
+
+async function qualityCheck() {
+  qualityReport.value = await storyApi.checkQuality(route.params.draftId);
+}
+
+async function autoFixExportIssues() {
+  const scenes = (draft.value?.episodes || []).flatMap(ep => ep.scenes || []);
+  let fixed = 0;
+  for (const scene of scenes) {
+    if (!scene.hook) {
+      await storyApi.improveScene(scene.id, { action: 'hook', scene });
+      fixed++;
+    } else if (!scene.dialogue) {
+      await storyApi.improveScene(scene.id, { action: 'dialogue', scene });
+      fixed++;
+    }
+  }
+  qualityReport.value = await storyApi.checkQuality(route.params.draftId, { useFallback: true });
+  await loadDraft();
+  ui.showToast(fixed ? 'success' : 'info', fixed ? `已修复 ${fixed} 个可自动处理的场次` : '没有发现可自动修复的空缺项');
+}
+
+async function exportDraft() {
+  exported.value = await storyApi.exportDraft(route.params.draftId, exportForm);
+}
+
+async function downloadExport() {
+  const response = await storyApi.exportDraftFile(route.params.draftId, exportForm);
+  const disposition = response.headers?.['content-disposition'] || '';
+  const match = disposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^"]+)"?/i);
+  const filename = match ? decodeURIComponent(match[1] || match[2]) : exported.value?.filename || `短剧分场稿.${exportForm.format === 'docx' ? 'docx' : 'md'}`;
+  const url = URL.createObjectURL(response.data);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+</script>

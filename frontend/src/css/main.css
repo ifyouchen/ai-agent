@@ -10,6 +10,7 @@
 @import './modules/theme-light.css';
 @import './modules/overlays-dialogs.css';
 @import './modules/monitor-admin.css';
+@import './modules/creation.css';
 @import './modules/app-extras.css';
 @import './modules/deepseek-final.css';
 @import './modules/deepseek-polish.css';

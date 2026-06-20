@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.aiagent.story.mapper.ScriptSceneMapper">
+
+    <resultMap id="ScriptSceneRM" type="com.example.aiagent.story.entity.ScriptScene">
+        <id property="id" column="id"/>
+        <result property="episodeId" column="episode_id"/>
+        <result property="sceneNo" column="scene_no"/>
+        <result property="sceneTitle" column="scene_title"/>
+        <result property="location" column="location"/>
+        <result property="timeOfDay" column="time_of_day"/>
+        <result property="characters" column="characters"/>
+        <result property="sceneFunction" column="scene_function"/>
+        <result property="estimatedDuration" column="estimated_duration"/>
+        <result property="visualAction" column="visual_action"/>
+        <result property="narration" column="narration"/>
+        <result property="dialogue" column="dialogue"/>
+        <result property="performanceCameraNote" column="performance_camera_note"/>
+        <result property="hook" column="hook"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <select id="findByEpisodeId" resultMap="ScriptSceneRM">
+        SELECT id, episode_id, scene_no, scene_title, location, time_of_day, characters, scene_function,
+               estimated_duration, visual_action, narration, dialogue, performance_camera_note, hook, updated_at
+        FROM story_script_scene
+        WHERE episode_id = #{episodeId}
+        ORDER BY scene_no ASC
+    </select>
+
+    <select id="findById" resultMap="ScriptSceneRM">
+        SELECT id, episode_id, scene_no, scene_title, location, time_of_day, characters, scene_function,
+               estimated_duration, visual_action, narration, dialogue, performance_camera_note, hook, updated_at
+        FROM story_script_scene
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="nextSceneNo" resultType="int">
+        SELECT COALESCE(MAX(scene_no), 0) + 1
+        FROM story_script_scene
+        WHERE episode_id = #{episodeId}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO story_script_scene
+            (episode_id, scene_no, scene_title, location, time_of_day, characters, scene_function,
+             estimated_duration, visual_action, narration, dialogue, performance_camera_note, hook, updated_at)
+        VALUES
+            (#{episodeId}, #{sceneNo}, #{sceneTitle}, #{location}, #{timeOfDay}, #{characters}, #{sceneFunction},
+             #{estimatedDuration}, #{visualAction}, #{narration}, #{dialogue}, #{performanceCameraNote}, #{hook}, NOW())
+    </insert>
+
+    <update id="update">
+        UPDATE story_script_scene
+        SET scene_title = #{sceneTitle},
+            location = #{location},
+            time_of_day = #{timeOfDay},
+            characters = #{characters},
+            scene_function = #{sceneFunction},
+            estimated_duration = #{estimatedDuration},
+            visual_action = #{visualAction},
+            narration = #{narration},
+            dialogue = #{dialogue},
+            performance_camera_note = #{performanceCameraNote},
+            hook = #{hook},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateSceneNo">
+        UPDATE story_script_scene
+        SET scene_no = #{sceneNo},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM story_script_scene
+        WHERE id = #{id}
+    </delete>
+</mapper>

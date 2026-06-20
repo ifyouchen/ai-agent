@@ -26,6 +26,7 @@ const AdminView        = () => import('../views/AdminView.vue');
 const ProfileView      = () => import('../views/ProfileView.vue');
 const MainLayout       = () => import('../components/layout/MainLayout.vue');
 const ShareView        = () => import('../views/ShareView.vue');
+const CreationView     = () => import('../views/CreationView.vue');
 
 const routes = [
   { path: '/share/:shareId', component: ShareView, meta: { public: true, title: '会话分享' } },
@@ -35,6 +36,12 @@ const routes = [
     children: [
       { path: '',        redirect: '/chat' },
       { path: 'chat',    component: ChatView,          meta: { title: '对话' } },
+      { path: 'creation', component: CreationView, meta: { title: '创作', creationMode: 'home' } },
+      { path: 'creation/projects', component: CreationView, meta: { title: '作品库', creationMode: 'projects' } },
+      { path: 'creation/projects/:id/editor', component: CreationView, meta: { title: '作品编辑器', creationMode: 'editor' } },
+      { path: 'creation/rewrite/:taskId', component: CreationView, meta: { title: '改写对照', creationMode: 'rewrite' } },
+      { path: 'creation/scripts/:draftId', component: CreationView, meta: { title: '短剧改编', creationMode: 'script' } },
+      { path: 'creation/scripts/:draftId/export', component: CreationView, meta: { title: '导出预览', creationMode: 'export' } },
       { path: 'kb',      component: KnowledgeBaseView, meta: { title: '知识库' } },
       { path: 'org',           component: OrgView,           meta: { title: '组织管理' } },
       { path: 'invite/:token', component: OrgView,           meta: { title: '组织邀请' } },

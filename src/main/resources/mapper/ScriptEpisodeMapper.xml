@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.aiagent.story.mapper.ScriptEpisodeMapper">
+
+    <resultMap id="ScriptEpisodeRM" type="com.example.aiagent.story.entity.ScriptEpisode">
+        <id property="id" column="id"/>
+        <result property="draftId" column="draft_id"/>
+        <result property="episodeNo" column="episode_no"/>
+        <result property="title" column="title"/>
+        <result property="estimatedDuration" column="estimated_duration"/>
+        <result property="coreHook" column="core_hook"/>
+        <result property="mainConflict" column="main_conflict"/>
+        <result property="endingHook" column="ending_hook"/>
+        <result property="summary" column="summary"/>
+    </resultMap>
+
+    <select id="findByDraftId" resultMap="ScriptEpisodeRM">
+        SELECT id, draft_id, episode_no, title, estimated_duration, core_hook, main_conflict, ending_hook, summary
+        FROM story_script_episode
+        WHERE draft_id = #{draftId}
+        ORDER BY episode_no ASC
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO story_script_episode
+            (draft_id, episode_no, title, estimated_duration, core_hook, main_conflict, ending_hook, summary)
+        VALUES
+            (#{draftId}, #{episodeNo}, #{title}, #{estimatedDuration}, #{coreHook}, #{mainConflict}, #{endingHook}, #{summary})
+    </insert>
+</mapper>

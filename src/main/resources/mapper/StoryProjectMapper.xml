@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.aiagent.story.mapper.StoryProjectMapper">
+
+    <resultMap id="StoryProjectRM" type="com.example.aiagent.story.entity.StoryProject">
+        <id property="id" column="id"/>
+        <result property="tenantId" column="tenant_id"/>
+        <result property="title" column="title"/>
+        <result property="type" column="type"/>
+        <result property="status" column="status"/>
+        <result property="description" column="description"/>
+        <result property="linkedKbId" column="linked_kb_id"/>
+        <result property="metadata" column="metadata"/>
+        <result property="createdBy" column="created_by"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="chapterCount" column="chapter_count"/>
+        <result property="scriptDraftCount" column="script_draft_count"/>
+    </resultMap>
+
+    <select id="findByTenantId" resultMap="StoryProjectRM">
+        SELECT p.id, p.tenant_id, p.title, p.type, p.status, p.description, p.linked_kb_id,
+               p.metadata, p.created_by, p.created_at, p.updated_at,
+               COALESCE(c.chapter_count, 0) AS chapter_count,
+               COALESCE(d.script_draft_count, 0) AS script_draft_count
+        FROM story_project p
+        LEFT JOIN (
+            SELECT project_id, COUNT(*) AS chapter_count
+            FROM story_chapter
+            GROUP BY project_id
+        ) c ON c.project_id = p.id
+        LEFT JOIN (
+            SELECT project_id, COUNT(*) AS script_draft_count
+            FROM story_script_draft
+            GROUP BY project_id
+        ) d ON d.project_id = p.id
+        WHERE p.tenant_id = #{tenantId}
+        <if test="type != null and type != ''">
+          AND p.type = #{type}
+        </if>
+        ORDER BY p.updated_at DESC
+    </select>
+
+    <select id="findById" resultMap="StoryProjectRM">
+        SELECT p.id, p.tenant_id, p.title, p.type, p.status, p.description, p.linked_kb_id,
+               p.metadata, p.created_by, p.created_at, p.updated_at,
+               COALESCE(c.chapter_count, 0) AS chapter_count,
+               COALESCE(d.script_draft_count, 0) AS script_draft_count
+        FROM story_project p
+        LEFT JOIN (
+            SELECT project_id, COUNT(*) AS chapter_count
+            FROM story_chapter
+            GROUP BY project_id
+        ) c ON c.project_id = p.id
+        LEFT JOIN (
+            SELECT project_id, COUNT(*) AS script_draft_count
+            FROM story_script_draft
+            GROUP BY project_id
+        ) d ON d.project_id = p.id
+        WHERE p.id = #{id}
+        LIMIT 1
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO story_project
+            (tenant_id, title, type, status, description, linked_kb_id, metadata, created_by, created_at, updated_at)
+        VALUES
+            (#{tenantId}, #{title}, #{type}, #{status}, #{description}, #{linkedKbId}, #{metadata}::jsonb, #{createdBy}, NOW(), NOW())
+    </insert>
+
+    <update id="update">
+        UPDATE story_project
+        SET title = #{title},
+            type = #{type},
+            status = #{status},
+            description = #{description},
+            linked_kb_id = #{linkedKbId},
+            metadata = #{metadata}::jsonb,
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE story_project
+        SET status = #{status}, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+</mapper>

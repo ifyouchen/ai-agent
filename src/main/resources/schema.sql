@@ -295,6 +295,147 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_biz_user_account_email_unique
     WHERE email IS NOT NULL AND email <> '';
 
 -- ============================================================
+-- 10. 小说创作域：作品项目
+-- ============================================================
+CREATE TABLE IF NOT EXISTS story_project (
+    id                 BIGSERIAL    PRIMARY KEY,
+    tenant_id          VARCHAR(64)  NOT NULL DEFAULT 'default',
+    title              VARCHAR(256) NOT NULL,
+    type               VARCHAR(32)  NOT NULL,
+    status             VARCHAR(32)  NOT NULL DEFAULT 'writing',
+    description        TEXT,
+    linked_kb_id       BIGINT,
+    metadata           JSONB        NOT NULL DEFAULT '{}',
+    created_by         VARCHAR(64),
+    created_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_story_project_tenant ON story_project(tenant_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_story_project_type ON story_project(type);
+
+-- ============================================================
+-- 11. 小说创作域：章节
+-- ============================================================
+CREATE TABLE IF NOT EXISTS story_chapter (
+    id                 BIGSERIAL    PRIMARY KEY,
+    project_id         BIGINT       NOT NULL REFERENCES story_project(id) ON DELETE CASCADE,
+    title              VARCHAR(256) NOT NULL,
+    chapter_no         INT          NOT NULL,
+    content            TEXT         NOT NULL DEFAULT '',
+    word_count         INT          NOT NULL DEFAULT 0,
+    version_no         INT          NOT NULL DEFAULT 1,
+    status             VARCHAR(32)  NOT NULL DEFAULT 'draft',
+    created_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    UNIQUE (project_id, chapter_no)
+);
+CREATE INDEX IF NOT EXISTS idx_story_chapter_project ON story_chapter(project_id, chapter_no);
+
+CREATE TABLE IF NOT EXISTS story_chapter_version (
+    id                 BIGSERIAL PRIMARY KEY,
+    chapter_id         BIGINT       NOT NULL REFERENCES story_chapter(id) ON DELETE CASCADE,
+    project_id         BIGINT       NOT NULL REFERENCES story_project(id) ON DELETE CASCADE,
+    title              VARCHAR(255) NOT NULL,
+    content            TEXT         NOT NULL DEFAULT '',
+    word_count         INT          NOT NULL DEFAULT 0,
+    version_no         INT          NOT NULL,
+    source             VARCHAR(64)  NOT NULL DEFAULT 'manual',
+    note               TEXT         NOT NULL DEFAULT '',
+    created_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_story_chapter_version_chapter ON story_chapter_version(chapter_id, version_no DESC);
+
+-- ============================================================
+-- 12. 小说创作域：改写任务
+-- ============================================================
+CREATE TABLE IF NOT EXISTS story_rewrite_task (
+    id                 BIGSERIAL    PRIMARY KEY,
+    project_id         BIGINT       NOT NULL REFERENCES story_project(id) ON DELETE CASCADE,
+    chapter_id         BIGINT       REFERENCES story_chapter(id) ON DELETE SET NULL,
+    source_type        VARCHAR(32)  NOT NULL DEFAULT 'chapter',
+    source_text        TEXT         NOT NULL DEFAULT '',
+    rewrite_mode       VARCHAR(64)  NOT NULL,
+    instruction        TEXT,
+    status             VARCHAR(32)  NOT NULL DEFAULT 'pending',
+    segments_json      JSONB        NOT NULL DEFAULT '[]',
+    result_text        TEXT,
+    diff_payload       JSONB        NOT NULL DEFAULT '{}',
+    created_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    completed_at       TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_story_rewrite_project ON story_rewrite_task(project_id, created_at DESC);
+
+-- ============================================================
+-- 13. 小说创作域：短剧草稿、分集、场次
+-- ============================================================
+CREATE TABLE IF NOT EXISTS story_script_draft (
+    id                 BIGSERIAL    PRIMARY KEY,
+    project_id         BIGINT       NOT NULL REFERENCES story_project(id) ON DELETE CASCADE,
+    title              VARCHAR(256) NOT NULL,
+    source_ref         TEXT,
+    episode_count      INT          NOT NULL DEFAULT 0,
+    status             VARCHAR(32)  NOT NULL DEFAULT 'draft',
+    quality_score      INT          NOT NULL DEFAULT 0,
+    adaptation_plan    JSONB        NOT NULL DEFAULT '{}',
+    quality_report     JSONB        NOT NULL DEFAULT '{}',
+    created_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_story_script_draft_project ON story_script_draft(project_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS story_script_episode (
+    id                 BIGSERIAL    PRIMARY KEY,
+    draft_id           BIGINT       NOT NULL REFERENCES story_script_draft(id) ON DELETE CASCADE,
+    episode_no         INT          NOT NULL,
+    title              VARCHAR(256) NOT NULL,
+    estimated_duration VARCHAR(64),
+    core_hook          TEXT,
+    main_conflict      TEXT,
+    ending_hook        TEXT,
+    summary            TEXT,
+    UNIQUE (draft_id, episode_no)
+);
+CREATE INDEX IF NOT EXISTS idx_story_script_episode_draft ON story_script_episode(draft_id, episode_no);
+
+CREATE TABLE IF NOT EXISTS story_script_scene (
+    id                      BIGSERIAL    PRIMARY KEY,
+    episode_id              BIGINT       NOT NULL REFERENCES story_script_episode(id) ON DELETE CASCADE,
+    scene_no                INT          NOT NULL,
+    scene_title             VARCHAR(256),
+    location                VARCHAR(256),
+    time_of_day             VARCHAR(64),
+    characters              TEXT,
+    scene_function          TEXT,
+    estimated_duration      VARCHAR(64),
+    visual_action           TEXT,
+    narration               TEXT,
+    dialogue                TEXT,
+    performance_camera_note TEXT,
+    hook                    TEXT,
+    updated_at              TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    UNIQUE (episode_id, scene_no)
+);
+CREATE INDEX IF NOT EXISTS idx_story_script_scene_episode ON story_script_scene(episode_id, scene_no);
+
+-- ============================================================
+-- 14. 小说创作域：长任务
+-- ============================================================
+CREATE TABLE IF NOT EXISTS story_generation_task (
+    id                 BIGSERIAL    PRIMARY KEY,
+    task_type          VARCHAR(64)  NOT NULL,
+    project_id         BIGINT       REFERENCES story_project(id) ON DELETE CASCADE,
+    status             VARCHAR(32)  NOT NULL DEFAULT 'pending',
+    progress           INT          NOT NULL DEFAULT 0,
+    current_step       VARCHAR(256),
+    error_message      TEXT,
+    token_usage        JSONB        NOT NULL DEFAULT '{}',
+    created_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_story_generation_project ON story_generation_task(project_id, created_at DESC);
+
+-- ============================================================
 -- 注册邮箱验证码表
 -- ============================================================
 CREATE TABLE IF NOT EXISTS email_verification_code (

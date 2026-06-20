@@ -39,6 +39,7 @@
             </button>
           </template>
           <router-link class="topbar-btn topbar-chat-link" to="/chat">对话</router-link>
+          <router-link class="topbar-btn" to="/creation">创作</router-link>
           <!-- Fix 14: 有待处理通知时显示红点角标 -->
           <router-link class="topbar-btn topbar-org-link topbar-btn-notice" to="/org">
             组织
