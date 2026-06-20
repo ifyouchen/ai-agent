@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.data.document.loader.FileSystemDocumentLoader;
 import dev.langchain4j.data.document.parser.apache.tika.ApacheTikaDocumentParser;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -29,6 +30,7 @@ import java.util.zip.ZipOutputStream;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class StoryWorkspaceService {
 
     private static final String DEFAULT_TENANT = "default";
@@ -54,9 +56,10 @@ public class StoryWorkspaceService {
     @Transactional
     public Map<String, Object> createProject(Map<String, Object> payload) {
         String type = string(payload.get("type"), "long_novel");
+        String title = string(payload.get("title"), "未命名作品");
         StoryProject project = StoryProject.builder()
                 .tenantId(DEFAULT_TENANT)
-                .title(string(payload.get("title"), "未命名作品"))
+                .title(title)
                 .type(type)
                 .status("writing")
                 .description(string(payload.get("description"), ""))
@@ -69,15 +72,17 @@ public class StoryWorkspaceService {
                 "title", "第1章",
                 "content", defaultOpening(type)
         ));
+        log.info("story.project.create action=create_project projectId={} type={} title={}", project.getId(), type, title);
         return getProject(project.getId());
     }
 
     @Transactional
     public Map<String, Object> importText(Map<String, Object> payload) {
         String content = string(payload.get("content"), "");
+        String detectedType = detectType(content);
         Map<String, Object> project = createProject(Map.of(
                 "title", string(payload.get("title"), "导入作品"),
-                "type", detectType(content),
+                "type", detectedType,
                 "description", "由导入文本生成"
         ));
 
@@ -104,15 +109,20 @@ public class StoryWorkspaceService {
             }
             chapterNo++;
         }
+        log.info("story.import.text action=import_text projectId={} detectedType={} wordCount={} chapterCount={}",
+                projectId, detectedType, wordCount(content), splitImportUnits(content).size());
         return getProject(projectId);
     }
 
     public Map<String, Object> previewImportText(Map<String, Object> payload) {
-        return buildImportPreview(
+        Map<String, Object> preview = buildImportPreview(
                 string(payload.get("title"), "导入作品"),
                 string(payload.get("content"), ""),
                 "text"
         );
+        log.info("story.import.preview action=preview_text detectedType={} wordCount={} chapterCount={}",
+                preview.get("detectedType"), preview.get("wordCount"), preview.get("chapterCount"));
+        return preview;
     }
 
     @Transactional
@@ -125,10 +135,13 @@ public class StoryWorkspaceService {
         try {
             Files.copy(file.getInputStream(), tempFile, StandardCopyOption.REPLACE_EXISTING);
             String content = parseUploadText(tempFile, filename);
-            return importText(Map.of(
+            Map<String, Object> imported = importText(Map.of(
                     "title", string(title, stripExtension(filename)),
                     "content", content
             ));
+            log.info("story.import.file action=import_file projectId={} filename={} size={} detectedType={} wordCount={}",
+                    imported.get("id"), filename, file.getSize(), detectType(content), wordCount(content));
+            return imported;
         } finally {
             Files.deleteIfExists(tempFile);
         }
@@ -143,7 +156,10 @@ public class StoryWorkspaceService {
         try {
             Files.copy(file.getInputStream(), tempFile, StandardCopyOption.REPLACE_EXISTING);
             String content = parseUploadText(tempFile, filename);
-            return buildImportPreview(string(title, stripExtension(filename)), content, filename);
+            Map<String, Object> preview = buildImportPreview(string(title, stripExtension(filename)), content, filename);
+            log.info("story.import.preview action=preview_file filename={} size={} detectedType={} wordCount={} chapterCount={}",
+                    filename, file.getSize(), preview.get("detectedType"), preview.get("wordCount"), preview.get("chapterCount"));
+            return preview;
         } finally {
             Files.deleteIfExists(tempFile);
         }
@@ -166,7 +182,15 @@ public class StoryWorkspaceService {
         if (payload.containsKey("title")) project.setTitle(string(payload.get("title"), project.getTitle()));
         if (payload.containsKey("description")) project.setDescription(string(payload.get("description"), project.getDescription()));
         if (payload.containsKey("status")) project.setStatus(string(payload.get("status"), project.getStatus()));
+        if (payload.containsKey("assets") || payload.containsKey("promptConfig")) {
+            Map<String, Object> metadata = fromJsonObject(project.getMetadata());
+            if (payload.containsKey("assets")) metadata.put("assets", objectMap(payload.get("assets")));
+            if (payload.containsKey("promptConfig")) metadata.put("promptConfig", objectMap(payload.get("promptConfig")));
+            project.setMetadata(toJson(metadata));
+        }
         projectMapper.update(project);
+        log.info("story.project.update action=update_project projectId={} updateAssets={} updatePromptConfig={}",
+                id, payload.containsKey("assets"), payload.containsKey("promptConfig"));
         return getProject(id);
     }
 
@@ -187,6 +211,8 @@ public class StoryWorkspaceService {
         chapterMapper.insert(chapter);
         snapshotChapter(chapter, "create", "创建章节初始版本");
         projectMapper.updateStatus(projectId, "writing");
+        log.info("story.chapter.create action=create_chapter projectId={} chapterId={} chapterNo={} wordCount={}",
+                projectId, chapter.getId(), chapter.getChapterNo(), chapter.getWordCount());
         return chapterMap(chapter);
     }
 
@@ -201,6 +227,8 @@ public class StoryWorkspaceService {
         chapterMapper.update(chapter);
         snapshotChapter(chapter, string(payload.get("source"), "manual"), string(payload.get("note"), "保存章节"));
         projectMapper.updateStatus(chapter.getProjectId(), "writing");
+        log.info("story.chapter.update action=update_chapter projectId={} chapterId={} versionNo={} wordCount={} source={}",
+                chapter.getProjectId(), chapterId, chapter.getVersionNo(), chapter.getWordCount(), string(payload.get("source"), "manual"));
         return chapterMap(chapter);
     }
 
@@ -224,18 +252,42 @@ public class StoryWorkspaceService {
         chapterMapper.update(chapter);
         snapshotChapter(chapter, "restore", "恢复自版本 " + version.getVersionNo());
         projectMapper.updateStatus(chapter.getProjectId(), "writing");
+        log.info("story.chapter.restore action=restore_chapter projectId={} chapterId={} restoredVersion={} newVersion={}",
+                chapter.getProjectId(), chapterId, version.getVersionNo(), chapter.getVersionNo());
         return chapterMap(chapter);
     }
 
     public Map<String, Object> generate(Long projectId, Map<String, Object> payload) {
+        Map<String, Object> request = payload == null ? Map.of() : payload;
         StoryProject project = projectMapper.findById(projectId)
                 .orElseThrow(() -> new IllegalArgumentException("作品不存在：" + projectId));
-        String action = string(payload.get("action"), "continue");
-        String source = string(payload.get("content"), "");
+        String action = string(request.get("action"), "continue");
+        String source = string(request.get("content"), "");
+        String instruction = string(request.get("instruction"), "");
+        Map<String, Object> metadata = fromJsonObject(project.getMetadata());
+        Map<String, Object> promptConfig = objectMap(metadata.get("promptConfig"));
+        Map<String, Object> assets = objectMap(metadata.get("assets"));
+        Map<String, Object> actionConfig = objectMap(objectMap(promptConfig.get("actions")).get(action));
+        Map<String, Object> params = new LinkedHashMap<>(objectMap(actionConfig.get("params")));
+        params.putAll(objectMap(request.get("params")));
+        boolean useCustomPrompt = booleanValue(request.get("useCustomPrompt")) || booleanValue(actionConfig.get("useCustomPrompt"));
         String fallback = generateFallback(action);
-        String content = useFallback(payload)
+        String content = useFallback(request)
                 ? fallback
-                : storyAiService.generateWriting(action, project.getTitle(), source, fallback);
+                : storyAiService.generateWriting(
+                        action,
+                        project.getTitle(),
+                        source,
+                        fallback,
+                        promptConfig,
+                        assets,
+                        instruction,
+                        params,
+                        actionConfig,
+                        useCustomPrompt
+                );
+        log.info("story.generate action=generate_writing projectId={} generateAction={} useFallback={} useCustomPrompt={} instructionLength={} params={} sourceLength={} resultLength={}",
+                projectId, action, useFallback(request), useCustomPrompt, instruction.length(), safeLogMap(params), source.length(), content.length());
         return Map.of("projectId", projectId, "action", action, "content", content);
     }
 
@@ -273,6 +325,8 @@ public class StoryWorkspaceService {
                 .build();
         rewriteTaskMapper.insert(task);
         projectMapper.updateStatus(projectId, "rewriting");
+        log.info("story.rewrite.create action=create_rewrite projectId={} chapterId={} taskId={} mode={} segmentCount={} sourceLength={}",
+                projectId, task.getChapterId(), task.getId(), rewriteMode, segments.size(), source.length());
         return rewriteTaskMap(task);
     }
 
@@ -300,6 +354,8 @@ public class StoryWorkspaceService {
         task.setDiffPayload("{}");
         task.setCompletedAt(Instant.now());
         rewriteTaskMapper.update(task);
+        log.info("story.rewrite.accept action=accept_rewrite projectId={} chapterId={} taskId={} segmentCount={}",
+                task.getProjectId(), task.getChapterId(), id, segments.size());
         return Map.of("projectId", task.getProjectId(), "taskId", id, "status", "accepted");
     }
 
@@ -307,6 +363,8 @@ public class StoryWorkspaceService {
     public Map<String, Object> retryRewrite(Long id, Map<String, Object> payload) {
         RewriteTask old = rewriteTaskMapper.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("改写任务不存在：" + id));
+        log.info("story.rewrite.retry action=retry_rewrite oldTaskId={} projectId={} chapterId={} mode={}",
+                id, old.getProjectId(), old.getChapterId(), string(payload.get("rewriteMode"), old.getRewriteMode()));
         return createRewrite(Map.of(
                 "projectId", old.getProjectId(),
                 "chapterId", old.getChapterId() == null ? "" : old.getChapterId(),
@@ -373,6 +431,8 @@ public class StoryWorkspaceService {
             episodeIndex++;
         }
         projectMapper.updateStatus(projectId, "adapting");
+        log.info("story.script.convert action=convert_to_script projectId={} taskId={} draftId={} targetEpisodes={} generatedEpisodes={} useFallback={} sourceLength={}",
+                projectId, task.getId(), draft.getId(), targetEpisodes, generatedEpisodes.size(), useFallback(payload), sourceText.length());
         return Map.of("id", task.getId(), "draftId", draft.getId(), "projectId", projectId, "status", "completed", "progress", 100);
     }
 
@@ -402,6 +462,8 @@ public class StoryWorkspaceService {
         task.setCurrentStep("用户已取消任务");
         task.setErrorMessage(null);
         generationTaskMapper.update(task);
+        log.info("story.task.cancel action=cancel_task taskId={} projectId={} taskType={} status={}",
+                taskId, task.getProjectId(), task.getTaskType(), task.getStatus());
         return generationTaskMap(task);
     }
 
@@ -410,6 +472,8 @@ public class StoryWorkspaceService {
         GenerationTask old = generationTaskMapper.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("生成任务不存在：" + taskId));
         if ("script_convert".equals(old.getTaskType())) {
+            log.info("story.task.retry action=retry_task taskId={} projectId={} taskType={}",
+                    taskId, old.getProjectId(), old.getTaskType());
             return convertToScript(Map.of("projectId", old.getProjectId()));
         }
         GenerationTask retry = GenerationTask.builder()
@@ -422,6 +486,8 @@ public class StoryWorkspaceService {
                 .tokenUsage(estimateTokenUsage("", List.of()))
                 .build();
         generationTaskMapper.insert(retry);
+        log.info("story.task.retry action=retry_task_unsupported oldTaskId={} retryTaskId={} taskType={}",
+                taskId, retry.getId(), old.getTaskType());
         return generationTaskMap(retry);
     }
 
@@ -443,6 +509,8 @@ public class StoryWorkspaceService {
         Map<String, Object> improved = fallbackEpisodeImprovement(current, string(payload.get("action"), "rewrite"));
         applyEpisodePayload(episode, improved);
         episodeMapper.update(episode);
+        log.info("story.script.episode.ai action=improve_episode episodeId={} draftId={} aiAction={}",
+                episodeId, episode.getDraftId(), string(payload.get("action"), "rewrite"));
         return episodeMap(episode);
     }
     @Transactional
@@ -451,6 +519,8 @@ public class StoryWorkspaceService {
         ScriptScene scene = buildScene(episodeId, payload == null ? Map.of() : payload, nextNo);
         scene.setSceneNo(nextNo);
         sceneMapper.insert(scene);
+        log.info("story.script.scene.create action=create_scene episodeId={} sceneId={} sceneNo={}",
+                episodeId, scene.getId(), scene.getSceneNo());
         return sceneMap(scene);
     }
 
@@ -460,6 +530,8 @@ public class StoryWorkspaceService {
                 .orElseThrow(() -> new IllegalArgumentException("场次不存在：" + sceneId));
         applyScenePayload(scene, payload);
         sceneMapper.update(scene);
+        log.info("story.script.scene.update action=update_scene episodeId={} sceneId={} sceneNo={}",
+                scene.getEpisodeId(), sceneId, scene.getSceneNo());
         return sceneMap(scene);
     }
 
@@ -470,6 +542,7 @@ public class StoryWorkspaceService {
         Long episodeId = scene.getEpisodeId();
         sceneMapper.deleteById(sceneId);
         renumberScenes(episodeId);
+        log.info("story.script.scene.delete action=delete_scene episodeId={} sceneId={}", episodeId, sceneId);
         return Map.of("episodeId", episodeId, "deletedSceneId", sceneId, "status", "deleted");
     }
 
@@ -494,6 +567,8 @@ public class StoryWorkspaceService {
         Integer currentNo = current.getSceneNo();
         sceneMapper.updateSceneNo(current.getId(), other.getSceneNo());
         sceneMapper.updateSceneNo(other.getId(), currentNo);
+        log.info("story.script.scene.move action=move_scene episodeId={} sceneId={} direction={} fromIndex={} toIndex={}",
+                scene.getEpisodeId(), sceneId, direction, index, target);
         return sceneMapper.findByEpisodeId(scene.getEpisodeId()).stream().map(this::sceneMap).toList();
     }
 
@@ -512,6 +587,8 @@ public class StoryWorkspaceService {
         );
         applyScenePayload(scene, improved);
         sceneMapper.update(scene);
+        log.info("story.script.scene.ai action=improve_scene episodeId={} sceneId={} aiAction={}",
+                scene.getEpisodeId(), sceneId, string(payload.get("action"), "rewrite"));
         return sceneMap(scene);
     }
 
@@ -539,6 +616,8 @@ public class StoryWorkspaceService {
         draft.setQualityScore(score);
         draft.setQualityReport(toJson(report));
         draftMapper.update(draft);
+        log.info("story.script.quality action=quality_check draftId={} projectId={} score={} useFallback={}",
+                draftId, draft.getProjectId(), score, useFallback(payload));
         return report;
     }
 
@@ -547,6 +626,8 @@ public class StoryWorkspaceService {
         Map<String, Object> draft = getDraft(draftId);
         String format = string(payload.get("format"), "markdown");
         String content = buildExportMarkdown(draft, payload);
+        log.info("story.script.export action=export_preview draftId={} format={} scope={} contentLength={}",
+                draftId, format, string(payload.get("scope"), "all"), content.length());
         return Map.of("draftId", draftId, "format", format, "filename", exportFilename(draft.get("title"), format), "content", content);
     }
 
@@ -557,9 +638,15 @@ public class StoryWorkspaceService {
         String content = buildExportMarkdown(draft, payload);
         String filename = exportFilename(draft.get("title"), format);
         if ("docx".equals(format)) {
-            return new ExportFile(filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buildDocx(content));
+            byte[] bytes = buildDocx(content);
+            log.info("story.script.export action=export_file draftId={} format={} filename={} bytes={}",
+                    draftId, format, filename, bytes.length);
+            return new ExportFile(filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", bytes);
         }
-        return new ExportFile(filename, "text/markdown; charset=UTF-8", content.getBytes(StandardCharsets.UTF_8));
+        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+        log.info("story.script.export action=export_file draftId={} format={} filename={} bytes={}",
+                draftId, format, filename, bytes.length);
+        return new ExportFile(filename, "text/markdown; charset=UTF-8", bytes);
     }
 
     private String buildExportMarkdown(Map<String, Object> draft, Map<String, Object> payload) {
@@ -786,7 +873,10 @@ public class StoryWorkspaceService {
         map.put("status", project.getStatus());
         map.put("description", project.getDescription());
         map.put("linkedKbId", project.getLinkedKbId());
-        map.put("metadata", fromJsonObject(project.getMetadata()));
+        Map<String, Object> metadata = fromJsonObject(project.getMetadata());
+        map.put("metadata", metadata);
+        map.put("assets", objectMap(metadata.get("assets")));
+        map.put("promptConfig", objectMap(metadata.get("promptConfig")));
         map.put("createdAt", instant(project.getCreatedAt()));
         map.put("updatedAt", instant(project.getUpdatedAt()));
         map.put("chapterCount", project.getChapterCount() == null ? 0 : project.getChapterCount());
@@ -1336,10 +1426,28 @@ public class StoryWorkspaceService {
         return parsed == null ? 0L : parsed;
     }
 
+    private boolean booleanValue(Object value) {
+        if (value instanceof Boolean bool) return bool;
+        return value != null && "true".equalsIgnoreCase(String.valueOf(value));
+    }
+
     private String string(Object value, String fallback) {
         if (value == null) return fallback;
         String text = String.valueOf(value);
         return text.isBlank() ? fallback : text;
+    }
+
+    private String safeLogMap(Map<String, Object> value) {
+        if (value == null || value.isEmpty()) return "{}";
+        Map<String, Object> safe = new LinkedHashMap<>();
+        value.forEach((key, item) -> {
+            if (item instanceof String text) {
+                safe.put(key, text.length() > 40 ? text.substring(0, 40) + "..." : text);
+            } else {
+                safe.put(key, item);
+            }
+        });
+        return safe.toString();
     }
 
     private String instant(Instant value) {

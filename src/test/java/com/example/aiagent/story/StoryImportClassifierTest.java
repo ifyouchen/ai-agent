@@ -43,6 +43,22 @@ class StoryImportClassifierTest {
     }
 
     @Test
+    @DisplayName("识别含动作符号和出场人物的短剧初稿")
+    void shouldDetectDraftScriptWithStageDirections() {
+        String content = """
+                【第1集｜穿越与退婚：清华博士魂断大乾考场】
+                【第1场】
+                场景：三河县萧家食肆，临窗木桌，墙上贴黄历
+                出场人物：萧火旺、柳如烟
+                △ 黄历特写：永泰十七年三月廿三，宜嫁娶，忌出行。
+                旁白：他是清华大学历史系和汉语言文学系的双博士。
+                萧火旺（独白）：大乾永泰十七年……这是一个史书上没有的朝代。
+                """;
+
+        assertThat(StoryImportClassifier.detectType(content)).isEqualTo("short_drama");
+    }
+
+    @Test
     @DisplayName("短文本默认识别为短篇故事")
     void shouldDetectShortStoryFallback() {
         assertThat(StoryImportClassifier.detectType("我第一次意识到不对，是在那通电话之后。"))

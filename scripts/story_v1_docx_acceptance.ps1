@@ -80,6 +80,18 @@ function Assert-Equal {
     Write-Host "PASS $Name = $Actual"
 }
 
+function Prepare-UploadFile {
+    param(
+        [string]$SourcePath,
+        [string]$TargetName
+    )
+
+    $targetPath = Join-Path $fixturesDir $TargetName
+    Copy-Item -LiteralPath $SourcePath -Destination $targetPath -Force
+    Set-ItemProperty -LiteralPath $targetPath -Name IsReadOnly -Value $false
+    return Get-Item -LiteralPath $targetPath
+}
+
 $BaseUrl = $BaseUrl.TrimEnd("/")
 $fixturesDir = Join-Path (Get-Location) "target/story-v1-fixtures"
 $samplesDir = Join-Path (Get-Location) "src/test/resources/story-samples"
@@ -115,6 +127,9 @@ if (-not (Test-Path $scriptPath)) {
     throw "Script DOCX not found: $scriptPath"
 }
 
+$adaptationUpload = if ($AdaptationDocx) { Prepare-UploadFile -SourcePath $adaptationPath -TargetName "real-adaptation.docx" } else { Get-Item -LiteralPath $adaptationPath }
+$scriptUpload = if ($ScriptDocx) { Prepare-UploadFile -SourcePath $scriptPath -TargetName "real-script.docx" } else { Get-Item -LiteralPath $scriptPath }
+
 $login = Invoke-RestMethod -Uri "$BaseUrl/api/v1/auth/login" -Method Post -ContentType "application/json" -Body (@{
     username = $Username
     password = $Password
@@ -122,16 +137,42 @@ $login = Invoke-RestMethod -Uri "$BaseUrl/api/v1/auth/login" -Method Post -Conte
 $headers = @{ Authorization = "Bearer $($login.token)" }
 
 $adaptation = Invoke-RestMethod -Uri "$BaseUrl/api/v1/story/import/file/preview" -Method Post -Headers $headers -Form @{
-    title = "改编-上岸等价样例"
-    file = Get-Item $adaptationPath
+    title = if ($AdaptationDocx) { "改编-上岸真实样例" } else { "改编-上岸等价样例" }
+    file = $adaptationUpload
 }
 $script = Invoke-RestMethod -Uri "$BaseUrl/api/v1/story/import/file/preview" -Method Post -Headers $headers -Form @{
-    title = "剧本短剧分场稿等价样例"
-    file = Get-Item $scriptPath
+    title = if ($ScriptDocx) { "剧本真实样例" } else { "剧本短剧分场稿等价样例" }
+    file = $scriptUpload
 }
 
-Assert-Equal -Name "adaptation.detectedType" -Actual $adaptation.detectedType -Expected "adaptation"
+if ($AdaptationDocx) {
+    if ($adaptation.detectedType -ne "short_story" -and $adaptation.detectedType -ne "long_novel") {
+        throw "adaptation.detectedType expected source novel but got '$($adaptation.detectedType)'"
+    }
+    Write-Host "PASS adaptation.detectedType = $($adaptation.detectedType)"
+
+    $project = Invoke-RestMethod -Uri "$BaseUrl/api/v1/story/import/file" -Method Post -Headers $headers -Form @{
+        title = "改编-上岸真实样例"
+        file = $adaptationUpload
+    }
+    $convert = Invoke-RestMethod -Uri "$BaseUrl/api/v1/story/script/convert" -Method Post -Headers $headers -ContentType "application/json" -Body (@{
+        projectId = $project.id
+        targetEpisodes = 1
+        useFallback = $true
+    } | ConvertTo-Json)
+    Assert-Equal -Name "adaptation.convert.status" -Actual $convert.status -Expected "completed"
+    $draft = Invoke-RestMethod -Uri "$BaseUrl/api/v1/story/script/drafts/$($convert.draftId)" -Method Get -Headers $headers
+    if (-not $draft.adaptationPlan -or -not $draft.adaptationPlan.storyCore) {
+        throw "adaptation.plan expected generated storyCore but got empty adaptationPlan"
+    }
+    Write-Host "PASS adaptation.plan.generated = true"
+} else {
+    Assert-Equal -Name "adaptation.detectedType" -Actual $adaptation.detectedType -Expected "adaptation"
+}
+
 Assert-Equal -Name "script.detectedType" -Actual $script.detectedType -Expected "short_drama"
 
-Write-Host "PASS story V1 DOCX import preview acceptance"
+Write-Host "PASS story V1 DOCX acceptance"
+
+
 

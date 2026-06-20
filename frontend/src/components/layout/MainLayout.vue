@@ -169,8 +169,8 @@ watch(() => org.currentOrgId, (newOrgId) => {
   else kb.resetSelection();
 });
 
-watch(() => route.fullPath, () => {
-  if (isMobile.value) closeSidebar();
+watch(() => route.fullPath, (path) => {
+  applyRouteSidebarPreference(path);
 });
 
 function setupResponsiveSidebar() {
@@ -186,6 +186,7 @@ function setupResponsiveSidebar() {
 function handleViewportChange(event) {
   isMobile.value = event.matches;
   sidebarCollapsed.value = event.matches;
+  applyRouteSidebarPreference(route.fullPath);
 }
 
 function toggleSidebar() {
@@ -198,6 +199,14 @@ function openSidebar() {
 
 function closeSidebar() {
   if (isMobile.value) sidebarCollapsed.value = true;
+}
+
+function applyRouteSidebarPreference(path) {
+  if (String(path || '').startsWith('/creation')) {
+    sidebarCollapsed.value = true;
+    return;
+  }
+  if (isMobile.value) closeSidebar();
 }
 
 function openShareDialog() {

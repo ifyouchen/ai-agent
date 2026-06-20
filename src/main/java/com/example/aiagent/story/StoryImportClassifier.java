@@ -7,9 +7,16 @@ final class StoryImportClassifier {
 
     static String detectType(String content) {
         String text = content == null ? "" : content;
-        if (text.matches("(?s).*第[一二三四五六七八九十百千万0-9]+集.*")
-                && (text.contains("【第") || text.contains("场景："))
-                && (text.contains("对白：") || text.contains("钩子：") || text.contains("本集冲突"))) {
+        boolean hasEpisode = text.matches("(?s).*第[一二三四五六七八九十百千万0-9]+集.*");
+        boolean hasScene = text.contains("【第") || text.contains("场景：");
+        boolean hasScriptMarker = text.contains("对白：")
+                || text.contains("钩子：")
+                || text.contains("本集冲突")
+                || text.contains("出场人物")
+                || text.contains("旁白：")
+                || text.contains("△")
+                || text.contains("独白");
+        if (hasEpisode && hasScene && hasScriptMarker) {
             return "short_drama";
         }
         if (text.contains("改编方案")

@@ -13,6 +13,10 @@ export const storyApi = {
     const { data } = await http.get(`/api/v1/story/projects/${id}`);
     return data;
   },
+  async updateProject(id, payload) {
+    const { data } = await http.put(`/api/v1/story/projects/${id}`, payload);
+    return data;
+  },
   async createChapter(projectId, payload) {
     const { data } = await http.post(`/api/v1/story/projects/${projectId}/chapters`, payload);
     return data;

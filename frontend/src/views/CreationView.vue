@@ -43,20 +43,27 @@
     <ProjectCards title="全部作品" :projects="filteredProjects" @script="startScript" />
   </div>
 
-  <div v-else-if="mode === 'editor'" class="creation-workbench">
+  <div v-else-if="mode === 'editor'" class="creation-workbench has-ai-config">
     <aside class="creation-side">
       <router-link to="/creation/projects">返回作品库</router-link>
       <h2>{{ project?.title || '作品编辑器' }}</h2>
       <div class="creation-side-section">
         <h3>创作资产</h3>
-        <button class="creation-list-btn" type="button" @click="runAi('setting')">设定</button>
-        <button class="creation-list-btn" type="button" @click="runAi('characters')">人物</button>
-        <button class="creation-list-btn" type="button" @click="runAi('outline')">大纲</button>
+        <button
+          v-for="asset in assetTypes"
+          :key="asset.type"
+          class="creation-list-btn"
+          :class="{ active: editorPanel === 'asset' && activeAssetType === asset.type }"
+          type="button"
+          @click="selectAsset(asset.type)"
+        >
+          {{ asset.label }}
+        </button>
       </div>
       <div class="creation-side-section">
         <h3>章节</h3>
         <button class="creation-primary-btn full" type="button" @click="addChapter">新增章节</button>
-        <button v-for="chapter in chapters" :key="chapter.id" class="creation-list-btn" :class="{ active: chapter.id === currentChapter?.id }" type="button" @click="selectChapter(chapter)">{{ chapter.title }}</button>
+        <button v-for="chapter in chapters" :key="chapter.id" class="creation-list-btn" :class="{ active: editorPanel === 'chapter' && chapter.id === currentChapter?.id }" type="button" @click="selectChapter(chapter)">{{ chapter.title }}</button>
       </div>
       <div v-if="project?.scriptDrafts?.length" class="creation-side-section">
         <h3>短剧草稿</h3>
@@ -65,14 +72,116 @@
         </router-link>
       </div>
     </aside>
-    <main class="creation-editor">
+    <main v-if="editorPanel === 'asset'" class="creation-editor">
+      <div class="creation-asset-head">
+        <div>
+          <h1>{{ activeAssetLabel }}</h1>
+          <p>{{ activeAssetHint }}</p>
+        </div>
+        <button class="creation-secondary-btn" type="button" @click="openActionPanel(activeAssetType)">AI 配置/生成</button>
+      </div>
+      <label class="creation-asset-instruction">
+        <span>你的要求</span>
+        <textarea v-model="assetForm.instruction" rows="4" :placeholder="activeAssetInstructionPlaceholder"></textarea>
+      </label>
+      <textarea v-model="assetForm.content" class="creation-manuscript" :placeholder="activeAssetPlaceholder"></textarea>
+      <footer><span>{{ assetWordCount }} 字</span><button type="button" @click="saveAsset">保存{{ activeAssetLabel }}</button></footer>
+    </main>
+    <main v-else class="creation-editor">
       <input v-model="chapterForm.title" class="creation-title-input" placeholder="章节标题" />
       <textarea v-model="chapterForm.content" class="creation-manuscript" placeholder="在这里写小说正文。"></textarea>
       <footer><span>{{ wordCount }} 字</span><button type="button" @click="saveChapter">保存章节</button></footer>
     </main>
+    <aside v-if="activeAction" class="creation-ai-config">
+        <div class="creation-ai-config-head">
+          <strong>{{ activeAction.label }}</strong>
+          <small>{{ activeAction.hint }}</small>
+        </div>
+        <label>
+          <span>本次要求</span>
+          <textarea v-model="actionForm.instruction" rows="4" :placeholder="activeAction.placeholder"></textarea>
+        </label>
+        <div class="creation-mini-grid">
+          <label>
+            <span>文风</span>
+            <select v-model="promptConfig.global.style">
+              <option>爽文</option>
+              <option>悬疑</option>
+              <option>现实向</option>
+              <option>轻喜剧</option>
+              <option>虐恋</option>
+            </select>
+          </label>
+          <label>
+            <span>节奏</span>
+            <select v-model="promptConfig.global.pace">
+              <option>快节奏</option>
+              <option>中等节奏</option>
+              <option>慢热</option>
+            </select>
+          </label>
+        </div>
+        <label>
+          <span>改写力度</span>
+          <select v-model="promptConfig.global.rewriteStrength">
+            <option>轻微</option>
+            <option>中等</option>
+            <option>大幅</option>
+          </select>
+        </label>
+        <label>
+          <span>保留项</span>
+          <input v-model="globalPreserveText" placeholder="剧情、人设、伏笔" @change="syncGlobalLists" />
+        </label>
+        <label>
+          <span>禁止项</span>
+          <input v-model="globalAvoidText" placeholder="AI腔、总结腔、过度排比" @change="syncGlobalLists" />
+        </label>
+        <div class="creation-mini-grid">
+          <label>
+            <span>动作强度</span>
+            <select v-model="activeActionConfig.params.strength">
+              <option>轻微</option>
+              <option>中等</option>
+              <option>强</option>
+            </select>
+          </label>
+          <label class="creation-inline-check">
+            <input v-model="activeActionConfig.params.keepPlot" type="checkbox" />
+            <span>保留剧情</span>
+          </label>
+        </div>
+        <details class="creation-prompt-details">
+          <summary>高级提示词</summary>
+          <label class="creation-inline-check">
+            <input v-model="activeActionConfig.useCustomPrompt" type="checkbox" />
+            <span>使用自定义动作模板</span>
+          </label>
+          <textarea v-model="activeActionConfig.userTemplate" rows="6" placeholder="输入这个动作的高级提示词模板。系统仍会追加安全边界和当前作品上下文。"></textarea>
+          <button class="creation-secondary-btn full compact" type="button" @click="restoreActionPrompt">恢复默认提示词</button>
+        </details>
+        <button class="creation-primary-btn full" type="button" @click="executeAction">执行</button>
+        <button class="creation-secondary-btn full compact" type="button" @click="savePromptConfig">保存 AI 配置</button>
+        <label v-if="actionForm.result" class="creation-ai-result">
+          <span>{{ activeAction.type === 'review' ? '审查建议' : 'AI 生成草稿' }}</span>
+          <textarea v-model="actionForm.result" rows="9"></textarea>
+        </label>
+        <div v-if="actionForm.result && !isAssetAction(activeAction.type) && activeAction.type !== 'review'" class="creation-row">
+          <button class="creation-secondary-btn" type="button" @click="appendActionResult">追加到正文</button>
+          <button class="creation-secondary-btn" type="button" @click="replaceChapterWithResult">替换正文</button>
+        </div>
+    </aside>
     <aside class="creation-ai">
       <h3>AI 助手</h3>
-      <button v-for="action in aiActions" :key="action.type" type="button" @click="runAi(action.type)">{{ action.label }}</button>
+      <button
+        v-for="action in aiActions"
+        :key="action.type"
+        :class="{ active: activeActionType === action.type }"
+        type="button"
+        @click="openActionPanel(action.type)"
+      >
+        {{ action.label }}
+      </button>
       <button type="button" @click="startRewrite">改小说三栏对照</button>
       <button class="creation-primary-btn full" type="button" @click="startScript(project)">转短剧</button>
       <div class="creation-versions">
@@ -258,6 +367,14 @@ const showCreate = ref(false);
 const showImport = ref(route.query.import === '1');
 const importFileRef = ref(null);
 const importPreview = ref(null);
+const editorPanel = ref('chapter');
+const activeAssetType = ref('setting');
+const assetForm = reactive({ content: '', instruction: '' });
+const activeActionType = ref('continue');
+const actionForm = reactive({ instruction: '', result: '' });
+const promptConfig = reactive(defaultPromptConfig());
+const globalPreserveText = ref(promptConfig.global.preserve.join('、'));
+const globalAvoidText = ref(promptConfig.global.avoid.join('、'));
 const chapterForm = reactive({ title: '', content: '' });
 const createForm = reactive({ title: '', type: 'long_novel', description: '' });
 const importForm = reactive({ title: '', content: '' });
@@ -275,18 +392,41 @@ const exportForm = reactive({
 });
 const filters = [{ value: 'all', label: '全部' }, { value: 'long_novel', label: '长篇' }, { value: 'short_story', label: '短篇' }, { value: 'adaptation', label: '改编' }, { value: 'short_drama', label: '短剧' }];
 const aiActions = [
-  { type: 'setting', label: '生成设定' },
-  { type: 'characters', label: '生成人物' },
-  { type: 'outline', label: '生成大纲' },
-  { type: 'continue', label: '续写' },
-  { type: 'expand', label: '扩写' },
-  { type: 'shorten', label: '缩写' },
-  { type: 'style', label: '改风格' },
-  { type: 'polish', label: '润色' },
-  { type: 'deslop', label: '去 AI 味' },
-  { type: 'dialogue', label: '对白优化' },
-  { type: 'conflict', label: '强化冲突' },
-  { type: 'review', label: '章节审查' },
+  { type: 'setting', label: '编辑设定', hint: '生成或补全世界观、题材基调、爽点机制。', placeholder: '例如：古代科举权谋，男主重生，不要系统。' },
+  { type: 'characters', label: '编辑人物', hint: '生成或补全人物欲望、弱点、关系网。', placeholder: '例如：主角克制但有狠劲，反派掌握官府资源。' },
+  { type: 'outline', label: '编辑大纲', hint: '生成章节节点、冲突升级和结尾钩子。', placeholder: '例如：先生成前20章，每章一个冲突点。' },
+  { type: 'continue', label: '续写', hint: '基于当前章节继续写，不自动保存。', placeholder: '例如：承接电话后的不安，写800字，结尾留钩子。' },
+  { type: 'expand', label: '扩写', hint: '扩充动作、环境、冲突和细节。', placeholder: '例如：把这段扩成更有压迫感的对峙。' },
+  { type: 'shorten', label: '缩写', hint: '压缩解释和旁白，保留剧情信息。', placeholder: '例如：压到300字，保留反转和关键对白。' },
+  { type: 'style', label: '改风格', hint: '调整文风和叙事口吻。', placeholder: '例如：改成短句快节奏，少抒情。' },
+  { type: 'polish', label: '润色', hint: '提升文字流畅度和可读性。', placeholder: '例如：保持原剧情，增强动作和情绪。' },
+  { type: 'deslop', label: '去 AI 味', hint: '减少模板化、总结腔和空泛形容。', placeholder: '例如：更像真人作者，不要排比和总结。' },
+  { type: 'dialogue', label: '对白优化', hint: '让对白更口语、更有冲突。', placeholder: '例如：保留含义，但让两个人互相试探。' },
+  { type: 'conflict', label: '强化冲突', hint: '提高压迫、误会、反转或危机密度。', placeholder: '例如：加入当众打脸和证据反转。' },
+  { type: 'review', label: '章节审查', hint: '输出问题诊断和修改建议，不改正文。', placeholder: '例如：重点检查前三秒钩子、人设一致性和爽点。' },
+];
+const assetTypes = [
+  {
+    type: 'setting',
+    label: '设定',
+    hint: '记录世界观、题材基调、主线矛盾、爽点机制和连续性规则。',
+    placeholder: '例如：时代背景、核心冲突、金手指/爽点机制、禁忌规则、主要势力...',
+    instructionPlaceholder: '例如：古代科举权谋，男主重生，爽点是复试翻盘；不要仙侠，不要系统。',
+  },
+  {
+    type: 'characters',
+    label: '人物',
+    hint: '记录主角、对手、盟友和关键配角的欲望、弱点、关系与出场功能。',
+    placeholder: '例如：主角目标、人物弱点、关系网、对手压迫点、角色弧光...',
+    instructionPlaceholder: '例如：主角理性克制但有狠劲；女配嫌贫爱富；反派有官府资源压迫。',
+  },
+  {
+    type: 'outline',
+    label: '大纲',
+    hint: '记录主线阶段、章节节点、冲突升级、反转和结尾钩子。',
+    placeholder: '例如：第一卷目标、关键节点、每章功能、伏笔回收、阶段性爆点...',
+    instructionPlaceholder: '例如：先写前 20 章大纲，每章一个冲突点，前三章必须强钩子。',
+  },
 ];
 
 const mode = computed(() => route.meta.creationMode || 'home');
@@ -301,6 +441,14 @@ const filteredProjects = computed(() => {
   });
 });
 const wordCount = computed(() => (chapterForm.content || '').replace(/\s/g, '').length);
+const assetWordCount = computed(() => (assetForm.content || '').replace(/\s/g, '').length);
+const activeAsset = computed(() => assetTypes.find(asset => asset.type === activeAssetType.value) || assetTypes[0]);
+const activeAssetLabel = computed(() => activeAsset.value.label);
+const activeAssetHint = computed(() => activeAsset.value.hint);
+const activeAssetPlaceholder = computed(() => activeAsset.value.placeholder);
+const activeAssetInstructionPlaceholder = computed(() => activeAsset.value.instructionPlaceholder);
+const activeAction = computed(() => aiActions.find(action => action.type === activeActionType.value));
+const activeActionConfig = computed(() => ensureActionConfig(activeActionType.value));
 const scriptPreview = computed(() => (draft.value?.episodes || []).map(ep => `第${ep.episodeNo}集\n核心爽点：${ep.coreHook}\n结尾钩子：${ep.endingHook}`).join('\n\n'));
 const exportScenes = computed(() => (draft.value?.episodes || []).flatMap(ep => (ep.scenes || []).map(scene => ({
   ...scene,
@@ -407,15 +555,197 @@ function onImportFileChange(event) {
 
 async function loadProject() {
   project.value = await storyApi.getProject(route.params.id);
+  applyPromptConfig(project.value.promptConfig || project.value.metadata?.promptConfig);
   chapters.value = project.value.chapters || [];
-  selectChapter(chapters.value[0] || null);
+  if (editorPanel.value === 'asset') {
+    syncAssetForm();
+  } else {
+    selectChapter(chapters.value[0] || null);
+  }
 }
 
 function selectChapter(chapter) {
+  editorPanel.value = 'chapter';
   currentChapter.value = chapter;
   chapterForm.title = chapter?.title || `第${chapters.value.length + 1}章`;
   chapterForm.content = chapter?.content || '';
   loadChapterVersions();
+}
+
+function projectAssets() {
+  return project.value?.assets || project.value?.metadata?.assets || {};
+}
+
+function selectAsset(type) {
+  editorPanel.value = 'asset';
+  activeAssetType.value = type;
+  syncAssetForm();
+}
+
+function isAssetAction(action) {
+  return ['setting', 'characters', 'outline'].includes(action);
+}
+
+function defaultPromptConfig() {
+  return {
+    global: {
+      style: '爽文',
+      pace: '快节奏',
+      rewriteStrength: '中等',
+      preserve: ['剧情', '人设', '伏笔'],
+      avoid: ['AI腔', '总结腔', '过度排比'],
+    },
+    actions: {},
+  };
+}
+
+function defaultActionConfig(type) {
+  return {
+    enabled: true,
+    userTemplate: '',
+    useCustomPrompt: false,
+    params: {
+      strength: type === 'conflict' ? '强' : '中等',
+      keepPlot: true,
+    },
+  };
+}
+
+function ensureActionConfig(type) {
+  if (!type) return defaultActionConfig('continue');
+  if (!promptConfig.actions[type]) {
+    promptConfig.actions[type] = defaultActionConfig(type);
+  }
+  if (!promptConfig.actions[type].params) {
+    promptConfig.actions[type].params = defaultActionConfig(type).params;
+  }
+  if (promptConfig.actions[type].useCustomPrompt === undefined) {
+    promptConfig.actions[type].useCustomPrompt = false;
+  }
+  return promptConfig.actions[type];
+}
+
+function applyPromptConfig(saved) {
+  const defaults = defaultPromptConfig();
+  const incoming = saved && typeof saved === 'object' ? saved : {};
+  Object.assign(promptConfig.global, defaults.global, incoming.global || {});
+  promptConfig.global.preserve = Array.isArray(promptConfig.global.preserve) ? promptConfig.global.preserve : defaults.global.preserve;
+  promptConfig.global.avoid = Array.isArray(promptConfig.global.avoid) ? promptConfig.global.avoid : defaults.global.avoid;
+  Object.keys(promptConfig.actions).forEach(key => delete promptConfig.actions[key]);
+  Object.entries(incoming.actions || {}).forEach(([type, value]) => {
+    promptConfig.actions[type] = {
+      ...defaultActionConfig(type),
+      ...(value || {}),
+      params: {
+        ...defaultActionConfig(type).params,
+        ...((value || {}).params || {}),
+      },
+    };
+  });
+  aiActions.forEach(action => ensureActionConfig(action.type));
+  syncGlobalListTexts();
+}
+
+function syncGlobalListTexts() {
+  globalPreserveText.value = (promptConfig.global.preserve || []).join('、');
+  globalAvoidText.value = (promptConfig.global.avoid || []).join('、');
+}
+
+function splitListText(text) {
+  return String(text || '').split(/[、,，\n]/).map(item => item.trim()).filter(Boolean);
+}
+
+function syncGlobalLists() {
+  promptConfig.global.preserve = splitListText(globalPreserveText.value);
+  promptConfig.global.avoid = splitListText(globalAvoidText.value);
+}
+
+function promptConfigPayload() {
+  syncGlobalLists();
+  aiActions.forEach(action => ensureActionConfig(action.type));
+  return JSON.parse(JSON.stringify(promptConfig));
+}
+
+async function savePromptConfig() {
+  project.value = await storyApi.updateProject(project.value.id, { promptConfig: promptConfigPayload() });
+  applyPromptConfig(project.value.promptConfig || project.value.metadata?.promptConfig);
+  ui.showToast('success', 'AI 配置已保存');
+}
+
+function restoreActionPrompt() {
+  const config = ensureActionConfig(activeActionType.value);
+  config.userTemplate = '';
+  config.useCustomPrompt = false;
+  ui.showToast('success', '已恢复默认提示词');
+}
+
+function openActionPanel(type) {
+  activeActionType.value = type;
+  actionForm.result = '';
+  ensureActionConfig(type);
+  if (isAssetAction(type)) {
+    selectAsset(type);
+    actionForm.instruction = assetForm.instruction || actionForm.instruction;
+  }
+}
+
+function actionSource() {
+  if (isAssetAction(activeActionType.value)) {
+    return [
+      assetForm.content ? `当前${activeAssetLabel.value}：\n${assetForm.content}` : '',
+      chapterForm.content ? `当前章节：\n${chapterForm.content}` : '',
+    ].filter(Boolean).join('\n\n');
+  }
+  return chapterForm.content || '';
+}
+
+async function executeAction() {
+  if (!project.value?.id) return;
+  if (!isAssetAction(activeActionType.value) && !chapterForm.content.trim() && activeActionType.value !== 'continue') {
+    ui.showToast('warning', '请先输入正文');
+    return;
+  }
+  if (isAssetAction(activeActionType.value) && !actionForm.instruction.trim() && !assetForm.content.trim()) {
+    ui.showToast('warning', `请先填写${activeAssetLabel.value}要求，或手动输入${activeAssetLabel.value}内容`);
+    return;
+  }
+  const config = ensureActionConfig(activeActionType.value);
+  if (isAssetAction(activeActionType.value)) {
+    assetForm.instruction = actionForm.instruction;
+  }
+  const result = await storyApi.generate(project.value.id, {
+    action: activeActionType.value,
+    chapterId: currentChapter.value?.id,
+    content: actionSource(),
+    instruction: actionForm.instruction,
+    params: config.params || {},
+    useCustomPrompt: Boolean(config.useCustomPrompt),
+  });
+  actionForm.result = result.content || '';
+  if (isAssetAction(activeActionType.value)) {
+    assetForm.content = [assetForm.content, actionForm.result].filter(Boolean).join(assetForm.content ? '\n\n' : '');
+    ui.showToast('success', '已生成到资产编辑框，请确认后保存');
+    return;
+  }
+  ui.showToast('success', activeActionType.value === 'review' ? '审查建议已生成' : 'AI 草稿已生成，请确认后应用');
+}
+
+function appendActionResult() {
+  if (!actionForm.result.trim()) return;
+  chapterForm.content = [chapterForm.content, actionForm.result].filter(Boolean).join(chapterForm.content ? '\n\n' : '');
+  actionForm.result = '';
+  ui.showToast('success', '已追加到正文，记得保存章节');
+}
+
+function replaceChapterWithResult() {
+  if (!actionForm.result.trim()) return;
+  chapterForm.content = actionForm.result;
+  actionForm.result = '';
+  ui.showToast('success', '已替换正文，记得保存章节');
+}
+
+function syncAssetForm() {
+  assetForm.content = projectAssets()[activeAssetType.value] || '';
 }
 
 async function addChapter() {
@@ -430,6 +760,12 @@ async function saveChapter() {
   Object.assign(currentChapter.value, saved);
   await loadChapterVersions();
   ui.showToast('success', '章节已保存');
+}
+
+async function saveAsset() {
+  const assets = { ...projectAssets(), [activeAssetType.value]: assetForm.content };
+  project.value = await storyApi.updateProject(project.value.id, { assets });
+  ui.showToast('success', `${activeAssetLabel.value}已保存`);
 }
 
 async function loadChapterVersions() {
@@ -449,9 +785,10 @@ async function restoreVersion(version) {
   ui.showToast('success', `已恢复到 V${version.versionNo}`);
 }
 
-async function runAi(action) {
-  const result = await storyApi.generate(project.value.id, { action, chapterId: currentChapter.value?.id, content: chapterForm.content });
-  chapterForm.content = [chapterForm.content, result.content].filter(Boolean).join(chapterForm.content ? '\n\n' : '');
+async function generateAsset(type) {
+  openActionPanel(type);
+  actionForm.instruction = assetForm.instruction;
+  await executeAction();
 }
 
 async function startRewrite() {
