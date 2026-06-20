@@ -139,6 +139,10 @@ public class StoryController {
         return service.getDraft(draftId);
     }
 
+    @PostMapping("/script/episodes/{episodeId}/ai")
+    public Map<String, Object> improveEpisode(@PathVariable Long episodeId, @RequestBody(required = false) Map<String, Object> payload) {
+        return service.improveEpisode(episodeId, payload == null ? Map.of() : payload);
+    }
     @PostMapping("/script/episodes/{episodeId}/scenes")
     public Map<String, Object> createScene(@PathVariable Long episodeId, @RequestBody(required = false) Map<String, Object> payload) {
         return service.createScene(episodeId, payload == null ? Map.of() : payload);

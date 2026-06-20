@@ -120,8 +120,8 @@ public class StoryWorkspaceService {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("导入文件不能为空");
         }
-        String filename = string(file.getOriginalFilename(), "导入作品");
-        Path tempFile = Files.createTempFile("story-import-", "-" + filename);
+        String filename = cleanUploadFilename(file.getOriginalFilename());
+        Path tempFile = Files.createTempFile("story-import-", "-" + safeFilename(filename));
         try {
             Files.copy(file.getInputStream(), tempFile, StandardCopyOption.REPLACE_EXISTING);
             String content = parseUploadText(tempFile, filename);
@@ -138,8 +138,8 @@ public class StoryWorkspaceService {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("导入文件不能为空");
         }
-        String filename = string(file.getOriginalFilename(), "导入作品");
-        Path tempFile = Files.createTempFile("story-import-preview-", "-" + filename);
+        String filename = cleanUploadFilename(file.getOriginalFilename());
+        Path tempFile = Files.createTempFile("story-import-preview-", "-" + safeFilename(filename));
         try {
             Files.copy(file.getInputStream(), tempFile, StandardCopyOption.REPLACE_EXISTING);
             String content = parseUploadText(tempFile, filename);
@@ -432,6 +432,19 @@ public class StoryWorkspaceService {
         return draftMap(draft);
     }
 
+    @Transactional
+    public Map<String, Object> improveEpisode(Long episodeId, Map<String, Object> payload) {
+        ScriptEpisode episode = episodeMapper.findById(episodeId)
+                .orElseThrow(() -> new IllegalArgumentException("分集不存在：" + episodeId));
+        Map<String, Object> current = episodeMap(episode);
+        if (payload.get("episode") instanceof Map<?, ?> episodePayload) {
+            episodePayload.forEach((key, value) -> current.put(String.valueOf(key), value));
+        }
+        Map<String, Object> improved = fallbackEpisodeImprovement(current, string(payload.get("action"), "rewrite"));
+        applyEpisodePayload(episode, improved);
+        episodeMapper.update(episode);
+        return episodeMap(episode);
+    }
     @Transactional
     public Map<String, Object> createScene(Long episodeId, Map<String, Object> payload) {
         Integer nextNo = sceneMapper.nextSceneNo(episodeId);
@@ -751,6 +764,12 @@ public class StoryWorkspaceService {
         return dot > 0 ? filename.substring(0, dot) : filename;
     }
 
+    private String cleanUploadFilename(String filename) {
+        String value = string(filename, "导入作品").replace('\\', '/');
+        int slash = value.lastIndexOf('/');
+        return slash >= 0 ? value.substring(slash + 1) : value;
+    }
+
     private String safeFilename(String filename) {
         return filename.replaceAll("[\\\\/:*?\"<>|]", "_");
     }
@@ -847,6 +866,7 @@ public class StoryWorkspaceService {
         map.put("sourceRef", draft.getSourceRef());
         map.put("adaptationPlan", fromJsonObject(draft.getAdaptationPlan()));
         map.put("qualityReport", fromJsonObject(draft.getQualityReport()));
+        map.put("sourceChapters", sourceChapterSummaries(draft.getSourceRef()));
         map.put("createdAt", instant(draft.getCreatedAt()));
         List<Map<String, Object>> episodes = episodeMapper.findByDraftId(draft.getId()).stream()
                 .map(this::episodeMap)
@@ -855,6 +875,23 @@ public class StoryWorkspaceService {
         return map;
     }
 
+    private List<Map<String, Object>> sourceChapterSummaries(String sourceRef) {
+        if (sourceRef == null || !sourceRef.startsWith("project:")) return List.of();
+        Long projectId = nullableLong(sourceRef.substring("project:".length()));
+        if (projectId == null) return List.of();
+        return chapterMapper.findByProjectId(projectId).stream()
+                .map(chapter -> {
+                    Map<String, Object> map = new LinkedHashMap<>();
+                    map.put("id", chapter.getId());
+                    map.put("title", chapter.getTitle());
+                    map.put("chapterNo", chapter.getChapterNo());
+                    map.put("wordCount", chapter.getWordCount());
+                    String content = string(chapter.getContent(), "");
+                    map.put("preview", content.length() <= 160 ? content : content.substring(0, 160));
+                    return map;
+                })
+                .toList();
+    }
     private Map<String, Object> episodeMap(ScriptEpisode episode) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("id", episode.getId());
@@ -967,6 +1004,14 @@ public class StoryWorkspaceService {
                 .build();
     }
 
+    private void applyEpisodePayload(ScriptEpisode episode, Map<String, Object> payload) {
+        if (payload.containsKey("title")) episode.setTitle(string(payload.get("title"), episode.getTitle()));
+        if (payload.containsKey("estimatedDuration")) episode.setEstimatedDuration(string(payload.get("estimatedDuration"), episode.getEstimatedDuration()));
+        if (payload.containsKey("coreHook")) episode.setCoreHook(string(payload.get("coreHook"), episode.getCoreHook()));
+        if (payload.containsKey("mainConflict")) episode.setMainConflict(string(payload.get("mainConflict"), episode.getMainConflict()));
+        if (payload.containsKey("endingHook")) episode.setEndingHook(string(payload.get("endingHook"), episode.getEndingHook()));
+        if (payload.containsKey("summary")) episode.setSummary(string(payload.get("summary"), episode.getSummary()));
+    }
     private void applyScenePayload(ScriptScene scene, Map<String, Object> payload) {
         if (payload.containsKey("sceneTitle")) scene.setSceneTitle(string(payload.get("sceneTitle"), scene.getSceneTitle()));
         if (payload.containsKey("location")) scene.setLocation(string(payload.get("location"), scene.getLocation()));
@@ -1122,6 +1167,16 @@ public class StoryWorkspaceService {
         return scene;
     }
 
+    private Map<String, Object> fallbackEpisodeImprovement(Map<String, Object> current, String action) {
+        Map<String, Object> improved = new LinkedHashMap<>(current);
+        improved.put("title", string(current.get("title"), "本集") + "（强化版）");
+        improved.put("estimatedDuration", string(current.get("estimatedDuration"), "1-3分钟"));
+        improved.put("coreHook", "开场 3 秒直接抛出身份、背叛或证据反转，让观众立刻站队。");
+        improved.put("mainConflict", "主角目标与对手压迫正面相撞，中段至少一次误会升级或当众打脸。");
+        improved.put("endingHook", "结尾留下新证据、新身份或关键人物突然出现，推动追看下一集。");
+        improved.put("summary", "本集按短剧节奏重排：钩子前置、冲突加密、心理活动外化为动作和对白。");
+        return improved;
+    }
     private Map<String, Object> fallbackSceneImprovement(Map<String, Object> current, String action) {
         Map<String, Object> improved = new LinkedHashMap<>(current);
         switch (action) {
@@ -1239,19 +1294,7 @@ public class StoryWorkspaceService {
     }
 
     private String detectType(String content) {
-        String text = content == null ? "" : content;
-        if (text.matches("(?s).*第[一二三四五六七八九十百千万0-9]+集.*")
-                && (text.contains("【第") || text.contains("场景："))
-                && (text.contains("对白：") || text.contains("钩子：") || text.contains("本集冲突"))) {
-            return "short_drama";
-        }
-        if (text.contains("改编方案")
-                || (text.contains("故事核") && text.contains("人物关系"))
-                || text.contains("情节取舍")
-                || text.contains("题材迁移")) {
-            return "adaptation";
-        }
-        return wordCount(content) > 20_000 ? "long_novel" : "short_story";
+        return StoryImportClassifier.detectType(content);
     }
 
     private String defaultOpening(String type) {
@@ -1260,7 +1303,7 @@ public class StoryWorkspaceService {
     }
 
     private int wordCount(String text) {
-        return text == null ? 0 : text.replaceAll("\\s+", "").length();
+        return StoryImportClassifier.wordCount(text);
     }
 
     private String typeLabel(String type) {
@@ -1353,3 +1396,5 @@ public class StoryWorkspaceService {
         }
     }
 }
+
+

@@ -22,10 +22,26 @@
         ORDER BY episode_no ASC
     </select>
 
-    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+    
+    <select id="findById" resultMap="ScriptEpisodeRM">
+        SELECT id, draft_id, episode_no, title, estimated_duration, core_hook, main_conflict, ending_hook, summary
+        FROM story_script_episode
+        WHERE id = #{id}
+    </select>
+<insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO story_script_episode
             (draft_id, episode_no, title, estimated_duration, core_hook, main_conflict, ending_hook, summary)
         VALUES
             (#{draftId}, #{episodeNo}, #{title}, #{estimatedDuration}, #{coreHook}, #{mainConflict}, #{endingHook}, #{summary})
     </insert>
-</mapper>
+
+    <update id="update">
+        UPDATE story_script_episode
+        SET title = #{title},
+            estimated_duration = #{estimatedDuration},
+            core_hook = #{coreHook},
+            main_conflict = #{mainConflict},
+            ending_hook = #{endingHook},
+            summary = #{summary}
+        WHERE id = #{id}
+    </update></mapper>

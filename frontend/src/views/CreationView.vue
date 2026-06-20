@@ -47,8 +47,23 @@
     <aside class="creation-side">
       <router-link to="/creation/projects">返回作品库</router-link>
       <h2>{{ project?.title || '作品编辑器' }}</h2>
-      <button class="creation-primary-btn full" type="button" @click="addChapter">新增章节</button>
-      <button v-for="chapter in chapters" :key="chapter.id" class="creation-list-btn" :class="{ active: chapter.id === currentChapter?.id }" type="button" @click="selectChapter(chapter)">{{ chapter.title }}</button>
+      <div class="creation-side-section">
+        <h3>创作资产</h3>
+        <button class="creation-list-btn" type="button" @click="runAi('setting')">设定</button>
+        <button class="creation-list-btn" type="button" @click="runAi('characters')">人物</button>
+        <button class="creation-list-btn" type="button" @click="runAi('outline')">大纲</button>
+      </div>
+      <div class="creation-side-section">
+        <h3>章节</h3>
+        <button class="creation-primary-btn full" type="button" @click="addChapter">新增章节</button>
+        <button v-for="chapter in chapters" :key="chapter.id" class="creation-list-btn" :class="{ active: chapter.id === currentChapter?.id }" type="button" @click="selectChapter(chapter)">{{ chapter.title }}</button>
+      </div>
+      <div v-if="project?.scriptDrafts?.length" class="creation-side-section">
+        <h3>短剧草稿</h3>
+        <router-link v-for="draftItem in project.scriptDrafts" :key="draftItem.id" class="creation-list-btn" :to="`/creation/scripts/${draftItem.id}`">
+          {{ draftItem.title }}
+        </router-link>
+      </div>
     </aside>
     <main class="creation-editor">
       <input v-model="chapterForm.title" class="creation-title-input" placeholder="章节标题" />
@@ -92,6 +107,13 @@
       <router-link to="/creation/projects">返回作品库</router-link>
       <h2>{{ draft?.title || '短剧改编' }}</h2>
       <button class="creation-primary-btn full" type="button" @click="qualityCheck">质检全稿</button>
+      <div v-if="draft?.sourceChapters?.length" class="creation-side-section">
+        <h3>原文章节</h3>
+        <details v-for="source in draft.sourceChapters" :key="source.id" class="creation-source-item">
+          <summary>{{ source.title }} · {{ source.wordCount }}字</summary>
+          <p>{{ source.preview }}</p>
+        </details>
+      </div>
       <template v-for="ep in draft?.episodes || []" :key="ep.id">
         <h3>第{{ ep.episodeNo }}集</h3>
         <button class="creation-secondary-btn full compact" type="button" @click="addScene(ep)">新增场次</button>
@@ -112,6 +134,7 @@
     </main>
     <aside class="creation-ai">
       <h3>短剧助手</h3>
+      <button type="button" @click="improveEpisode">重写本集</button>
       <button type="button" @click="improveScene('rewrite')">重写本场</button>
       <button type="button" @click="improveScene('hook')">补钩子</button>
       <button type="button" @click="improveScene('dialogue')">对白口语化</button>
@@ -534,6 +557,12 @@ async function moveScene(direction) {
   selectScene(currentEpisode.value, moved || scenes[0] || null);
 }
 
+async function improveEpisode() {
+  if (!currentEpisode.value) return;
+  const saved = await storyApi.improveEpisode(currentEpisode.value.id, { action: 'rewrite', episode: currentEpisode.value });
+  Object.assign(currentEpisode.value, saved);
+  ui.showToast('success', '本集已重写');
+}
 async function improveScene(action) {
   if (!currentScene.value) return;
   const saved = await storyApi.improveScene(currentScene.value.id, { action, scene: sceneForm });

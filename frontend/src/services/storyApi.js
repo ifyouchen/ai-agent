@@ -95,7 +95,10 @@ export const storyApi = {
     const { data } = await http.get(`/api/v1/story/script/drafts/${draftId}`);
     return data;
   },
-  async createScene(episodeId, payload) {
+  async improveEpisode(episodeId, payload) {
+    const { data } = await http.post(`/api/v1/story/script/episodes/${episodeId}/ai`, payload || {});
+    return data;
+  },  async createScene(episodeId, payload) {
     const { data } = await http.post(`/api/v1/story/script/episodes/${episodeId}/scenes`, payload || {});
     return data;
   },
