@@ -4,12 +4,23 @@
    ===================================================================== */
 
 .kb-view {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
-  height: 100%;
+  height: auto;
   overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   padding: 24px 28px 40px;
   background: #f8f9fc;
+}
+
+.kb-view::-webkit-scrollbar {
+  display: none;
+}
+
+.kb-view-empty,
+.kb-view:has(.kb-list-empty) {
+  overflow-y: hidden;
 }
 
 /* ── 顶部知识库选择器 ── */
@@ -842,11 +853,24 @@
 
 .kb-list-empty {
   flex: 1 1 100%;
-  min-height: 220px;
+  min-height: 0;
+  padding: 28px 20px;
+  gap: 8px;
+}
+
+.kb-list-empty .empty-state-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  margin-bottom: 2px;
+}
+
+.kb-list-empty .empty-state-hint {
+  line-height: 1.5;
 }
 
 .kb-empty-create-btn {
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 
@@ -932,10 +956,8 @@
   }
 
   .kb-list-empty {
-    min-height: 150px;
-    padding: 20px 16px;
+    padding: 18px 16px;
     gap: 8px;
-    justify-content: flex-start;
   }
 
   .kb-list-empty .empty-state-icon {

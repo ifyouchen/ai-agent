@@ -1,5 +1,5 @@
 <template>
-  <div class="kb-view">
+  <div class="kb-view" :class="{ 'kb-view-empty': !kb.kbLoading && !hasKnowledgeBases }">
     <!-- 顶部：知识库选择器 -->
     <div class="kb-selector-header">
       <h3 class="kb-selector-title">
