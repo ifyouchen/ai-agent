@@ -183,6 +183,13 @@
             <version>9.10.0</version>
         </dependency>
 
+        <!-- PDF export for story manuscripts and script drafts -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>2.0.31</version>
+        </dependency>
+
         
 
         <!-- Bean Validation（@Valid、@NotBlank 等注解生效需要） -->

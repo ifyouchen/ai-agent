@@ -14,4 +14,5 @@ public interface StoryChapterMapper {
     Integer nextChapterNo(@Param("projectId") Long projectId);
     void insert(StoryChapter chapter);
     void update(StoryChapter chapter);
+    void deleteById(@Param("id") Long id);
 }

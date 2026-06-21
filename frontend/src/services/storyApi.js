@@ -17,12 +17,26 @@ export const storyApi = {
     const { data } = await http.put(`/api/v1/story/projects/${id}`, payload);
     return data;
   },
+  async exportProject(id, payload) {
+    const { data } = await http.post(`/api/v1/story/projects/${id}/export`, payload || {});
+    return data;
+  },
+  async exportProjectFile(id, payload) {
+    const response = await http.post(`/api/v1/story/projects/${id}/export/file`, payload || {}, {
+      responseType: 'blob',
+    });
+    return response;
+  },
   async createChapter(projectId, payload) {
     const { data } = await http.post(`/api/v1/story/projects/${projectId}/chapters`, payload);
     return data;
   },
   async updateChapter(chapterId, payload) {
     const { data } = await http.put(`/api/v1/story/chapters/${chapterId}`, payload);
+    return data;
+  },
+  async deleteChapter(chapterId) {
+    const { data } = await http.delete(`/api/v1/story/chapters/${chapterId}`);
     return data;
   },
   async listChapterVersions(chapterId) {
@@ -33,8 +47,8 @@ export const storyApi = {
     const { data } = await http.post(`/api/v1/story/chapters/${chapterId}/restore`, payload || {});
     return data;
   },
-  async generate(projectId, payload) {
-    const { data } = await http.post(`/api/v1/story/projects/${projectId}/generate`, payload);
+  async generate(projectId, payload, config = {}) {
+    const { data } = await http.post(`/api/v1/story/projects/${projectId}/generate`, payload, config);
     return data;
   },
   async importText(payload) {

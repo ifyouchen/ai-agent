@@ -29,6 +29,12 @@ http.interceptors.request.use((config) => {
 http.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (axios.isCancel(error) || error.code === 'ERR_CANCELED') {
+      const canceled = new Error('请求已取消');
+      canceled.canceled = true;
+      return Promise.reject(canceled);
+    }
+
     if (error.response?.status === 401) {
       const data = error.response.data;
       const message = data?.error || data?.message || '用户名或密码错误';

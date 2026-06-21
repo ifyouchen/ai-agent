@@ -8,10 +8,18 @@ import dev.langchain4j.data.document.loader.FileSystemDocumentLoader;
 import dev.langchain4j.data.document.parser.apache.tika.ApacheTikaDocumentParser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.font.PDFont;
+import org.apache.pdfbox.pdmodel.font.PDType0Font;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -24,6 +32,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -194,6 +203,33 @@ public class StoryWorkspaceService {
         return getProject(id);
     }
 
+    @Transactional(readOnly = true)
+    public Map<String, Object> exportProject(Long projectId, Map<String, Object> payload) {
+        Map<String, Object> project = getProject(projectId);
+        String format = normalizeExportFormat(string(payload.get("format"), "md"));
+        String markdown = buildProjectMarkdown(project, payload);
+        String content = previewExportContent(project.get("title"), markdown, format);
+        log.info("story.project.export action=export_preview projectId={} format={} contentLength={}",
+                projectId, format, content.length());
+        return Map.of(
+                "projectId", projectId,
+                "format", format,
+                "filename", exportFilename(project.get("title"), format),
+                "content", content
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public ExportFile exportProjectFile(Long projectId, Map<String, Object> payload) throws IOException {
+        Map<String, Object> project = getProject(projectId);
+        String format = normalizeExportFormat(string(payload.get("format"), "md"));
+        String markdown = buildProjectMarkdown(project, payload);
+        ExportFile file = buildExportFile(project.get("title"), markdown, format);
+        log.info("story.project.export action=export_file projectId={} format={} filename={} bytes={}",
+                projectId, format, file.filename(), file.bytes().length);
+        return file;
+    }
+
     @Transactional
     public Map<String, Object> createChapter(Long projectId, Map<String, Object> payload) {
         projectMapper.findById(projectId).orElseThrow(() -> new IllegalArgumentException("作品不存在：" + projectId));
@@ -230,6 +266,29 @@ public class StoryWorkspaceService {
         log.info("story.chapter.update action=update_chapter projectId={} chapterId={} versionNo={} wordCount={} source={}",
                 chapter.getProjectId(), chapterId, chapter.getVersionNo(), chapter.getWordCount(), string(payload.get("source"), "manual"));
         return chapterMap(chapter);
+    }
+
+    @Transactional
+    public Map<String, Object> deleteChapter(Long chapterId) {
+        StoryChapter chapter = chapterMapper.findById(chapterId)
+                .orElseThrow(() -> new IllegalArgumentException("章节不存在：" + chapterId));
+        List<StoryChapter> projectChapters = chapterMapper.findByProjectId(chapter.getProjectId());
+        if (projectChapters.size() <= 1) {
+            throw new IllegalArgumentException("至少需要保留一个章节");
+        }
+        chapterMapper.deleteById(chapterId);
+        projectMapper.updateStatus(chapter.getProjectId(), "writing");
+        List<Map<String, Object>> remaining = chapterMapper.findByProjectId(chapter.getProjectId()).stream()
+                .map(this::chapterMap)
+                .toList();
+        log.info("story.chapter.delete action=delete_chapter projectId={} chapterId={} remainingCount={}",
+                chapter.getProjectId(), chapterId, remaining.size());
+        return Map.of(
+                "projectId", chapter.getProjectId(),
+                "deletedChapterId", chapterId,
+                "chapters", remaining,
+                "status", "deleted"
+        );
     }
 
     @Transactional(readOnly = true)
@@ -624,8 +683,9 @@ public class StoryWorkspaceService {
     @Transactional(readOnly = true)
     public Map<String, Object> exportDraft(Long draftId, Map<String, Object> payload) {
         Map<String, Object> draft = getDraft(draftId);
-        String format = string(payload.get("format"), "markdown");
-        String content = buildExportMarkdown(draft, payload);
+        String format = normalizeExportFormat(string(payload.get("format"), "md"));
+        String markdown = buildExportMarkdown(draft, payload);
+        String content = previewExportContent(draft.get("title"), markdown, format);
         log.info("story.script.export action=export_preview draftId={} format={} scope={} contentLength={}",
                 draftId, format, string(payload.get("scope"), "all"), content.length());
         return Map.of("draftId", draftId, "format", format, "filename", exportFilename(draft.get("title"), format), "content", content);
@@ -634,19 +694,29 @@ public class StoryWorkspaceService {
     @Transactional(readOnly = true)
     public ExportFile exportDraftFile(Long draftId, Map<String, Object> payload) throws IOException {
         Map<String, Object> draft = getDraft(draftId);
-        String format = string(payload.get("format"), "markdown");
-        String content = buildExportMarkdown(draft, payload);
-        String filename = exportFilename(draft.get("title"), format);
-        if ("docx".equals(format)) {
-            byte[] bytes = buildDocx(content);
-            log.info("story.script.export action=export_file draftId={} format={} filename={} bytes={}",
-                    draftId, format, filename, bytes.length);
-            return new ExportFile(filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", bytes);
-        }
-        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+        String format = normalizeExportFormat(string(payload.get("format"), "md"));
+        String markdown = buildExportMarkdown(draft, payload);
+        ExportFile file = buildExportFile(draft.get("title"), markdown, format);
         log.info("story.script.export action=export_file draftId={} format={} filename={} bytes={}",
-                draftId, format, filename, bytes.length);
-        return new ExportFile(filename, "text/markdown; charset=UTF-8", bytes);
+                draftId, format, file.filename(), file.bytes().length);
+        return file;
+    }
+
+    private String buildProjectMarkdown(Map<String, Object> project, Map<String, Object> payload) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("# ").append(project.get("title")).append("\n\n");
+        String description = string(project.get("description"), "");
+        if (!description.isBlank()) {
+            sb.append("> ").append(description).append("\n\n");
+        }
+        if (Boolean.TRUE.equals(payload.get("includeAssets"))) {
+            appendProjectAssets(sb, objectMap(project.get("assets")));
+        }
+        for (Map<String, Object> chapter : mapList(project.get("chapters"))) {
+            sb.append("## ").append(string(chapter.get("title"), "第" + chapter.get("chapterNo") + "章")).append("\n\n");
+            sb.append(string(chapter.get("content"), "")).append("\n\n");
+        }
+        return sb.toString();
     }
 
     private String buildExportMarkdown(Map<String, Object> draft, Map<String, Object> payload) {
@@ -773,8 +843,173 @@ public class StoryWorkspaceService {
         return names;
     }
 
+    private void appendProjectAssets(StringBuilder sb, Map<String, Object> assets) {
+        if (assets == null || assets.isEmpty()) return;
+        appendProjectAsset(sb, "设定", assets.get("setting"));
+        appendProjectAsset(sb, "人物", assets.get("characters"));
+        appendProjectAsset(sb, "大纲", assets.get("outline"));
+    }
+
+    private void appendProjectAsset(StringBuilder sb, String label, Object value) {
+        String text = string(value, "");
+        if (!text.isBlank()) {
+            sb.append("## ").append(label).append("\n\n").append(text).append("\n\n");
+        }
+    }
+
+    private ExportFile buildExportFile(Object title, String markdown, String format) throws IOException {
+        String normalized = normalizeExportFormat(format);
+        String filename = exportFilename(title, normalized);
+        return switch (normalized) {
+            case "docx" -> new ExportFile(
+                    filename,
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    buildDocx(markdown)
+            );
+            case "html" -> new ExportFile(
+                    filename,
+                    "text/html; charset=UTF-8",
+                    buildHtmlDocument(string(title, "导出内容"), markdown).getBytes(StandardCharsets.UTF_8)
+            );
+            case "pdf" -> new ExportFile(
+                    filename,
+                    "application/pdf",
+                    buildPdf(string(title, "导出内容"), markdown)
+            );
+            case "txt" -> new ExportFile(
+                    filename,
+                    "text/plain; charset=UTF-8",
+                    markdownToPlainText(markdown).getBytes(StandardCharsets.UTF_8)
+            );
+            default -> new ExportFile(
+                    filename,
+                    "text/markdown; charset=UTF-8",
+                    markdown.getBytes(StandardCharsets.UTF_8)
+            );
+        };
+    }
+
+    private String previewExportContent(Object title, String markdown, String format) {
+        String normalized = normalizeExportFormat(format);
+        if ("html".equals(normalized)) return buildHtmlDocument(string(title, "导出内容"), markdown);
+        if ("txt".equals(normalized)) return markdownToPlainText(markdown);
+        return markdown;
+    }
+
+    private String normalizeExportFormat(String format) {
+        String value = string(format, "md").trim().toLowerCase(Locale.ROOT);
+        return switch (value) {
+            case "markdown" -> "md";
+            case "htm" -> "html";
+            case "text" -> "txt";
+            case "md", "html", "pdf", "txt", "docx" -> value;
+            default -> "md";
+        };
+    }
+
     private String exportFilename(Object title, String format) {
-        return safeFilename(string(title, "短剧分场稿")) + ("docx".equals(format) ? ".docx" : ".md");
+        return safeFilename(string(title, "导出内容")) + "." + exportExtension(format);
+    }
+
+    private String exportExtension(String format) {
+        return switch (normalizeExportFormat(format)) {
+            case "docx" -> "docx";
+            case "html" -> "html";
+            case "pdf" -> "pdf";
+            case "txt" -> "txt";
+            default -> "md";
+        };
+    }
+
+    private String buildHtmlDocument(String title, String markdown) {
+        return """
+                <!doctype html>
+                <html lang="zh-CN">
+                <head>
+                  <meta charset="utf-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1">
+                  <title>%s</title>
+                  <style>
+                    body { margin: 0; background: #f5f7fb; color: #172033; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; line-height: 1.85; }
+                    main { max-width: 820px; margin: 48px auto; padding: 44px 52px; background: #fff; border: 1px solid #e8edf6; border-radius: 8px; box-shadow: 0 18px 50px rgba(20,31,56,.08); }
+                    h1 { margin: 0 0 28px; font-size: 32px; line-height: 1.25; }
+                    h2 { margin: 34px 0 14px; padding-top: 18px; border-top: 1px solid #edf1f7; font-size: 22px; }
+                    h3 { margin: 26px 0 10px; font-size: 18px; }
+                    p { margin: 0 0 14px; white-space: pre-wrap; }
+                    blockquote { margin: 0 0 22px; padding: 12px 16px; color: #5b667a; background: #f7f9ff; border-left: 4px solid #4f67f5; }
+                    table { width: 100%%; border-collapse: collapse; margin: 16px 0 24px; }
+                    th, td { border: 1px solid #e4e9f2; padding: 8px 10px; text-align: left; }
+                  </style>
+                </head>
+                <body><main>
+                %s
+                </main></body>
+                </html>
+                """.formatted(htmlEscape(title), markdownToHtml(markdown));
+    }
+
+    private String markdownToHtml(String markdown) {
+        StringBuilder html = new StringBuilder();
+        boolean inTable = false;
+        for (String rawLine : string(markdown, "").split("\\R")) {
+            String line = rawLine.stripTrailing();
+            if (line.isBlank()) {
+                if (inTable) {
+                    html.append("</tbody></table>\n");
+                    inTable = false;
+                }
+                continue;
+            }
+            if (line.startsWith("|") && line.endsWith("|")) {
+                if (line.matches("\\|\\s*[-:]+.*")) continue;
+                String[] cells = line.substring(1, line.length() - 1).split("\\|");
+                if (!inTable) {
+                    html.append("<table><tbody>\n");
+                    inTable = true;
+                }
+                html.append("<tr>");
+                for (String cell : cells) html.append("<td>").append(htmlEscape(cell.trim())).append("</td>");
+                html.append("</tr>\n");
+                continue;
+            }
+            if (inTable) {
+                html.append("</tbody></table>\n");
+                inTable = false;
+            }
+            if (line.startsWith("### ")) html.append("<h3>").append(htmlEscape(line.substring(4))).append("</h3>\n");
+            else if (line.startsWith("## ")) html.append("<h2>").append(htmlEscape(line.substring(3))).append("</h2>\n");
+            else if (line.startsWith("# ")) html.append("<h1>").append(htmlEscape(line.substring(2))).append("</h1>\n");
+            else if (line.startsWith("> ")) html.append("<blockquote>").append(htmlEscape(line.substring(2))).append("</blockquote>\n");
+            else if (line.startsWith("- ")) html.append("<p>").append(htmlEscape(line)).append("</p>\n");
+            else html.append("<p>").append(htmlEscape(line)).append("</p>\n");
+        }
+        if (inTable) html.append("</tbody></table>\n");
+        return html.toString();
+    }
+
+    private String markdownToPlainText(String markdown) {
+        StringBuilder text = new StringBuilder();
+        for (String rawLine : string(markdown, "").split("\\R")) {
+            String line = rawLine
+                    .replaceFirst("^#{1,6}\\s+", "")
+                    .replaceFirst("^>\\s+", "")
+                    .replace("**", "")
+                    .replace("`", "");
+            if (line.matches("\\|\\s*[-:]+.*")) continue;
+            if (line.startsWith("|") && line.endsWith("|")) {
+                line = line.substring(1, line.length() - 1).replace("|", "\t");
+            }
+            text.append(line).append("\n");
+        }
+        return text.toString();
+    }
+
+    private String htmlEscape(String value) {
+        return string(value, "")
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;");
     }
 
     private String parseUploadText(Path filePath, String filename) throws IOException {
@@ -813,6 +1048,118 @@ public class StoryWorkspaceService {
             putZipEntry(zip, "word/document.xml", wordDocumentXml(content));
         }
         return out.toByteArray();
+    }
+
+    private byte[] buildPdf(String title, String markdown) throws IOException {
+        try (PDDocument document = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            PDFont font = loadPdfFont(document);
+            float fontSize = 11.5f;
+            float titleSize = 18f;
+            float leading = 18f;
+            float margin = 54f;
+            PDRectangle pageSize = PDRectangle.A4;
+            float width = pageSize.getWidth() - margin * 2;
+            PDPage page = new PDPage(pageSize);
+            document.addPage(page);
+            PDPageContentStream stream = new PDPageContentStream(document, page);
+            float y = pageSize.getHeight() - margin;
+
+            stream.beginText();
+            stream.setFont(font, titleSize);
+            stream.setLeading(leading + 4);
+            stream.newLineAtOffset(margin, y);
+            stream.showText(pdfText(font, title));
+            stream.newLine();
+            y -= leading + 10;
+            stream.setFont(font, fontSize);
+            stream.setLeading(leading);
+
+            for (String rawLine : markdownToPlainText(markdown).split("\\R")) {
+                List<String> lines = wrapPdfLine(font, pdfText(font, rawLine), fontSize, width);
+                if (lines.isEmpty()) lines = List.of("");
+                for (String line : lines) {
+                    if (y < margin + leading) {
+                        stream.endText();
+                        stream.close();
+                        page = new PDPage(pageSize);
+                        document.addPage(page);
+                        stream = new PDPageContentStream(document, page);
+                        y = pageSize.getHeight() - margin;
+                        stream.beginText();
+                        stream.setFont(font, fontSize);
+                        stream.setLeading(leading);
+                        stream.newLineAtOffset(margin, y);
+                    }
+                    stream.showText(line);
+                    stream.newLine();
+                    y -= leading;
+                }
+            }
+            stream.endText();
+            stream.close();
+            document.save(out);
+            return out.toByteArray();
+        }
+    }
+
+    private PDFont loadPdfFont(PDDocument document) {
+        String[] candidates = {
+                "C:/Windows/Fonts/msyh.ttc",
+                "C:/Windows/Fonts/msyh.ttf",
+                "C:/Windows/Fonts/simhei.ttf",
+                "C:/Windows/Fonts/simsun.ttc",
+                "C:/Windows/Fonts/simsun.ttf",
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf",
+                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+                "/System/Library/Fonts/PingFang.ttc"
+        };
+        for (String candidate : candidates) {
+            File file = new File(candidate);
+            if (!file.isFile()) continue;
+            try {
+                return PDType0Font.load(document, file);
+            } catch (Exception e) {
+                log.debug("story.export.pdf action=load_font_failed path={} message={}", candidate, e.getMessage());
+            }
+        }
+        log.warn("story.export.pdf action=load_font fallback=Helvetica message=Chinese glyphs may not render");
+        return PDType1Font.HELVETICA;
+    }
+
+    private List<String> wrapPdfLine(PDFont font, String line, float fontSize, float maxWidth) {
+        if (line == null || line.isBlank()) return List.of("");
+        List<String> lines = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        for (int offset = 0; offset < line.length(); ) {
+            int codePoint = line.codePointAt(offset);
+            String ch = new String(Character.toChars(codePoint));
+            String candidate = current + ch;
+            if (current.length() > 0 && pdfTextWidth(font, candidate, fontSize) > maxWidth) {
+                lines.add(current.toString());
+                current = new StringBuilder(ch);
+            } else {
+                current.append(ch);
+            }
+            offset += Character.charCount(codePoint);
+        }
+        if (current.length() > 0) lines.add(current.toString());
+        return lines;
+    }
+
+    private float pdfTextWidth(PDFont font, String text, float fontSize) {
+        try {
+            return font.getStringWidth(text) / 1000f * fontSize;
+        } catch (IOException e) {
+            return text.length() * fontSize;
+        }
+    }
+
+    private String pdfText(PDFont font, String text) {
+        String value = string(text, "");
+        if (!(font instanceof PDType1Font)) return value;
+        return value.replaceAll("[^\\x20-\\x7E]", "?");
     }
 
     private void putZipEntry(ZipOutputStream zip, String name, String content) throws IOException {

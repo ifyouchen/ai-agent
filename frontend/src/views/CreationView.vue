@@ -22,7 +22,7 @@
       <p v-if="activeTask.tokenUsage?.totalTokens" class="creation-muted">预估 Token：{{ activeTask.tokenUsage.totalTokens }}（输入 {{ activeTask.tokenUsage.inputTokens }} / 输出 {{ activeTask.tokenUsage.outputTokens }}）</p>
       <p v-if="activeTask.errorMessage" class="creation-risk">{{ activeTask.errorMessage }}</p>
     </section>
-    <ProjectCards title="最近作品" :projects="projects.slice(0, 6)" @script="startScript" />
+    <ProjectCards title="最近作品" :projects="projects.slice(0, 6)" :converting-project-id="scriptConvertingProjectId" :exporting-project-id="projectExportingId" @script="startScript" @export="downloadProjectExport" />
   </div>
 
   <div v-else-if="mode === 'projects'" class="creation-view">
@@ -36,16 +36,23 @@
     <div class="creation-tabs">
       <button v-for="f in filters" :key="f.value" :class="{ active: filter === f.value }" type="button" @click="filter = f.value">{{ f.label }}</button>
     </div>
-    <div class="creation-filters">
-      <label>状态<select v-model="statusFilter"><option value="all">全部状态</option><option value="writing">写作中</option><option value="rewriting">改写中</option><option value="adapting">改编中</option><option value="completed">已完成</option></select></label>
-      <label>排序<select v-model="sortOrder"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="title_asc">标题 A-Z</option></select></label>
+    <div class="creation-toolbar">
+      <div class="creation-filters">
+        <label>状态<select v-model="statusFilter"><option value="all">全部状态</option><option value="writing">写作中</option><option value="rewriting">改写中</option><option value="adapting">改编中</option><option value="completed">已完成</option></select></label>
+        <label>排序<select v-model="sortOrder"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="title_asc">标题 A-Z</option></select></label>
+      </div>
+      <form class="creation-search" @submit.prevent="applyProjectSearch">
+        <input v-model="searchInput" type="search" placeholder="搜索作品标题" />
+        <button class="creation-primary-btn" type="submit">搜索</button>
+        <button v-if="searchQuery" class="creation-secondary-btn" type="button" @click="clearProjectSearch">清空</button>
+      </form>
     </div>
-    <ProjectCards title="全部作品" :projects="filteredProjects" @script="startScript" />
+    <ProjectCards title="全部作品" :projects="filteredProjects" :converting-project-id="scriptConvertingProjectId" :exporting-project-id="projectExportingId" @script="startScript" @export="downloadProjectExport" />
   </div>
 
-  <div v-else-if="mode === 'editor'" class="creation-workbench has-ai-config">
+  <div v-else-if="mode === 'editor'" class="creation-workbench has-ai-config" :class="{ 'ai-config-collapsed': aiConfigCollapsed }">
     <aside class="creation-side">
-      <router-link to="/creation/projects">返回作品库</router-link>
+      <router-link class="creation-back-link" to="/creation/projects">返回作品库</router-link>
       <h2>{{ project?.title || '作品编辑器' }}</h2>
       <div class="creation-side-section">
         <h3>创作资产</h3>
@@ -63,7 +70,27 @@
       <div class="creation-side-section">
         <h3>章节</h3>
         <button class="creation-primary-btn full" type="button" @click="addChapter">新增章节</button>
-        <button v-for="chapter in chapters" :key="chapter.id" class="creation-list-btn" :class="{ active: editorPanel === 'chapter' && chapter.id === currentChapter?.id }" type="button" @click="selectChapter(chapter)">{{ chapter.title }}</button>
+        <div
+          v-for="chapter in chapters"
+          :key="chapter.id"
+          class="creation-list-btn creation-chapter-btn"
+          :class="{ active: editorPanel === 'chapter' && chapter.id === currentChapter?.id, draft: hasChapterDraft(chapter) }"
+          :title="chapterDisplayTitle(chapter)"
+        >
+          <button class="creation-chapter-main" type="button" @click="selectChapter(chapter)">
+            <span class="creation-chapter-title">{{ chapterDisplayTitle(chapter) }}</span>
+          </button>
+          <span v-if="hasChapterDraft(chapter)" class="creation-draft-dot" title="有未保存草稿"></span>
+          <button
+            class="creation-chapter-delete"
+            type="button"
+            title="删除章节"
+            :disabled="chapters.length <= 1 || chapterDeletingId === chapter.id"
+            @click="deleteChapter(chapter)"
+          >
+            {{ chapterDeletingId === chapter.id ? '...' : '×' }}
+          </button>
+        </div>
       </div>
       <div v-if="project?.scriptDrafts?.length" class="creation-side-section">
         <h3>短剧草稿</h3>
@@ -85,14 +112,34 @@
         <textarea v-model="assetForm.instruction" rows="4" :placeholder="activeAssetInstructionPlaceholder"></textarea>
       </label>
       <textarea v-model="assetForm.content" class="creation-manuscript" :placeholder="activeAssetPlaceholder"></textarea>
-      <footer><span>{{ assetWordCount }} 字</span><button type="button" @click="saveAsset">保存{{ activeAssetLabel }}</button></footer>
+      <footer>
+        <span>{{ assetWordCount }} 字</span>
+        <button type="button" :disabled="assetSaving" @click="saveAsset">{{ assetSaving ? '保存中...' : `保存${activeAssetLabel}` }}</button>
+      </footer>
     </main>
     <main v-else class="creation-editor">
       <input v-model="chapterForm.title" class="creation-title-input" placeholder="章节标题" />
       <textarea v-model="chapterForm.content" class="creation-manuscript" placeholder="在这里写小说正文。"></textarea>
-      <footer><span>{{ wordCount }} 字</span><button type="button" @click="saveChapter">保存章节</button></footer>
+      <footer>
+        <span>{{ wordCount }} 字</span>
+        <button type="button" :disabled="chapterSaving" @click="saveChapter">{{ chapterSaving ? '保存中...' : '保存章节' }}</button>
+      </footer>
     </main>
-    <aside v-if="activeAction" class="creation-ai-config">
+    <aside v-if="activeAction" class="creation-ai-config" :class="{ collapsed: aiConfigCollapsed }">
+      <button
+        class="creation-ai-config-toggle"
+        type="button"
+        :title="aiConfigCollapsed ? '展开 AI 配置' : '折叠 AI 配置'"
+        @click="aiConfigCollapsed = !aiConfigCollapsed"
+      >
+        {{ aiConfigCollapsed ? '‹' : '›' }}
+      </button>
+      <template v-if="aiConfigCollapsed">
+        <div class="creation-ai-config-rail">
+          <span><strong>{{ activeAction.label }}</strong> · AI 配置</span>
+        </div>
+      </template>
+      <div class="creation-ai-config-body" v-show="!aiConfigCollapsed">
         <div class="creation-ai-config-head">
           <strong>{{ activeAction.label }}</strong>
           <small>{{ activeAction.hint }}</small>
@@ -160,16 +207,26 @@
           <textarea v-model="activeActionConfig.userTemplate" rows="6" placeholder="输入这个动作的高级提示词模板。系统仍会追加安全边界和当前作品上下文。"></textarea>
           <button class="creation-secondary-btn full compact" type="button" @click="restoreActionPrompt">恢复默认提示词</button>
         </details>
-        <button class="creation-primary-btn full" type="button" @click="executeAction">执行</button>
-        <button class="creation-secondary-btn full compact" type="button" @click="savePromptConfig">保存 AI 配置</button>
-        <label v-if="actionForm.result" class="creation-ai-result">
+        <button class="creation-primary-btn full creation-generate-btn" type="button" :disabled="actionForm.loading" @click="executeAction">
+          <span v-if="actionForm.loading" class="creation-spinner"></span>
+          {{ actionForm.loading ? '生成中...' : '执行' }}
+        </button>
+        <button v-if="actionForm.loading" class="creation-secondary-btn full compact creation-stop-btn" type="button" @click="stopActionGeneration">停止生成</button>
+        <button class="creation-secondary-btn full compact" type="button" :disabled="actionForm.loading" @click="savePromptConfig">保存 AI 配置</button>
+        <label v-if="actionForm.loading || actionForm.result" class="creation-ai-result">
           <span>{{ activeAction.type === 'review' ? '审查建议' : 'AI 生成草稿' }}</span>
-          <textarea v-model="actionForm.result" rows="9"></textarea>
+          <div v-if="actionForm.loading" class="creation-ai-pending">
+            <span class="creation-spinner"></span>
+            <strong>{{ activeAction.label }}生成中</strong>
+            <small>AI 正在处理当前正文和配置，请稍候。生成完成后会进入这里，你再决定是否应用。</small>
+          </div>
+          <textarea v-else v-model="actionForm.result" rows="9"></textarea>
         </label>
         <div v-if="actionForm.result && !isAssetAction(activeAction.type) && activeAction.type !== 'review'" class="creation-row">
           <button class="creation-secondary-btn" type="button" @click="appendActionResult">追加到正文</button>
           <button class="creation-secondary-btn" type="button" @click="replaceChapterWithResult">替换正文</button>
         </div>
+      </div>
     </aside>
     <aside class="creation-ai">
       <h3>AI 助手</h3>
@@ -178,12 +235,15 @@
         :key="action.type"
         :class="{ active: activeActionType === action.type }"
         type="button"
+        :disabled="actionForm.loading"
         @click="openActionPanel(action.type)"
       >
         {{ action.label }}
       </button>
       <button type="button" @click="startRewrite">改小说三栏对照</button>
-      <button class="creation-primary-btn full" type="button" @click="startScript(project)">转短剧</button>
+      <button class="creation-primary-btn full" type="button" :disabled="scriptConvertingProjectId === project?.id" @click="startScript(project)">
+        {{ scriptConvertingProjectId === project?.id ? '转短剧中...' : '转短剧' }}
+      </button>
       <div class="creation-versions">
         <h3>版本快照</h3>
         <button v-for="version in chapterVersions" :key="version.id" type="button" @click="restoreVersion(version)">
@@ -213,7 +273,7 @@
 
   <div v-else-if="mode === 'script'" class="creation-workbench script-workbench">
     <aside class="creation-side">
-      <router-link to="/creation/projects">返回作品库</router-link>
+      <router-link class="creation-back-link" to="/creation/projects">返回作品库</router-link>
       <h2>{{ draft?.title || '短剧改编' }}</h2>
       <button class="creation-primary-btn full" type="button" @click="qualityCheck">质检全稿</button>
       <div v-if="draft?.sourceChapters?.length" class="creation-side-section">
@@ -270,7 +330,7 @@
     </header>
     <section class="creation-export">
       <aside class="creation-panel">
-        <label>格式<select v-model="exportForm.format"><option value="markdown">Markdown</option><option value="docx">DOCX</option></select></label>
+        <label>格式<select v-model="exportForm.format"><option value="md">Markdown</option><option value="html">HTML</option><option value="pdf">PDF</option><option value="txt">TXT</option><option value="docx">DOCX</option></select></label>
         <label>范围<select v-model="exportForm.scope"><option value="all">全部</option><option value="episode">选中集</option><option value="scene">选中场</option></select></label>
         <label v-if="exportForm.scope === 'episode'">集数<select v-model.number="exportForm.episodeNo"><option v-for="ep in draft?.episodes || []" :key="ep.id" :value="ep.episodeNo">第{{ ep.episodeNo }}集</option></select></label>
         <label v-if="exportForm.scope === 'scene'">场次<select v-model.number="exportForm.sceneId"><option v-for="scene in exportScenes" :key="scene.id" :value="scene.id">{{ scene.label }}</option></select></label>
@@ -292,15 +352,32 @@
   <div v-if="showCreate" class="creation-modal" @click.self="showCreate = false">
     <form class="creation-dialog" @submit.prevent="createProject"><h2>新建作品</h2><input v-model="createForm.title" required placeholder="作品名" /><select v-model="createForm.type"><option value="long_novel">长篇小说</option><option value="short_story">短篇故事</option><option value="adaptation">改编项目</option></select><textarea v-model="createForm.description" placeholder="简介"></textarea><button class="creation-primary-btn">创建</button></form>
   </div>
-  <div v-if="showImport" class="creation-modal" @click.self="showImport = false">
+  <div v-if="showImport" class="creation-modal" @click.self="closeImportDialog">
     <form class="creation-dialog wide" @submit.prevent="previewImport">
-      <h2>导入小说文本</h2>
-      <input v-model="importForm.title" required placeholder="作品名" />
+      <div class="creation-dialog-head">
+        <div>
+          <h2>导入小说文本</h2>
+          <p>上传 DOCX/TXT，或直接粘贴正文，系统会先解析章节再导入。</p>
+        </div>
+        <button class="creation-icon-btn" type="button" :disabled="importBusy" @click="closeImportDialog">×</button>
+      </div>
+      <input v-model="importForm.title" required placeholder="作品名" :disabled="importBusy" />
       <label class="creation-file-field">
         <span>上传文件</span>
-        <input type="file" accept=".txt,.md,.doc,.docx" @change="onImportFileChange" />
+        <span class="creation-file-picker">
+          <input type="file" accept=".txt,.md,.doc,.docx" :disabled="importBusy" @change="onImportFileChange" />
+          <span class="creation-file-button">选择文件</span>
+          <span class="creation-file-name">{{ importFileRef?.name || '支持 .txt / .md / .doc / .docx' }}</span>
+        </span>
       </label>
-      <textarea v-model="importForm.content" rows="12" placeholder="或直接粘贴正文"></textarea>
+      <textarea v-model="importForm.content" rows="12" placeholder="或直接粘贴正文" :disabled="importBusy"></textarea>
+      <div v-if="importPreviewLoading || importConfirming" class="creation-import-loading" aria-live="polite">
+        <span class="creation-spinner dark"></span>
+        <div>
+          <strong>{{ importConfirming ? '正在导入作品' : '正在解析章节' }}</strong>
+          <p>{{ importConfirming ? '作品库即将更新，并自动进入创作页面。' : '正在读取文件结构、识别章节和正文，请稍候。' }}</p>
+        </div>
+      </div>
       <section v-if="importPreview" class="creation-import-preview">
         <strong>{{ importPreview.detectedTypeLabel }} · {{ importPreview.wordCount }} 字 · {{ importPreview.chapterCount }} 章</strong>
         <p v-if="importPreview.truncated">仅展示前 20 章预览。</p>
@@ -309,8 +386,14 @@
         </div>
       </section>
       <div class="creation-row">
-        <button class="creation-secondary-btn" type="submit">解析预览</button>
-        <button class="creation-primary-btn" type="button" :disabled="!importPreview" @click="confirmImport">确认导入</button>
+        <button class="creation-secondary-btn" type="submit" :disabled="importBusy">
+          <span v-if="importPreviewLoading" class="creation-spinner dark"></span>
+          {{ importPreviewLoading ? '解析中...' : '解析预览' }}
+        </button>
+        <button class="creation-primary-btn" type="button" :disabled="!importPreview || importBusy" @click="confirmImport">
+          <span v-if="importConfirming" class="creation-spinner"></span>
+          {{ importConfirming ? '导入中...' : '确认导入' }}
+        </button>
       </div>
     </form>
   </div>
@@ -323,9 +406,17 @@ import { storyApi } from '../services/storyApi.js';
 import { useUiStore } from '../stores/ui.js';
 
 const ProjectCards = defineComponent({
-  props: { title: String, projects: Array },
-  emits: ['script'],
+  props: { title: String, projects: Array, convertingProjectId: [String, Number], exportingProjectId: [String, Number] },
+  emits: ['script', 'export'],
   setup(props, { emit }) {
+    const projectExportFormats = reactive({});
+    const exportOptions = [
+      { value: 'md', label: 'MD' },
+      { value: 'html', label: 'HTML' },
+      { value: 'pdf', label: 'PDF' },
+      { value: 'txt', label: 'TXT' },
+    ];
+    const selectedFormat = project => projectExportFormats[project.id] || 'md';
     return () => h('section', { class: 'creation-panel' }, [
       h('div', { class: 'creation-section-title' }, [h('h2', props.title)]),
       !props.projects?.length
@@ -338,7 +429,25 @@ const ProjectCards = defineComponent({
             h('div', { class: 'creation-row' }, [
               h('a', { href: `#/creation/projects/${project.id}/editor` }, '继续写作'),
               project.latestScriptDraftId ? h('a', { href: `#/creation/scripts/${project.latestScriptDraftId}` }, '查看脚本') : null,
-              h('button', { type: 'button', onClick: () => emit('script', project) }, '转短剧'),
+              h('button', {
+                type: 'button',
+                disabled: props.convertingProjectId === project.id,
+                onClick: () => emit('script', project),
+              }, props.convertingProjectId === project.id ? '转短剧中...' : '转短剧'),
+            ]),
+            h('div', { class: 'creation-export-controls' }, [
+              h('select', {
+                class: 'creation-export-select',
+                value: selectedFormat(project),
+                disabled: props.exportingProjectId === project.id,
+                onChange: event => { projectExportFormats[project.id] = event.target.value; },
+              }, exportOptions.map(option => h('option', { value: option.value }, option.label))),
+              h('button', {
+                class: 'creation-secondary-btn',
+                type: 'button',
+                disabled: props.exportingProjectId === project.id,
+                onClick: () => emit('export', { project, format: selectedFormat(project) }),
+              }, props.exportingProjectId === project.id ? '导出中...' : '导出'),
             ]),
           ]))),
     ]);
@@ -360,18 +469,29 @@ const qualityReport = ref(null);
 const exported = ref(null);
 const chapterVersions = ref([]);
 const activeTask = ref(null);
+const chapterSaving = ref(false);
+const assetSaving = ref(false);
+const chapterDeletingId = ref(null);
+const scriptConvertingProjectId = ref(null);
+const projectExportingId = ref(null);
 const filter = ref('all');
 const statusFilter = ref('all');
 const sortOrder = ref('updated_desc');
+const searchInput = ref('');
+const searchQuery = ref('');
 const showCreate = ref(false);
 const showImport = ref(route.query.import === '1');
 const importFileRef = ref(null);
 const importPreview = ref(null);
+const importPreviewLoading = ref(false);
+const importConfirming = ref(false);
 const editorPanel = ref('chapter');
 const activeAssetType = ref('setting');
 const assetForm = reactive({ content: '', instruction: '' });
 const activeActionType = ref('continue');
-const actionForm = reactive({ instruction: '', result: '' });
+const aiConfigCollapsed = ref(false);
+const actionForm = reactive({ instruction: '', result: '', loading: false, controller: null });
+const chapterDrafts = reactive({});
 const promptConfig = reactive(defaultPromptConfig());
 const globalPreserveText = ref(promptConfig.global.preserve.join('、'));
 const globalAvoidText = ref(promptConfig.global.avoid.join('、'));
@@ -381,7 +501,7 @@ const importForm = reactive({ title: '', content: '' });
 const rewriteForm = reactive({ instruction: '' });
 const sceneForm = reactive({});
 const exportForm = reactive({
-  format: 'markdown',
+  format: 'md',
   scope: 'all',
   episodeNo: null,
   sceneId: null,
@@ -431,9 +551,11 @@ const assetTypes = [
 
 const mode = computed(() => route.meta.creationMode || 'home');
 const filteredProjects = computed(() => {
+  const keyword = searchQuery.value.trim().toLowerCase();
   const list = projects.value
     .filter(p => filter.value === 'all' || p.type === filter.value)
-    .filter(p => statusFilter.value === 'all' || p.status === statusFilter.value);
+    .filter(p => statusFilter.value === 'all' || p.status === statusFilter.value)
+    .filter(p => !keyword || String(p.title || '').toLowerCase().includes(keyword));
   return [...list].sort((a, b) => {
     if (sortOrder.value === 'updated_asc') return String(a.updatedAt || '').localeCompare(String(b.updatedAt || ''));
     if (sortOrder.value === 'title_asc') return String(a.title || '').localeCompare(String(b.title || ''));
@@ -456,6 +578,7 @@ const exportScenes = computed(() => (draft.value?.episodes || []).flatMap(ep => 
 }))));
 const taskCanCancel = computed(() => activeTask.value && !['completed', 'failed', 'canceled'].includes(activeTask.value.status));
 const taskCanRetry = computed(() => activeTask.value && ['failed', 'canceled', 'completed'].includes(activeTask.value.status));
+const importBusy = computed(() => importPreviewLoading.value || importConfirming.value);
 const adaptationPlanEntries = computed(() => {
   const plan = draft.value?.adaptationPlan || {};
   return [
@@ -524,33 +647,67 @@ async function createProject() {
   router.push(`/creation/projects/${p.id}/editor`);
 }
 
+function applyProjectSearch() {
+  searchQuery.value = searchInput.value.trim();
+}
+
+function clearProjectSearch() {
+  searchInput.value = '';
+  searchQuery.value = '';
+}
+
 async function previewImport() {
   if (!importFileRef.value && !importForm.content.trim()) return ui.showToast('warning', '请上传文件或粘贴正文');
-  importPreview.value = importFileRef.value
-    ? await storyApi.previewImportFile(importFileRef.value, importForm.title)
-    : await storyApi.previewImportText(importForm);
-  importForm.title = importPreview.value.title || importForm.title;
-  ui.showToast('success', '解析预览已生成');
+  if (importBusy.value) return;
+  importPreviewLoading.value = true;
+  importPreview.value = null;
+  try {
+    importPreview.value = importFileRef.value
+      ? await storyApi.previewImportFile(importFileRef.value, importForm.title)
+      : await storyApi.previewImportText(importForm);
+    importForm.title = importPreview.value.title || importForm.title;
+    ui.showToast('success', '解析预览已生成');
+  } catch (err) {
+    ui.showToast('error', err.message || '解析失败，请检查文件或正文');
+  } finally {
+    importPreviewLoading.value = false;
+  }
 }
 
 async function confirmImport() {
   if (!importPreview.value) return ui.showToast('warning', '请先解析预览');
-  const p = await storyApi.importText({
-    title: importPreview.value.title || importForm.title,
-    content: importPreview.value.content || importForm.content,
-  });
-  showImport.value = false;
-  importFileRef.value = null;
-  importPreview.value = null;
-  router.push(`/creation/projects/${p.id}/editor`);
+  if (importBusy.value) return;
+  importConfirming.value = true;
+  try {
+    const p = importFileRef.value
+      ? await storyApi.importFile(importFileRef.value, importPreview.value.title || importForm.title)
+      : await storyApi.importText({
+        title: importPreview.value.title || importForm.title,
+        content: importPreview.value.content || importForm.content,
+      });
+    showImport.value = false;
+    importFileRef.value = null;
+    importPreview.value = null;
+    router.push(`/creation/projects/${p.id}/editor`);
+  } catch (err) {
+    ui.showToast('error', err.message || '导入失败，请稍后重试');
+  } finally {
+    importConfirming.value = false;
+  }
 }
 
 function onImportFileChange(event) {
+  if (importBusy.value) return;
   importFileRef.value = event.target.files?.[0] || null;
   importPreview.value = null;
   if (importFileRef.value && !importForm.title.trim()) {
     importForm.title = importFileRef.value.name.replace(/\.[^.]+$/, '');
   }
+}
+
+function closeImportDialog() {
+  if (importBusy.value) return;
+  showImport.value = false;
 }
 
 async function loadProject() {
@@ -560,16 +717,69 @@ async function loadProject() {
   if (editorPanel.value === 'asset') {
     syncAssetForm();
   } else {
-    selectChapter(chapters.value[0] || null);
+    const selected = chapters.value.find(chapter => chapter.id === currentChapter.value?.id) || chapters.value[0] || null;
+    selectChapter(selected, { skipCache: true });
   }
 }
 
-function selectChapter(chapter) {
+function selectChapter(chapter, options = {}) {
+  if (!options.skipCache) cacheCurrentChapterDraft();
   editorPanel.value = 'chapter';
   currentChapter.value = chapter;
-  chapterForm.title = chapter?.title || `第${chapters.value.length + 1}章`;
-  chapterForm.content = chapter?.content || '';
+  const draft = chapterDraft(chapter);
+  chapterForm.title = draft?.title ?? chapterDisplayTitle(chapter);
+  chapterForm.content = draft?.content ?? chapter?.content ?? '';
   loadChapterVersions();
+}
+
+function chapterFallbackTitle(chapter) {
+  const no = chapter?.chapterNo || (chapters.value.findIndex(item => item.id === chapter?.id) + 1) || chapters.value.length + 1;
+  return `第${no}章`;
+}
+
+function chapterBaseTitle(chapter) {
+  return String(chapter?.title || '').trim() || chapterFallbackTitle(chapter);
+}
+
+function chapterDisplayTitle(chapter) {
+  const draft = chapterDraft(chapter);
+  return String(draft?.title || '').trim() || chapterBaseTitle(chapter);
+}
+
+function chapterDraft(chapter) {
+  if (!chapter?.id) return null;
+  return chapterDrafts[chapter.id] || null;
+}
+
+function chapterValuesChanged(chapter, values) {
+  if (!chapter) return false;
+  const title = String(values?.title ?? '').trim() || chapterFallbackTitle(chapter);
+  const baseTitle = chapterBaseTitle(chapter);
+  const content = values?.content ?? '';
+  return title !== baseTitle || content !== (chapter.content || '');
+}
+
+function hasChapterDraft(chapter) {
+  if (!chapter?.id) return false;
+  if (editorPanel.value === 'chapter' && currentChapter.value?.id === chapter.id) {
+    return chapterValuesChanged(chapter, chapterForm);
+  }
+  const draft = chapterDraft(chapter);
+  return draft ? chapterValuesChanged(chapter, draft) : false;
+}
+
+function cacheCurrentChapterDraft() {
+  const chapter = currentChapter.value;
+  if (!chapter?.id || editorPanel.value !== 'chapter') return;
+  const draft = {
+    title: chapterForm.title,
+    content: chapterForm.content,
+  };
+  if (chapterValuesChanged(chapter, draft)) {
+    chapterDrafts[chapter.id] = draft;
+  } else {
+    delete chapterDrafts[chapter.id];
+  }
 }
 
 function projectAssets() {
@@ -577,6 +787,7 @@ function projectAssets() {
 }
 
 function selectAsset(type) {
+  cacheCurrentChapterDraft();
   editorPanel.value = 'asset';
   activeAssetType.value = type;
   syncAssetForm();
@@ -680,7 +891,9 @@ function restoreActionPrompt() {
 }
 
 function openActionPanel(type) {
+  if (actionForm.loading) return;
   activeActionType.value = type;
+  aiConfigCollapsed.value = false;
   actionForm.result = '';
   ensureActionConfig(type);
   if (isAssetAction(type)) {
@@ -700,6 +913,7 @@ function actionSource() {
 }
 
 async function executeAction() {
+  if (actionForm.loading) return;
   if (!project.value?.id) return;
   if (!isAssetAction(activeActionType.value) && !chapterForm.content.trim() && activeActionType.value !== 'continue') {
     ui.showToast('warning', '请先输入正文');
@@ -713,21 +927,42 @@ async function executeAction() {
   if (isAssetAction(activeActionType.value)) {
     assetForm.instruction = actionForm.instruction;
   }
-  const result = await storyApi.generate(project.value.id, {
-    action: activeActionType.value,
-    chapterId: currentChapter.value?.id,
-    content: actionSource(),
-    instruction: actionForm.instruction,
-    params: config.params || {},
-    useCustomPrompt: Boolean(config.useCustomPrompt),
-  });
-  actionForm.result = result.content || '';
-  if (isAssetAction(activeActionType.value)) {
-    assetForm.content = [assetForm.content, actionForm.result].filter(Boolean).join(assetForm.content ? '\n\n' : '');
-    ui.showToast('success', '已生成到资产编辑框，请确认后保存');
-    return;
+  actionForm.result = '';
+  actionForm.controller = new AbortController();
+  actionForm.loading = true;
+  try {
+    const result = await storyApi.generate(project.value.id, {
+      action: activeActionType.value,
+      chapterId: currentChapter.value?.id,
+      content: actionSource(),
+      instruction: actionForm.instruction,
+      params: config.params || {},
+      useCustomPrompt: Boolean(config.useCustomPrompt),
+    }, {
+      signal: actionForm.controller.signal,
+    });
+    actionForm.result = result.content || '';
+    if (isAssetAction(activeActionType.value)) {
+      assetForm.content = [assetForm.content, actionForm.result].filter(Boolean).join(assetForm.content ? '\n\n' : '');
+      ui.showToast('success', '已生成到资产编辑框，请确认后保存');
+      return;
+    }
+    ui.showToast('success', activeActionType.value === 'review' ? '审查建议已生成' : 'AI 草稿已生成，请确认后应用');
+  } catch (err) {
+    if (err.canceled) {
+      ui.showToast('info', '已停止生成');
+      return;
+    }
+    ui.showToast('error', err.message || '生成失败，请稍后重试');
+  } finally {
+    actionForm.loading = false;
+    actionForm.controller = null;
   }
-  ui.showToast('success', activeActionType.value === 'review' ? '审查建议已生成' : 'AI 草稿已生成，请确认后应用');
+}
+
+function stopActionGeneration() {
+  if (!actionForm.loading || !actionForm.controller) return;
+  actionForm.controller.abort();
 }
 
 function appendActionResult() {
@@ -749,23 +984,79 @@ function syncAssetForm() {
 }
 
 async function addChapter() {
+  cacheCurrentChapterDraft();
   const chapter = await storyApi.createChapter(project.value.id, { title: `第${chapters.value.length + 1}章`, content: '' });
   chapters.value.push(chapter);
-  selectChapter(chapter);
+  selectChapter(chapter, { skipCache: true });
 }
 
 async function saveChapter() {
+  if (chapterSaving.value) return;
   if (!currentChapter.value) await addChapter();
-  const saved = await storyApi.updateChapter(currentChapter.value.id, chapterForm);
-  Object.assign(currentChapter.value, saved);
-  await loadChapterVersions();
-  ui.showToast('success', '章节已保存');
+  chapterSaving.value = true;
+  try {
+    const saved = await storyApi.updateChapter(currentChapter.value.id, chapterForm);
+    Object.assign(currentChapter.value, saved);
+    const index = chapters.value.findIndex(chapter => chapter.id === saved.id);
+    if (index >= 0) chapters.value[index] = { ...chapters.value[index], ...saved };
+    delete chapterDrafts[saved.id];
+    await loadChapterVersions();
+    ui.showToast('success', '章节已保存');
+  } catch (err) {
+    ui.showToast('error', err.message || '保存章节失败');
+  } finally {
+    chapterSaving.value = false;
+  }
 }
 
 async function saveAsset() {
-  const assets = { ...projectAssets(), [activeAssetType.value]: assetForm.content };
-  project.value = await storyApi.updateProject(project.value.id, { assets });
-  ui.showToast('success', `${activeAssetLabel.value}已保存`);
+  if (assetSaving.value) return;
+  assetSaving.value = true;
+  try {
+    const assets = { ...projectAssets(), [activeAssetType.value]: assetForm.content };
+    project.value = await storyApi.updateProject(project.value.id, { assets });
+    ui.showToast('success', `${activeAssetLabel.value}已保存`);
+  } catch (err) {
+    ui.showToast('error', err.message || `${activeAssetLabel.value}保存失败`);
+  } finally {
+    assetSaving.value = false;
+  }
+}
+
+async function deleteChapter(chapter) {
+  if (!chapter?.id || chapterDeletingId.value) return;
+  if (chapters.value.length <= 1) {
+    ui.showToast('warning', '至少需要保留一个章节');
+    return;
+  }
+  const hasDraft = hasChapterDraft(chapter);
+  const message = hasDraft
+    ? `确定删除「${chapterDisplayTitle(chapter)}」吗？该章节的未保存草稿和版本快照都会删除。`
+    : `确定删除「${chapterDisplayTitle(chapter)}」吗？该章节正文和版本快照都会删除。`;
+  const confirmed = await ui.showConfirm({
+    title: '删除章节',
+    message,
+    confirmText: '删除章节',
+    cancelText: '取消',
+    variant: 'danger',
+  });
+  if (!confirmed) return;
+  const deletedIndex = chapters.value.findIndex(item => item.id === chapter.id);
+  chapterDeletingId.value = chapter.id;
+  try {
+    const result = await storyApi.deleteChapter(chapter.id);
+    delete chapterDrafts[chapter.id];
+    chapters.value = result.chapters || chapters.value.filter(item => item.id !== chapter.id);
+    if (currentChapter.value?.id === chapter.id) {
+      const next = chapters.value[Math.min(deletedIndex, chapters.value.length - 1)] || chapters.value[0] || null;
+      selectChapter(next, { skipCache: true });
+    }
+    ui.showToast('success', '章节已删除');
+  } catch (err) {
+    ui.showToast('error', err.message || '删除章节失败');
+  } finally {
+    chapterDeletingId.value = null;
+  }
 }
 
 async function loadChapterVersions() {
@@ -779,6 +1070,9 @@ async function loadChapterVersions() {
 async function restoreVersion(version) {
   const saved = await storyApi.restoreChapter(currentChapter.value.id, { versionId: version.id });
   Object.assign(currentChapter.value, saved);
+  const index = chapters.value.findIndex(chapter => chapter.id === saved.id);
+  if (index >= 0) chapters.value[index] = { ...chapters.value[index], ...saved };
+  delete chapterDrafts[saved.id];
   chapterForm.title = saved.title;
   chapterForm.content = saved.content;
   await loadChapterVersions();
@@ -812,10 +1106,38 @@ async function retryRewrite() {
 }
 
 async function startScript(p) {
-  const task = await storyApi.convertToScript({ projectId: p.id, targetEpisodes: 20 });
-  activeTask.value = task;
-  localStorage.setItem('story:lastTaskId', String(task.id));
-  router.push(`/creation/scripts/${task.draftId}`);
+  if (!p?.id || scriptConvertingProjectId.value) return;
+  const startPath = route.fullPath;
+  scriptConvertingProjectId.value = p.id;
+  ui.showToast('info', '已开始转短剧，请稍候');
+  try {
+    const task = await storyApi.convertToScript({ projectId: p.id, targetEpisodes: 20 });
+    activeTask.value = task;
+    localStorage.setItem('story:lastTaskId', String(task.id));
+    if (route.fullPath === startPath) {
+      router.push(`/creation/scripts/${task.draftId}`);
+    } else {
+      ui.showToast('success', '短剧分场稿已生成，可从作品卡片或任务入口打开');
+    }
+  } catch (err) {
+    ui.showToast('error', err.message || '转短剧失败');
+  } finally {
+    scriptConvertingProjectId.value = null;
+  }
+}
+
+async function downloadProjectExport({ project: targetProject, format }) {
+  if (!targetProject?.id || projectExportingId.value) return;
+  projectExportingId.value = targetProject.id;
+  try {
+    const response = await storyApi.exportProjectFile(targetProject.id, { format });
+    saveBlobResponse(response, `${targetProject.title || '作品'}.${exportExtension(format)}`);
+    ui.showToast('success', '作品已导出');
+  } catch (err) {
+    ui.showToast('error', err.message || '导出作品失败');
+  } finally {
+    projectExportingId.value = null;
+  }
 }
 
 async function loadActiveTask() {
@@ -935,9 +1257,13 @@ async function exportDraft() {
 
 async function downloadExport() {
   const response = await storyApi.exportDraftFile(route.params.draftId, exportForm);
+  saveBlobResponse(response, exported.value?.filename || `短剧分场稿.${exportExtension(exportForm.format)}`);
+}
+
+function saveBlobResponse(response, fallbackFilename) {
   const disposition = response.headers?.['content-disposition'] || '';
   const match = disposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^"]+)"?/i);
-  const filename = match ? decodeURIComponent(match[1] || match[2]) : exported.value?.filename || `短剧分场稿.${exportForm.format === 'docx' ? 'docx' : 'md'}`;
+  const filename = match ? decodeURIComponent(match[1] || match[2]) : fallbackFilename;
   const url = URL.createObjectURL(response.data);
   const a = document.createElement('a');
   a.href = url;
@@ -946,5 +1272,9 @@ async function downloadExport() {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+function exportExtension(format) {
+  return { markdown: 'md', md: 'md', html: 'html', pdf: 'pdf', txt: 'txt', docx: 'docx' }[format] || 'md';
 }
 </script>

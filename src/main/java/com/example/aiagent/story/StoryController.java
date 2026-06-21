@@ -41,6 +41,24 @@ public class StoryController {
         return service.updateProject(id, payload);
     }
 
+    @PostMapping("/projects/{id}/export")
+    public Map<String, Object> exportProject(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> payload) {
+        return service.exportProject(id, payload == null ? Map.of() : payload);
+    }
+
+    @PostMapping("/projects/{id}/export/file")
+    public ResponseEntity<byte[]> exportProjectFile(@PathVariable Long id,
+                                                    @RequestBody(required = false) Map<String, Object> payload) throws IOException {
+        StoryWorkspaceService.ExportFile file = service.exportProjectFile(id, payload == null ? Map.of() : payload);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename(file.filename(), StandardCharsets.UTF_8)
+                        .build()
+                        .toString())
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .body(file.bytes());
+    }
+
     @PostMapping("/projects/{id}/chapters")
     public Map<String, Object> createChapter(@PathVariable Long id, @RequestBody Map<String, Object> payload) {
         return service.createChapter(id, payload);
@@ -49,6 +67,11 @@ public class StoryController {
     @PutMapping("/chapters/{chapterId}")
     public Map<String, Object> updateChapter(@PathVariable Long chapterId, @RequestBody Map<String, Object> payload) {
         return service.updateChapter(chapterId, payload);
+    }
+
+    @DeleteMapping("/chapters/{chapterId}")
+    public Map<String, Object> deleteChapter(@PathVariable Long chapterId) {
+        return service.deleteChapter(chapterId);
     }
 
     @GetMapping("/chapters/{chapterId}/versions")
