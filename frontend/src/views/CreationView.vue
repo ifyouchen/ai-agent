@@ -2,11 +2,11 @@
   <div v-if="mode === 'home'" class="creation-view">
     <header class="creation-header">
       <div><h1>创作中心</h1><p>写小说、改小说、转短剧分场稿的一体化工作台。</p></div>
-      <button class="creation-primary-btn" type="button" @click="quickCreate('long_novel')">新建作品</button>
+      <button class="creation-primary-btn" type="button" @click="openCreateDialog('long_novel')">新建作品</button>
     </header>
     <section class="creation-grid">
-      <button v-for="item in shortcuts" :key="item.key" class="creation-action-card" type="button" @click="item.action">
-        <span>{{ item.icon }}</span><strong>{{ item.title }}</strong><small>{{ item.desc }}</small>
+      <button v-for="item in shortcuts" :key="item.key" class="creation-action-card" :class="`action-${item.key}`" type="button" @click="item.action">
+        <span class="creation-action-icon">{{ item.icon }}</span><strong>{{ item.title }}</strong><small>{{ item.desc }}</small>
       </button>
     </section>
     <section v-if="activeTask" class="creation-panel">
@@ -214,7 +214,7 @@
         <button v-if="actionForm.loading" class="creation-secondary-btn full compact creation-stop-btn" type="button" @click="stopActionGeneration">停止生成</button>
         <button class="creation-secondary-btn full compact" type="button" :disabled="actionForm.loading" @click="savePromptConfig">保存 AI 配置</button>
         <label v-if="actionForm.loading || actionForm.result" class="creation-ai-result">
-          <span>{{ activeAction.type === 'review' ? '审查建议' : 'AI 生成草稿' }}</span>
+          <span>{{ actionResultTitle }}</span>
           <div v-if="actionForm.loading" class="creation-ai-pending">
             <span class="creation-spinner"></span>
             <strong>{{ activeAction.label }}生成中</strong>
@@ -222,7 +222,13 @@
           </div>
           <textarea v-else v-model="actionForm.result" rows="9"></textarea>
         </label>
-        <div v-if="actionForm.result && !isAssetAction(activeAction.type) && activeAction.type !== 'review'" class="creation-row">
+        <div v-if="actionForm.result && actionForm.resultTarget && isAssetAction(actionForm.resultTarget)" class="creation-row">
+          <button class="creation-primary-btn" type="button" :disabled="assetSaving" @click="applyAssetResult">
+            {{ assetSaving ? '保存中...' : `应用到${assetLabel(actionForm.resultTarget)}` }}
+          </button>
+          <button class="creation-secondary-btn" type="button" @click="discardActionResult">丢弃草稿</button>
+        </div>
+        <div v-if="actionForm.result && !isAssetAction(actionForm.resultTarget || activeAction.type) && (actionForm.resultTarget || activeAction.type) !== 'review'" class="creation-row">
           <button class="creation-secondary-btn" type="button" @click="appendActionResult">追加到正文</button>
           <button class="creation-secondary-btn" type="button" @click="replaceChapterWithResult">替换正文</button>
         </div>
@@ -480,7 +486,7 @@ const ProjectCards = defineComponent({
       !props.projects?.length
         ? h('div', { class: 'creation-empty' }, '暂无作品')
         : h('div', { class: 'creation-projects' }, props.projects.map(project => h('article', { class: 'creation-project-card', key: project.id }, [
-            h('span', project.typeLabel || project.type),
+            h('span', { class: ['creation-type-tag', `type-${project.type || 'unknown'}`] }, project.typeLabel || project.type),
             h('h3', project.title),
             h('p', project.description || '还没有简介'),
             h('small', `${project.status || 'writing'} · ${project.chapterCount || 0}章 · ${project.scriptDraftCount || 0}个脚本`),
@@ -550,7 +556,7 @@ const activeAssetType = ref('setting');
 const assetForm = reactive({ content: '', instruction: '' });
 const activeActionType = ref('continue');
 const aiConfigCollapsed = ref(false);
-const actionForm = reactive({ instruction: '', result: '', loading: false, controller: null });
+const actionForm = reactive({ instruction: '', result: '', resultTarget: '', loading: false, controller: null });
 const chapterDrafts = reactive({});
 const qualityOptimizedIssues = reactive({});
 const promptConfig = reactive(defaultPromptConfig());
@@ -667,6 +673,12 @@ const adaptationPlanEntries = computed(() => {
   ].filter(([, value]) => value).map(([label, value]) => ({ label, value }));
 });
 const qualityIssueList = computed(() => Array.isArray(qualityReport.value?.mainIssues) ? qualityReport.value.mainIssues : []);
+const actionResultTitle = computed(() => {
+  const target = actionForm.resultTarget || activeActionType.value;
+  if (target === 'review') return '审查建议';
+  if (isAssetAction(target)) return `${assetLabel(target)}生成草稿`;
+  return 'AI 生成草稿';
+});
 const exportChecks = computed(() => {
   const episodes = draft.value?.episodes || [];
   const scenes = episodes.flatMap(ep => ep.scenes || []);
@@ -682,8 +694,8 @@ const exportChecks = computed(() => {
 });
 const exportIssueCount = computed(() => exportChecks.value.filter(item => !item.pass).length);
 const shortcuts = [
-  { key: 'long', icon: '长', title: '新建长篇', desc: '设定、人物、大纲、章节续写', action: () => quickCreate('long_novel') },
-  { key: 'short', icon: '短', title: '新建短篇', desc: '情绪目标、反转、爆点和结尾', action: () => quickCreate('short_story') },
+  { key: 'long', icon: '长', title: '新建长篇', desc: '设定、人物、大纲、章节续写', action: () => openCreateDialog('long_novel') },
+  { key: 'short', icon: '短', title: '新建短篇', desc: '情绪目标、反转、爆点和结尾', action: () => openCreateDialog('short_story') },
   { key: 'import', icon: '导', title: '导入小说', desc: '支持粘贴文本和 DOCX 文件', action: () => router.push('/creation/projects?import=1') },
   { key: 'rewrite', icon: '改', title: '改写文本', desc: '润色、去 AI 味、爽点增强', action: () => router.push('/creation/projects') },
   { key: 'script', icon: '剧', title: '转短剧', desc: '生成分集大纲和分场稿', action: () => router.push('/creation/projects') },
@@ -715,15 +727,21 @@ async function loadByMode() {
   }
 }
 
-async function quickCreate(type) {
-  const p = await storyApi.createProject({ title: type === 'short_story' ? '未命名短篇' : '未命名长篇', type, description: '从这里开始创作。' });
-  router.push(`/creation/projects/${p.id}/editor`);
+function openCreateDialog(type = 'long_novel') {
+  createForm.title = '';
+  createForm.type = type;
+  createForm.description = '从这里开始创作。';
+  showCreate.value = true;
 }
 
 async function createProject() {
-  const p = await storyApi.createProject(createForm);
-  showCreate.value = false;
-  router.push(`/creation/projects/${p.id}/editor`);
+  try {
+    const p = await storyApi.createProject(createForm);
+    showCreate.value = false;
+    router.push(`/creation/projects/${p.id}/editor`);
+  } catch (err) {
+    ui.showToast('error', err.message || '创建作品失败');
+  }
 }
 
 function applyProjectSearch() {
@@ -876,6 +894,10 @@ function isAssetAction(action) {
   return ['setting', 'characters', 'outline'].includes(action);
 }
 
+function assetLabel(type) {
+  return assetTypes.find(asset => asset.type === type)?.label || '资产';
+}
+
 function defaultPromptConfig() {
   return {
     global: {
@@ -974,6 +996,7 @@ function openActionPanel(type) {
   activeActionType.value = type;
   aiConfigCollapsed.value = false;
   actionForm.result = '';
+  actionForm.resultTarget = '';
   ensureActionConfig(type);
   if (isAssetAction(type)) {
     selectAsset(type);
@@ -994,24 +1017,27 @@ function actionSource() {
 async function executeAction() {
   if (actionForm.loading) return;
   if (!project.value?.id) return;
-  if (!isAssetAction(activeActionType.value) && !chapterForm.content.trim() && activeActionType.value !== 'continue') {
+  const actionType = activeActionType.value;
+  const targetAssetType = isAssetAction(actionType) ? actionType : '';
+  if (!isAssetAction(actionType) && !chapterForm.content.trim() && actionType !== 'continue') {
     ui.showToast('warning', '请先输入正文');
     return;
   }
-  if (isAssetAction(activeActionType.value) && !actionForm.instruction.trim() && !assetForm.content.trim()) {
+  if (isAssetAction(actionType) && !actionForm.instruction.trim() && !assetForm.content.trim()) {
     ui.showToast('warning', `请先填写${activeAssetLabel.value}要求，或手动输入${activeAssetLabel.value}内容`);
     return;
   }
-  const config = ensureActionConfig(activeActionType.value);
-  if (isAssetAction(activeActionType.value)) {
+  const config = ensureActionConfig(actionType);
+  if (targetAssetType) {
     assetForm.instruction = actionForm.instruction;
   }
   actionForm.result = '';
+  actionForm.resultTarget = actionType;
   actionForm.controller = new AbortController();
   actionForm.loading = true;
   try {
     const result = await storyApi.generate(project.value.id, {
-      action: activeActionType.value,
+      action: actionType,
       chapterId: currentChapter.value?.id,
       content: actionSource(),
       instruction: actionForm.instruction,
@@ -1021,12 +1047,12 @@ async function executeAction() {
       signal: actionForm.controller.signal,
     });
     actionForm.result = result.content || '';
-    if (isAssetAction(activeActionType.value)) {
-      assetForm.content = [assetForm.content, actionForm.result].filter(Boolean).join(assetForm.content ? '\n\n' : '');
-      ui.showToast('success', '已生成到资产编辑框，请确认后保存');
+    actionForm.resultTarget = actionType;
+    if (targetAssetType) {
+      ui.showToast('success', `${assetLabel(targetAssetType)}草稿已生成，请确认后应用`);
       return;
     }
-    ui.showToast('success', activeActionType.value === 'review' ? '审查建议已生成' : 'AI 草稿已生成，请确认后应用');
+    ui.showToast('success', actionType === 'review' ? '审查建议已生成' : 'AI 草稿已生成，请确认后应用');
   } catch (err) {
     if (err.canceled) {
       ui.showToast('info', '已停止生成');
@@ -1048,6 +1074,7 @@ function appendActionResult() {
   if (!actionForm.result.trim()) return;
   chapterForm.content = [chapterForm.content, actionForm.result].filter(Boolean).join(chapterForm.content ? '\n\n' : '');
   actionForm.result = '';
+  actionForm.resultTarget = '';
   ui.showToast('success', '已追加到正文，记得保存章节');
 }
 
@@ -1055,7 +1082,21 @@ function replaceChapterWithResult() {
   if (!actionForm.result.trim()) return;
   chapterForm.content = actionForm.result;
   actionForm.result = '';
+  actionForm.resultTarget = '';
   ui.showToast('success', '已替换正文，记得保存章节');
+}
+
+async function applyAssetResult() {
+  const target = actionForm.resultTarget;
+  if (!isAssetAction(target) || !actionForm.result.trim()) return;
+  await saveAssetContent(target, actionForm.result);
+  actionForm.result = '';
+  actionForm.resultTarget = '';
+}
+
+function discardActionResult() {
+  actionForm.result = '';
+  actionForm.resultTarget = '';
 }
 
 function syncAssetForm() {
@@ -1089,14 +1130,19 @@ async function saveChapter() {
 }
 
 async function saveAsset() {
+  await saveAssetContent(activeAssetType.value, assetForm.content);
+}
+
+async function saveAssetContent(type, content) {
   if (assetSaving.value) return;
   assetSaving.value = true;
   try {
-    const assets = { ...projectAssets(), [activeAssetType.value]: assetForm.content };
+    const assets = { ...projectAssets(), [type]: content };
     project.value = await storyApi.updateProject(project.value.id, { assets });
-    ui.showToast('success', `${activeAssetLabel.value}已保存`);
+    if (activeAssetType.value === type) assetForm.content = content;
+    ui.showToast('success', `${assetLabel(type)}已保存`);
   } catch (err) {
-    ui.showToast('error', err.message || `${activeAssetLabel.value}保存失败`);
+    ui.showToast('error', err.message || `${assetLabel(type)}保存失败`);
   } finally {
     assetSaving.value = false;
   }

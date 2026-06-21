@@ -4,38 +4,18 @@ import com.example.aiagent.story.entity.*;
 import com.example.aiagent.story.mapper.*;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.langchain4j.data.document.loader.FileSystemDocumentLoader;
-import dev.langchain4j.data.document.parser.apache.tika.ApacheTikaDocumentParser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.PDPage;
-import org.apache.pdfbox.pdmodel.PDPageContentStream;
-import org.apache.pdfbox.pdmodel.common.PDRectangle;
-import org.apache.pdfbox.pdmodel.font.PDFont;
-import org.apache.pdfbox.pdmodel.font.PDType0Font;
-import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.File;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.charset.Charset;
-import java.nio.charset.MalformedInputException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 
 @Service
 @RequiredArgsConstructor
@@ -54,6 +34,8 @@ public class StoryWorkspaceService {
     private final GenerationTaskMapper generationTaskMapper;
     private final ObjectMapper objectMapper;
     private final StoryAiService storyAiService;
+    private final StoryExportService storyExportService;
+    private final StoryImportService storyImportService;
 
     @Transactional(readOnly = true)
     public List<Map<String, Object>> listProjects(String type) {
@@ -81,97 +63,81 @@ public class StoryWorkspaceService {
                 "title", "第1章",
                 "content", defaultOpening(type)
         ));
-        log.info("story.project.create action=create_project projectId={} type={} title={}", project.getId(), type, title);
+        log.info("创建故事项目 title={} type={} projectId={}", title, type, project.getId());
         return getProject(project.getId());
     }
 
     @Transactional
     public Map<String, Object> importText(Map<String, Object> payload) {
-        String content = string(payload.get("content"), "");
-        String detectedType = detectType(content);
-        Map<String, Object> project = createProject(Map.of(
-                "title", string(payload.get("title"), "导入作品"),
-                "type", detectedType,
-                "description", "由导入文本生成"
-        ));
-
-        Long projectId = longValue(project.get("id"));
-        List<StoryChapter> existing = chapterMapper.findByProjectId(projectId);
-        int chapterNo = 1;
-        for (StoryChapter chapter : existing) {
-            if (chapterNo == 1) {
-                List<String> chunks = splitImportUnits(content);
-                StoryChapter first = chapter;
-                first.setTitle(guessChapterTitle(chunks.get(0), 1));
-                first.setContent(chunks.get(0).trim());
-                first.setWordCount(wordCount(first.getContent()));
-                first.setVersionNo(first.getVersionNo() + 1);
-                first.setStatus("draft");
-                chapterMapper.update(first);
-                snapshotChapter(first, "import", "导入正文");
-                for (int i = 1; i < chunks.size(); i++) {
-                    createChapter(projectId, Map.of(
-                            "title", guessChapterTitle(chunks.get(i), i + 1),
-                            "content", chunks.get(i).trim()
-                    ));
-                }
-            }
-            chapterNo++;
-        }
-        log.info("story.import.text action=import_text projectId={} detectedType={} wordCount={} chapterCount={}",
-                projectId, detectedType, wordCount(content), splitImportUnits(content).size());
-        return getProject(projectId);
-    }
-
-    public Map<String, Object> previewImportText(Map<String, Object> payload) {
-        Map<String, Object> preview = buildImportPreview(
+        StoryImportService.StoryImportAnalysis analysis = storyImportService.analyzeText(
                 string(payload.get("title"), "导入作品"),
                 string(payload.get("content"), ""),
                 "text"
         );
-        log.info("story.import.preview action=preview_text detectedType={} wordCount={} chapterCount={}",
+        Map<String, Object> project = createImportedProject(analysis);
+        Long projectId = longValue(project.get("id"));
+        log.info("导入文本生成作品 projectId={} detectedType={} wordCount={} chapterCount={}",
+                projectId, analysis.detectedType(), analysis.wordCount(), analysis.units().size());
+        return project;
+    }
+
+    public Map<String, Object> previewImportText(Map<String, Object> payload) {
+        StoryImportService.StoryImportAnalysis analysis = storyImportService.analyzeText(
+                string(payload.get("title"), "导入作品"),
+                string(payload.get("content"), ""),
+                "text"
+        );
+        Map<String, Object> preview = storyImportService.preview(analysis);
+        log.info("预览文本导入 detectedType={} wordCount={} chapterCount={}",
                 preview.get("detectedType"), preview.get("wordCount"), preview.get("chapterCount"));
         return preview;
     }
 
     @Transactional
     public Map<String, Object> importFile(MultipartFile file, String title) throws IOException {
-        if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("导入文件不能为空");
-        }
-        String filename = cleanUploadFilename(file.getOriginalFilename());
-        Path tempFile = Files.createTempFile("story-import-", "-" + safeFilename(filename));
-        try {
-            Files.copy(file.getInputStream(), tempFile, StandardCopyOption.REPLACE_EXISTING);
-            String content = parseUploadText(tempFile, filename);
-            Map<String, Object> imported = importText(Map.of(
-                    "title", string(title, stripExtension(filename)),
-                    "content", content
-            ));
-            log.info("story.import.file action=import_file projectId={} filename={} size={} detectedType={} wordCount={}",
-                    imported.get("id"), filename, file.getSize(), detectType(content), wordCount(content));
-            return imported;
-        } finally {
-            Files.deleteIfExists(tempFile);
-        }
+        StoryImportService.StoryImportAnalysis analysis = storyImportService.analyzeFile(file, title);
+        Map<String, Object> imported = createImportedProject(analysis);
+        log.info("导入文件生成作品 projectId={} filename={} size={} detectedType={} wordCount={}",
+                imported.get("id"), analysis.sourceName(), file.getSize(), analysis.detectedType(), analysis.wordCount());
+        return imported;
     }
 
     public Map<String, Object> previewImportFile(MultipartFile file, String title) throws IOException {
-        if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("导入文件不能为空");
+        StoryImportService.StoryImportAnalysis analysis = storyImportService.analyzeFile(file, title);
+        Map<String, Object> preview = storyImportService.preview(analysis);
+        log.info("预览文件导入 filename={} size={} detectedType={} wordCount={} chapterCount={}",
+                analysis.sourceName(), file.getSize(), preview.get("detectedType"), preview.get("wordCount"), preview.get("chapterCount"));
+        return preview;
+    }
+
+    private Map<String, Object> createImportedProject(StoryImportService.StoryImportAnalysis analysis) {
+        Map<String, Object> project = createProject(Map.of(
+                "title", analysis.title(),
+                "type", analysis.detectedType(),
+                "description", "由导入文本生成"
+        ));
+        Long projectId = longValue(project.get("id"));
+        List<StoryChapter> existing = chapterMapper.findByProjectId(projectId);
+        List<StoryImportService.StoryImportUnit> units = analysis.units();
+        if (!existing.isEmpty() && !units.isEmpty()) {
+            StoryImportService.StoryImportUnit firstUnit = units.get(0);
+            StoryChapter first = existing.get(0);
+            first.setTitle(firstUnit.title());
+            first.setContent(firstUnit.content());
+            first.setWordCount(firstUnit.wordCount());
+            first.setVersionNo(first.getVersionNo() + 1);
+            first.setStatus("draft");
+            chapterMapper.update(first);
+            snapshotChapter(first, "import", "导入正文");
+            for (int i = 1; i < units.size(); i++) {
+                StoryImportService.StoryImportUnit unit = units.get(i);
+                createChapter(projectId, Map.of(
+                        "title", unit.title(),
+                        "content", unit.content()
+                ));
+            }
         }
-        String filename = cleanUploadFilename(file.getOriginalFilename());
-        Path tempFile = Files.createTempFile("story-import-preview-", "-" + safeFilename(filename));
-        try {
-            Files.copy(file.getInputStream(), tempFile, StandardCopyOption.REPLACE_EXISTING);
-            String content = parseUploadText(tempFile, filename);
-            Map<String, Object> preview = buildImportPreview(string(title, stripExtension(filename)), content, filename);
-            log.info("story.import.preview action=preview_file filename={} size={} detectedType={} wordCount={} chapterCount={}",
-                    filename, file.getSize(), preview.get("detectedType"), preview.get("wordCount"), preview.get("chapterCount"));
-            return preview;
-        } finally {
-            Files.deleteIfExists(tempFile);
-        }
+        return getProject(projectId);
     }
 
     @Transactional(readOnly = true)
@@ -198,7 +164,7 @@ public class StoryWorkspaceService {
             project.setMetadata(toJson(metadata));
         }
         projectMapper.update(project);
-        log.info("story.project.update action=update_project projectId={} updateAssets={} updatePromptConfig={}",
+        log.info("更新故事项目 projectId={} 更新资产={} 更新AI配置={}",
                 id, payload.containsKey("assets"), payload.containsKey("promptConfig"));
         return getProject(id);
     }
@@ -206,27 +172,25 @@ public class StoryWorkspaceService {
     @Transactional(readOnly = true)
     public Map<String, Object> exportProject(Long projectId, Map<String, Object> payload) {
         Map<String, Object> project = getProject(projectId);
-        String format = normalizeExportFormat(string(payload.get("format"), "md"));
-        String markdown = buildProjectMarkdown(project, payload);
-        String content = previewExportContent(project.get("title"), markdown, format);
-        log.info("story.project.export action=export_preview projectId={} format={} contentLength={}",
-                projectId, format, content.length());
+        String format = storyExportService.normalizeFormat(string(payload.get("format"), "md"));
+        String markdown = storyExportService.buildProjectMarkdown(project, payload);
+        String content = storyExportService.previewContent(project.get("title"), markdown, format);
+        log.info("预览导出作品 projectId={} format={} 字数={}", projectId, format, content.length());
         return Map.of(
                 "projectId", projectId,
                 "format", format,
-                "filename", exportFilename(project.get("title"), format),
+                "filename", storyExportService.filename(project.get("title"), format),
                 "content", content
         );
     }
 
     @Transactional(readOnly = true)
-    public ExportFile exportProjectFile(Long projectId, Map<String, Object> payload) throws IOException {
+    public StoryExportFile exportProjectFile(Long projectId, Map<String, Object> payload) throws IOException {
         Map<String, Object> project = getProject(projectId);
-        String format = normalizeExportFormat(string(payload.get("format"), "md"));
-        String markdown = buildProjectMarkdown(project, payload);
-        ExportFile file = buildExportFile(project.get("title"), markdown, format);
-        log.info("story.project.export action=export_file projectId={} format={} filename={} bytes={}",
-                projectId, format, file.filename(), file.bytes().length);
+        String format = storyExportService.normalizeFormat(string(payload.get("format"), "md"));
+        String markdown = storyExportService.buildProjectMarkdown(project, payload);
+        StoryExportFile file = storyExportService.buildFile(project.get("title"), markdown, format);
+        log.info("下载导出作品 projectId={} format={} filename={} bytes={}", projectId, format, file.filename(), file.bytes().length);
         return file;
     }
 
@@ -247,7 +211,7 @@ public class StoryWorkspaceService {
         chapterMapper.insert(chapter);
         snapshotChapter(chapter, "create", "创建章节初始版本");
         projectMapper.updateStatus(projectId, "writing");
-        log.info("story.chapter.create action=create_chapter projectId={} chapterId={} chapterNo={} wordCount={}",
+        log.info("创建章节 projectId={} chapterId={} chapterNo={} wordCount={}",
                 projectId, chapter.getId(), chapter.getChapterNo(), chapter.getWordCount());
         return chapterMap(chapter);
     }
@@ -263,7 +227,7 @@ public class StoryWorkspaceService {
         chapterMapper.update(chapter);
         snapshotChapter(chapter, string(payload.get("source"), "manual"), string(payload.get("note"), "保存章节"));
         projectMapper.updateStatus(chapter.getProjectId(), "writing");
-        log.info("story.chapter.update action=update_chapter projectId={} chapterId={} versionNo={} wordCount={} source={}",
+        log.info("更新章节 projectId={} chapterId={} versionNo={} wordCount={} source={}",
                 chapter.getProjectId(), chapterId, chapter.getVersionNo(), chapter.getWordCount(), string(payload.get("source"), "manual"));
         return chapterMap(chapter);
     }
@@ -281,7 +245,7 @@ public class StoryWorkspaceService {
         List<Map<String, Object>> remaining = chapterMapper.findByProjectId(chapter.getProjectId()).stream()
                 .map(this::chapterMap)
                 .toList();
-        log.info("story.chapter.delete action=delete_chapter projectId={} chapterId={} remainingCount={}",
+        log.info("删除章节 projectId={} chapterId={} remainingCount={}",
                 chapter.getProjectId(), chapterId, remaining.size());
         return Map.of(
                 "projectId", chapter.getProjectId(),
@@ -311,7 +275,7 @@ public class StoryWorkspaceService {
         chapterMapper.update(chapter);
         snapshotChapter(chapter, "restore", "恢复自版本 " + version.getVersionNo());
         projectMapper.updateStatus(chapter.getProjectId(), "writing");
-        log.info("story.chapter.restore action=restore_chapter projectId={} chapterId={} restoredVersion={} newVersion={}",
+        log.info("恢复章节版本 projectId={} chapterId={} restoredVersion={} newVersion={}",
                 chapter.getProjectId(), chapterId, version.getVersionNo(), chapter.getVersionNo());
         return chapterMap(chapter);
     }
@@ -345,7 +309,7 @@ public class StoryWorkspaceService {
                         actionConfig,
                         useCustomPrompt
                 );
-        log.info("story.generate action=generate_writing projectId={} generateAction={} useFallback={} useCustomPrompt={} instructionLength={} params={} sourceLength={} resultLength={}",
+        log.info("执行创作AI projectId={} action={} 使用兜底={} 使用自定义提示={} instructionLength={} params={} sourceLength={} resultLength={}",
                 projectId, action, useFallback(request), useCustomPrompt, instruction.length(), safeLogMap(params), source.length(), content.length());
         return Map.of("projectId", projectId, "action", action, "content", content);
     }
@@ -384,7 +348,7 @@ public class StoryWorkspaceService {
                 .build();
         rewriteTaskMapper.insert(task);
         projectMapper.updateStatus(projectId, "rewriting");
-        log.info("story.rewrite.create action=create_rewrite projectId={} chapterId={} taskId={} mode={} segmentCount={} sourceLength={}",
+        log.info("创建改写任务 projectId={} chapterId={} taskId={} mode={} segmentCount={} sourceLength={}",
                 projectId, task.getChapterId(), task.getId(), rewriteMode, segments.size(), source.length());
         return rewriteTaskMap(task);
     }
@@ -413,7 +377,7 @@ public class StoryWorkspaceService {
         task.setDiffPayload("{}");
         task.setCompletedAt(Instant.now());
         rewriteTaskMapper.update(task);
-        log.info("story.rewrite.accept action=accept_rewrite projectId={} chapterId={} taskId={} segmentCount={}",
+        log.info("接受改写结果 projectId={} chapterId={} taskId={} segmentCount={}",
                 task.getProjectId(), task.getChapterId(), id, segments.size());
         return Map.of("projectId", task.getProjectId(), "taskId", id, "status", "accepted");
     }
@@ -422,7 +386,7 @@ public class StoryWorkspaceService {
     public Map<String, Object> retryRewrite(Long id, Map<String, Object> payload) {
         RewriteTask old = rewriteTaskMapper.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("改写任务不存在：" + id));
-        log.info("story.rewrite.retry action=retry_rewrite oldTaskId={} projectId={} chapterId={} mode={}",
+        log.info("重新改写 oldTaskId={} projectId={} chapterId={} mode={}",
                 id, old.getProjectId(), old.getChapterId(), string(payload.get("rewriteMode"), old.getRewriteMode()));
         return createRewrite(Map.of(
                 "projectId", old.getProjectId(),
@@ -490,7 +454,7 @@ public class StoryWorkspaceService {
             episodeIndex++;
         }
         projectMapper.updateStatus(projectId, "adapting");
-        log.info("story.script.convert action=convert_to_script projectId={} taskId={} draftId={} targetEpisodes={} generatedEpisodes={} useFallback={} sourceLength={}",
+        log.info("转短剧完成 projectId={} taskId={} draftId={} targetEpisodes={} generatedEpisodes={} 使用兜底={} sourceLength={}",
                 projectId, task.getId(), draft.getId(), targetEpisodes, generatedEpisodes.size(), useFallback(payload), sourceText.length());
         return Map.of("id", task.getId(), "draftId", draft.getId(), "projectId", projectId, "status", "completed", "progress", 100);
     }
@@ -521,7 +485,7 @@ public class StoryWorkspaceService {
         task.setCurrentStep("用户已取消任务");
         task.setErrorMessage(null);
         generationTaskMapper.update(task);
-        log.info("story.task.cancel action=cancel_task taskId={} projectId={} taskType={} status={}",
+        log.info("取消生成任务 taskId={} projectId={} taskType={} status={}",
                 taskId, task.getProjectId(), task.getTaskType(), task.getStatus());
         return generationTaskMap(task);
     }
@@ -531,7 +495,7 @@ public class StoryWorkspaceService {
         GenerationTask old = generationTaskMapper.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("生成任务不存在：" + taskId));
         if ("script_convert".equals(old.getTaskType())) {
-            log.info("story.task.retry action=retry_task taskId={} projectId={} taskType={}",
+            log.info("重试生成任务 taskId={} projectId={} taskType={}",
                     taskId, old.getProjectId(), old.getTaskType());
             return convertToScript(Map.of("projectId", old.getProjectId()));
         }
@@ -545,7 +509,7 @@ public class StoryWorkspaceService {
                 .tokenUsage(estimateTokenUsage("", List.of()))
                 .build();
         generationTaskMapper.insert(retry);
-        log.info("story.task.retry action=retry_task_unsupported oldTaskId={} retryTaskId={} taskType={}",
+        log.info("不支持重试的生成任务 oldTaskId={} retryTaskId={} taskType={}",
                 taskId, retry.getId(), old.getTaskType());
         return generationTaskMap(retry);
     }
@@ -568,7 +532,7 @@ public class StoryWorkspaceService {
         Map<String, Object> improved = fallbackEpisodeImprovement(current, string(payload.get("action"), "rewrite"));
         applyEpisodePayload(episode, improved);
         episodeMapper.update(episode);
-        log.info("story.script.episode.ai action=improve_episode episodeId={} draftId={} aiAction={}",
+        log.info("AI优化分集 episodeId={} draftId={} action={}",
                 episodeId, episode.getDraftId(), string(payload.get("action"), "rewrite"));
         return episodeMap(episode);
     }
@@ -578,7 +542,7 @@ public class StoryWorkspaceService {
         ScriptScene scene = buildScene(episodeId, payload == null ? Map.of() : payload, nextNo);
         scene.setSceneNo(nextNo);
         sceneMapper.insert(scene);
-        log.info("story.script.scene.create action=create_scene episodeId={} sceneId={} sceneNo={}",
+        log.info("创建短剧场次 episodeId={} sceneId={} sceneNo={}",
                 episodeId, scene.getId(), scene.getSceneNo());
         return sceneMap(scene);
     }
@@ -589,7 +553,7 @@ public class StoryWorkspaceService {
                 .orElseThrow(() -> new IllegalArgumentException("场次不存在：" + sceneId));
         applyScenePayload(scene, payload);
         sceneMapper.update(scene);
-        log.info("story.script.scene.update action=update_scene episodeId={} sceneId={} sceneNo={}",
+        log.info("更新短剧场次 episodeId={} sceneId={} sceneNo={}",
                 scene.getEpisodeId(), sceneId, scene.getSceneNo());
         return sceneMap(scene);
     }
@@ -601,7 +565,7 @@ public class StoryWorkspaceService {
         Long episodeId = scene.getEpisodeId();
         sceneMapper.deleteById(sceneId);
         renumberScenes(episodeId);
-        log.info("story.script.scene.delete action=delete_scene episodeId={} sceneId={}", episodeId, sceneId);
+        log.info("删除短剧场次 episodeId={} sceneId={}", episodeId, sceneId);
         return Map.of("episodeId", episodeId, "deletedSceneId", sceneId, "status", "deleted");
     }
 
@@ -626,7 +590,7 @@ public class StoryWorkspaceService {
         Integer currentNo = current.getSceneNo();
         sceneMapper.updateSceneNo(current.getId(), other.getSceneNo());
         sceneMapper.updateSceneNo(other.getId(), currentNo);
-        log.info("story.script.scene.move action=move_scene episodeId={} sceneId={} direction={} fromIndex={} toIndex={}",
+        log.info("移动短剧场次 episodeId={} sceneId={} direction={} fromIndex={} toIndex={}",
                 scene.getEpisodeId(), sceneId, direction, index, target);
         return sceneMapper.findByEpisodeId(scene.getEpisodeId()).stream().map(this::sceneMap).toList();
     }
@@ -648,7 +612,7 @@ public class StoryWorkspaceService {
         );
         applyScenePayload(scene, improved);
         sceneMapper.update(scene);
-        log.info("story.script.scene.ai action=improve_scene episodeId={} sceneId={} aiAction={}",
+        log.info("AI优化短剧场次 episodeId={} sceneId={} action={}",
                 scene.getEpisodeId(), sceneId, string(payload.get("action"), "rewrite"));
         return sceneMap(scene);
     }
@@ -671,651 +635,35 @@ public class StoryWorkspaceService {
         Map<String, Object> fallback = fallbackQualityReport(draftId);
         Map<String, Object> report = useFallback(payload)
                 ? fallback
-                : storyAiService.qualityCheck(buildExportMarkdown(draftMap, Map.of("includeQualityReport", false)), fallback);
+                : storyAiService.qualityCheck(storyExportService.buildDraftMarkdown(draftMap, Map.of("includeQualityReport", false)), fallback);
         report.put("draftId", draftId);
         int score = intValue(report.get("totalScore"), 86);
         draft.setQualityScore(score);
         draft.setQualityReport(toJson(report));
         draftMapper.update(draft);
-        log.info("story.script.quality action=quality_check draftId={} projectId={} score={} useFallback={}",
-                draftId, draft.getProjectId(), score, useFallback(payload));
+        log.info("质检短剧草稿 draftId={} projectId={} score={} 使用兜底={}", draftId, draft.getProjectId(), score, useFallback(payload));
         return report;
     }
 
     @Transactional(readOnly = true)
     public Map<String, Object> exportDraft(Long draftId, Map<String, Object> payload) {
         Map<String, Object> draft = getDraft(draftId);
-        String format = normalizeExportFormat(string(payload.get("format"), "md"));
-        String markdown = buildExportMarkdown(draft, payload);
-        String content = previewExportContent(draft.get("title"), markdown, format);
-        log.info("story.script.export action=export_preview draftId={} format={} scope={} contentLength={}",
-                draftId, format, string(payload.get("scope"), "all"), content.length());
-        return Map.of("draftId", draftId, "format", format, "filename", exportFilename(draft.get("title"), format), "content", content);
+        String format = storyExportService.normalizeFormat(string(payload.get("format"), "md"));
+        String markdown = storyExportService.buildDraftMarkdown(draft, payload);
+        String content = storyExportService.previewContent(draft.get("title"), markdown, format);
+        log.info("预览导出短剧 draftId={} format={} scope={} 字数={}", draftId, format, string(payload.get("scope"), "all"), content.length());
+        return Map.of("draftId", draftId, "format", format, "filename", storyExportService.filename(draft.get("title"), format), "content", content);
     }
 
     @Transactional(readOnly = true)
-    public ExportFile exportDraftFile(Long draftId, Map<String, Object> payload) throws IOException {
+    public StoryExportFile exportDraftFile(Long draftId, Map<String, Object> payload) throws IOException {
         Map<String, Object> draft = getDraft(draftId);
-        String format = normalizeExportFormat(string(payload.get("format"), "md"));
-        String markdown = buildExportMarkdown(draft, payload);
-        ExportFile file = buildExportFile(draft.get("title"), markdown, format);
-        log.info("story.script.export action=export_file draftId={} format={} filename={} bytes={}",
-                draftId, format, file.filename(), file.bytes().length);
+        String format = storyExportService.normalizeFormat(string(payload.get("format"), "md"));
+        String markdown = storyExportService.buildDraftMarkdown(draft, payload);
+        StoryExportFile file = storyExportService.buildFile(draft.get("title"), markdown, format);
+        log.info("下载导出短剧 draftId={} format={} filename={} bytes={}", draftId, format, file.filename(), file.bytes().length);
         return file;
     }
-
-    private String buildProjectMarkdown(Map<String, Object> project, Map<String, Object> payload) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("# ").append(project.get("title")).append("\n\n");
-        String description = string(project.get("description"), "");
-        if (!description.isBlank()) {
-            sb.append("> ").append(description).append("\n\n");
-        }
-        if (Boolean.TRUE.equals(payload.get("includeAssets"))) {
-            appendProjectAssets(sb, objectMap(project.get("assets")));
-        }
-        for (Map<String, Object> chapter : mapList(project.get("chapters"))) {
-            String title = string(chapter.get("title"), "第" + chapter.get("chapterNo") + "章");
-            sb.append("## ").append(title).append("\n\n");
-            sb.append(contentWithoutDuplicateHeading(title, string(chapter.get("content"), ""))).append("\n\n");
-        }
-        return sb.toString();
-    }
-
-    private String contentWithoutDuplicateHeading(String title, String content) {
-        if (title == null || title.isBlank() || content == null || content.isBlank()) return content;
-        String stripped = content.stripLeading();
-        int lineEnd = stripped.indexOf('\n');
-        String firstLine = lineEnd >= 0 ? stripped.substring(0, lineEnd) : stripped;
-        if (!firstLine.trim().equals(title.trim())) return content;
-        return lineEnd >= 0 ? stripped.substring(lineEnd + 1).stripLeading() : "";
-    }
-
-    private String buildExportMarkdown(Map<String, Object> draft, Map<String, Object> payload) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("# ").append(draft.get("title")).append("\n\n");
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> episodes = filterExportEpisodes((List<Map<String, Object>>) draft.get("episodes"), payload);
-        if (Boolean.TRUE.equals(payload.get("includeAdaptationPlan"))) {
-            appendAdaptationPlan(sb, draft);
-        }
-        if (Boolean.TRUE.equals(payload.get("includeCharacterTable"))) {
-            appendCharacterTable(sb, episodes);
-        }
-        if (Boolean.TRUE.equals(payload.get("includeSceneDirectory"))) {
-            appendSceneDirectory(sb, episodes);
-        }
-        for (Map<String, Object> episode : episodes) {
-            sb.append("## 第").append(episode.get("episodeNo")).append("集\n");
-            sb.append("预计时长：").append(episode.get("estimatedDuration")).append("\n");
-            sb.append("核心爽点：").append(episode.get("coreHook")).append("\n");
-            sb.append("本集冲突：").append(episode.get("mainConflict")).append("\n");
-            sb.append("结尾钩子：").append(episode.get("endingHook")).append("\n\n");
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> scenes = (List<Map<String, Object>>) episode.get("scenes");
-            for (Map<String, Object> scene : scenes) {
-                sb.append("### 【第").append(scene.get("sceneNo")).append("场】").append(scene.get("sceneTitle")).append("\n");
-                sb.append("场景：").append(scene.get("location")).append("\n");
-                sb.append("人物：").append(scene.get("characters")).append("\n");
-                sb.append("本场功能：").append(scene.get("sceneFunction")).append("\n");
-                sb.append("画面：").append(scene.get("visualAction")).append("\n");
-                sb.append("旁白：").append(scene.get("narration")).append("\n");
-                sb.append("对白：\n").append(scene.get("dialogue")).append("\n");
-                sb.append("表演/镜头：").append(scene.get("performanceCameraNote")).append("\n");
-                sb.append("钩子：").append(scene.get("hook")).append("\n\n");
-            }
-        }
-        if (Boolean.TRUE.equals(payload.get("includeQualityReport")) && draft.get("qualityReport") != null) {
-            sb.append("## 质量报告\n").append(draft.get("qualityReport")).append("\n");
-        }
-        return sb.toString();
-    }
-
-    private List<Map<String, Object>> filterExportEpisodes(List<Map<String, Object>> episodes, Map<String, Object> payload) {
-        if (episodes == null) return List.of();
-        String scope = string(payload.get("scope"), "all");
-        Integer episodeNo = payload.get("episodeNo") == null ? null : intValue(payload.get("episodeNo"), -1);
-        Long sceneId = nullableLong(payload.get("sceneId"));
-        if ("episode".equals(scope) && episodeNo != null && episodeNo > 0) {
-            return episodes.stream()
-                    .filter(ep -> intValue(ep.get("episodeNo"), -1) == episodeNo)
-                    .toList();
-        }
-        if ("scene".equals(scope) && sceneId != null) {
-            List<Map<String, Object>> filtered = new ArrayList<>();
-            for (Map<String, Object> episode : episodes) {
-                List<Map<String, Object>> scenes = mapList(episode.get("scenes")).stream()
-                        .filter(scene -> sceneId.equals(nullableLong(scene.get("id"))))
-                        .toList();
-                if (!scenes.isEmpty()) {
-                    Map<String, Object> copy = new LinkedHashMap<>(episode);
-                    copy.put("scenes", scenes);
-                    filtered.add(copy);
-                }
-            }
-            return filtered;
-        }
-        return episodes;
-    }
-
-    private void appendAdaptationPlan(StringBuilder sb, Map<String, Object> draft) {
-        Map<String, Object> plan = objectMap(draft.get("adaptationPlan"));
-        if (plan.isEmpty()) return;
-        sb.append("## 改编方案\n");
-        appendPlanLine(sb, "故事核", plan.get("storyCore"));
-        appendPlanLine(sb, "人物关系", plan.get("characterRelations"));
-        appendPlanLine(sb, "情节取舍", plan.get("plotSelection"));
-        appendPlanLine(sb, "改编策略", plan.get("strategy"));
-        sb.append("\n");
-    }
-
-    private void appendPlanLine(StringBuilder sb, String label, Object value) {
-        String text = string(value, "");
-        if (!text.isBlank()) sb.append(label).append("：").append(text).append("\n");
-    }
-
-    private void appendCharacterTable(StringBuilder sb, List<Map<String, Object>> episodes) {
-        Map<String, Integer> characters = new LinkedHashMap<>();
-        for (Map<String, Object> episode : episodes) {
-            for (Map<String, Object> scene : mapList(episode.get("scenes"))) {
-                for (String name : splitCharacters(string(scene.get("characters"), ""))) {
-                    characters.merge(name, 1, Integer::sum);
-                }
-            }
-        }
-        if (characters.isEmpty()) return;
-        sb.append("## 人物表\n");
-        sb.append("| 人物 | 出现场次 | 备注 |\n|---|---:|---|\n");
-        characters.forEach((name, count) -> sb.append("| ").append(name).append(" | ").append(count).append(" | 由分场人物字段自动汇总 |\n"));
-        sb.append("\n");
-    }
-
-    private void appendSceneDirectory(StringBuilder sb, List<Map<String, Object>> episodes) {
-        sb.append("## 场次目录\n");
-        for (Map<String, Object> episode : episodes) {
-            sb.append("- 第").append(episode.get("episodeNo")).append("集：").append(episode.get("title")).append("\n");
-            for (Map<String, Object> scene : mapList(episode.get("scenes"))) {
-                sb.append("  - 第").append(scene.get("sceneNo")).append("场：")
-                        .append(scene.get("sceneTitle")).append("｜")
-                        .append(scene.get("location")).append("｜")
-                        .append(scene.get("sceneFunction")).append("\n");
-            }
-        }
-        sb.append("\n");
-    }
-
-    private List<String> splitCharacters(String raw) {
-        if (raw == null || raw.isBlank()) return List.of();
-        String[] parts = raw.split("[、,，/／\\s]+");
-        List<String> names = new ArrayList<>();
-        for (String part : parts) {
-            String name = part.trim();
-            if (!name.isBlank() && !names.contains(name)) names.add(name);
-        }
-        return names;
-    }
-
-    private void appendProjectAssets(StringBuilder sb, Map<String, Object> assets) {
-        if (assets == null || assets.isEmpty()) return;
-        appendProjectAsset(sb, "设定", assets.get("setting"));
-        appendProjectAsset(sb, "人物", assets.get("characters"));
-        appendProjectAsset(sb, "大纲", assets.get("outline"));
-    }
-
-    private void appendProjectAsset(StringBuilder sb, String label, Object value) {
-        String text = string(value, "");
-        if (!text.isBlank()) {
-            sb.append("## ").append(label).append("\n\n").append(text).append("\n\n");
-        }
-    }
-
-    private ExportFile buildExportFile(Object title, String markdown, String format) throws IOException {
-        String normalized = normalizeExportFormat(format);
-        String filename = exportFilename(title, normalized);
-        return switch (normalized) {
-            case "docx" -> new ExportFile(
-                    filename,
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    buildDocx(markdown)
-            );
-            case "html" -> new ExportFile(
-                    filename,
-                    "text/html; charset=UTF-8",
-                    buildHtmlDocument(string(title, "导出内容"), markdown).getBytes(StandardCharsets.UTF_8)
-            );
-            case "pdf" -> new ExportFile(
-                    filename,
-                    "application/pdf",
-                    buildPdf(string(title, "导出内容"), markdown)
-            );
-            case "txt" -> new ExportFile(
-                    filename,
-                    "text/plain; charset=UTF-8",
-                    markdownToPlainText(markdown).getBytes(StandardCharsets.UTF_8)
-            );
-            default -> new ExportFile(
-                    filename,
-                    "text/markdown; charset=UTF-8",
-                    markdown.getBytes(StandardCharsets.UTF_8)
-            );
-        };
-    }
-
-    private String previewExportContent(Object title, String markdown, String format) {
-        String normalized = normalizeExportFormat(format);
-        if ("html".equals(normalized)) return buildHtmlDocument(string(title, "导出内容"), markdown);
-        if ("txt".equals(normalized)) return markdownToPlainText(markdown);
-        return markdown;
-    }
-
-    private String normalizeExportFormat(String format) {
-        String value = string(format, "md").trim().toLowerCase(Locale.ROOT);
-        return switch (value) {
-            case "markdown" -> "md";
-            case "htm" -> "html";
-            case "text" -> "txt";
-            case "word", "doc" -> "docx";
-            case "md", "html", "pdf", "txt", "docx" -> value;
-            default -> "md";
-        };
-    }
-
-    private String exportFilename(Object title, String format) {
-        return safeFilename(string(title, "导出内容")) + "." + exportExtension(format);
-    }
-
-    private String exportExtension(String format) {
-        return switch (normalizeExportFormat(format)) {
-            case "docx" -> "docx";
-            case "html" -> "html";
-            case "pdf" -> "pdf";
-            case "txt" -> "txt";
-            default -> "md";
-        };
-    }
-
-    private String buildHtmlDocument(String title, String markdown) {
-        return """
-                <!doctype html>
-                <html lang="zh-CN">
-                <head>
-                  <meta charset="utf-8">
-                  <meta name="viewport" content="width=device-width, initial-scale=1">
-                  <title>%s</title>
-                  <style>
-                    body { margin: 0; background: #f5f7fb; color: #172033; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; line-height: 1.85; }
-                    main { max-width: 820px; margin: 48px auto; padding: 44px 52px; background: #fff; border: 1px solid #e8edf6; border-radius: 8px; box-shadow: 0 18px 50px rgba(20,31,56,.08); }
-                    h1 { margin: 0 0 28px; font-size: 32px; line-height: 1.25; }
-                    h2 { margin: 34px 0 14px; padding-top: 18px; border-top: 1px solid #edf1f7; font-size: 22px; }
-                    h3 { margin: 26px 0 10px; font-size: 18px; }
-                    p { margin: 0 0 14px; white-space: pre-wrap; }
-                    blockquote { margin: 0 0 22px; padding: 12px 16px; color: #5b667a; background: #f7f9ff; border-left: 4px solid #4f67f5; }
-                    table { width: 100%%; border-collapse: collapse; margin: 16px 0 24px; }
-                    th, td { border: 1px solid #e4e9f2; padding: 8px 10px; text-align: left; }
-                  </style>
-                </head>
-                <body><main>
-                %s
-                </main></body>
-                </html>
-                """.formatted(htmlEscape(title), markdownToHtml(markdown));
-    }
-
-    private String markdownToHtml(String markdown) {
-        StringBuilder html = new StringBuilder();
-        boolean inTable = false;
-        for (String rawLine : string(markdown, "").split("\\R")) {
-            String line = rawLine.stripTrailing();
-            if (line.isBlank()) {
-                if (inTable) {
-                    html.append("</tbody></table>\n");
-                    inTable = false;
-                }
-                continue;
-            }
-            if (line.startsWith("|") && line.endsWith("|")) {
-                if (line.matches("\\|\\s*[-:]+.*")) continue;
-                String[] cells = line.substring(1, line.length() - 1).split("\\|");
-                if (!inTable) {
-                    html.append("<table><tbody>\n");
-                    inTable = true;
-                }
-                html.append("<tr>");
-                for (String cell : cells) html.append("<td>").append(htmlEscape(cell.trim())).append("</td>");
-                html.append("</tr>\n");
-                continue;
-            }
-            if (inTable) {
-                html.append("</tbody></table>\n");
-                inTable = false;
-            }
-            if (line.startsWith("### ")) html.append("<h3>").append(htmlEscape(line.substring(4))).append("</h3>\n");
-            else if (line.startsWith("## ")) html.append("<h2>").append(htmlEscape(line.substring(3))).append("</h2>\n");
-            else if (line.startsWith("# ")) html.append("<h1>").append(htmlEscape(line.substring(2))).append("</h1>\n");
-            else if (line.startsWith("> ")) html.append("<blockquote>").append(htmlEscape(line.substring(2))).append("</blockquote>\n");
-            else if (line.startsWith("- ")) html.append("<p>").append(htmlEscape(line)).append("</p>\n");
-            else html.append("<p>").append(htmlEscape(line)).append("</p>\n");
-        }
-        if (inTable) html.append("</tbody></table>\n");
-        return html.toString();
-    }
-
-    private String markdownToPlainText(String markdown) {
-        StringBuilder text = new StringBuilder();
-        for (String rawLine : string(markdown, "").split("\\R")) {
-            String line = rawLine
-                    .replaceFirst("^#{1,6}\\s+", "")
-                    .replaceFirst("^>\\s+", "")
-                    .replace("**", "")
-                    .replace("`", "");
-            if (line.matches("\\|\\s*[-:]+.*")) continue;
-            if (line.startsWith("|") && line.endsWith("|")) {
-                line = line.substring(1, line.length() - 1).replace("|", "\t");
-            }
-            text.append(line).append("\n");
-        }
-        return text.toString();
-    }
-
-    private String htmlEscape(String value) {
-        return string(value, "")
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;");
-    }
-
-    private String parseUploadText(Path filePath, String filename) throws IOException {
-        String lower = filename.toLowerCase();
-        if (lower.endsWith(".txt") || lower.endsWith(".md")) {
-            try {
-                return Files.readString(filePath);
-            } catch (MalformedInputException e) {
-                return Files.readString(filePath, Charset.forName("GBK"));
-            }
-        }
-        dev.langchain4j.data.document.Document document = FileSystemDocumentLoader.loadDocument(
-                filePath,
-                new ApacheTikaDocumentParser()
-        );
-        return string(document.text(), "");
-    }
-
-    private byte[] buildDocx(String content) throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        try (ZipOutputStream zip = new ZipOutputStream(out, StandardCharsets.UTF_8)) {
-            putZipEntry(zip, "[Content_Types].xml", """
-                    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                    <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-                      <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-                      <Default Extension="xml" ContentType="application/xml"/>
-                      <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-                    </Types>
-                    """.stripLeading());
-            putZipEntry(zip, "_rels/.rels", """
-                    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                    <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-                      <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
-                    </Relationships>
-                    """.stripLeading());
-            putZipEntry(zip, "word/document.xml", wordDocumentXml(content));
-        }
-        return out.toByteArray();
-    }
-
-    private byte[] buildPdf(String title, String markdown) throws IOException {
-        try (PDDocument document = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            PDFont font = loadPdfFont(document);
-            float fontSize = 11.5f;
-            float titleSize = 18f;
-            float leading = 18f;
-            float margin = 54f;
-            PDRectangle pageSize = PDRectangle.A4;
-            float width = pageSize.getWidth() - margin * 2;
-            PDPage page = new PDPage(pageSize);
-            document.addPage(page);
-            PDPageContentStream stream = new PDPageContentStream(document, page);
-            float y = pageSize.getHeight() - margin;
-
-            stream.beginText();
-            stream.setFont(font, titleSize);
-            stream.setLeading(leading + 4);
-            stream.newLineAtOffset(margin, y);
-            stream.showText(pdfText(font, title));
-            stream.newLine();
-            y -= leading + 10;
-            stream.setFont(font, fontSize);
-            stream.setLeading(leading);
-
-            for (String rawLine : markdownToPlainText(markdown).split("\\R")) {
-                List<String> lines = wrapPdfLine(font, pdfText(font, rawLine), fontSize, width);
-                if (lines.isEmpty()) lines = List.of("");
-                for (String line : lines) {
-                    if (y < margin + leading) {
-                        stream.endText();
-                        stream.close();
-                        page = new PDPage(pageSize);
-                        document.addPage(page);
-                        stream = new PDPageContentStream(document, page);
-                        y = pageSize.getHeight() - margin;
-                        stream.beginText();
-                        stream.setFont(font, fontSize);
-                        stream.setLeading(leading);
-                        stream.newLineAtOffset(margin, y);
-                    }
-                    stream.showText(line);
-                    stream.newLine();
-                    y -= leading;
-                }
-            }
-            stream.endText();
-            stream.close();
-            document.save(out);
-            return out.toByteArray();
-        }
-    }
-
-    private PDFont loadPdfFont(PDDocument document) {
-        String[] candidates = {
-                "C:/Windows/Fonts/msyh.ttc",
-                "C:/Windows/Fonts/msyh.ttf",
-                "C:/Windows/Fonts/simhei.ttf",
-                "C:/Windows/Fonts/simsun.ttc",
-                "C:/Windows/Fonts/simsun.ttf",
-                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf",
-                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-                "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-                "/System/Library/Fonts/PingFang.ttc"
-        };
-        for (String candidate : candidates) {
-            File file = new File(candidate);
-            if (!file.isFile()) continue;
-            try {
-                return PDType0Font.load(document, file);
-            } catch (Exception e) {
-                log.debug("story.export.pdf action=load_font_failed path={} message={}", candidate, e.getMessage());
-            }
-        }
-        log.warn("story.export.pdf action=load_font fallback=Helvetica message=Chinese glyphs may not render");
-        return PDType1Font.HELVETICA;
-    }
-
-    private List<String> wrapPdfLine(PDFont font, String line, float fontSize, float maxWidth) {
-        if (line == null || line.isBlank()) return List.of("");
-        List<String> lines = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        for (int offset = 0; offset < line.length(); ) {
-            int codePoint = line.codePointAt(offset);
-            String ch = new String(Character.toChars(codePoint));
-            String candidate = current + ch;
-            if (current.length() > 0 && pdfTextWidth(font, candidate, fontSize) > maxWidth) {
-                lines.add(current.toString());
-                current = new StringBuilder(ch);
-            } else {
-                current.append(ch);
-            }
-            offset += Character.charCount(codePoint);
-        }
-        if (current.length() > 0) lines.add(current.toString());
-        return lines;
-    }
-
-    private float pdfTextWidth(PDFont font, String text, float fontSize) {
-        try {
-            return font.getStringWidth(text) / 1000f * fontSize;
-        } catch (IOException e) {
-            return text.length() * fontSize;
-        }
-    }
-
-    private String pdfText(PDFont font, String text) {
-        String value = string(text, "");
-        if (!(font instanceof PDType1Font)) return value;
-        return value.replaceAll("[^\\x20-\\x7E]", "?");
-    }
-
-    private void putZipEntry(ZipOutputStream zip, String name, String content) throws IOException {
-        zip.putNextEntry(new ZipEntry(name));
-        zip.write(content.getBytes(StandardCharsets.UTF_8));
-        zip.closeEntry();
-    }
-
-    private String wordDocumentXml(String content) {
-        StringBuilder body = new StringBuilder();
-        for (String line : content.split("\\R", -1)) {
-            appendWordParagraph(body, line);
-        }
-        return """
-                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-                  <w:body>
-                """.stripLeading() + body + """
-                    <w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>
-                  </w:body>
-                </w:document>
-                """;
-    }
-
-    private void appendWordParagraph(StringBuilder body, String rawLine) {
-        String line = rawLine == null ? "" : rawLine.stripTrailing();
-        if (line.isBlank()) {
-            body.append("<w:p/>");
-            return;
-        }
-
-        int headingLevel = markdownHeadingLevel(line);
-        if (headingLevel > 0) {
-            String text = line.substring(headingLevel).stripLeading();
-            int size = switch (headingLevel) {
-                case 1 -> 34;
-                case 2 -> 28;
-                case 3 -> 24;
-                default -> 22;
-            };
-            appendWordTextParagraph(body, text, true, false, size, 180, 80, 0);
-            return;
-        }
-
-        boolean quote = line.startsWith("> ");
-        if (quote) {
-            appendWordTextParagraph(body, line.substring(2).stripLeading(), false, true, 22, 80, 80, 360);
-            return;
-        }
-
-        if (line.matches("^[-*+]\\s+.*")) {
-            appendWordTextParagraph(body, "• " + line.substring(2).stripLeading(), false, false, 22, 40, 40, 240);
-            return;
-        }
-
-        if (line.matches("^\\d+[.)]\\s+.*")) {
-            appendWordTextParagraph(body, line, false, false, 22, 40, 40, 240);
-            return;
-        }
-
-        appendWordTextParagraph(body, line, false, false, 22, 40, 40, 0);
-    }
-
-    private int markdownHeadingLevel(String line) {
-        int count = 0;
-        while (count < line.length() && count < 6 && line.charAt(count) == '#') count++;
-        return count > 0 && count < line.length() && Character.isWhitespace(line.charAt(count)) ? count : 0;
-    }
-
-    private void appendWordTextParagraph(StringBuilder body,
-                                         String text,
-                                         boolean bold,
-                                         boolean italic,
-                                         int size,
-                                         int before,
-                                         int after,
-                                         int leftIndent) {
-        body.append("<w:p><w:pPr><w:spacing w:before=\"")
-                .append(before)
-                .append("\" w:after=\"")
-                .append(after)
-                .append("\"/>");
-        if (leftIndent > 0) {
-            body.append("<w:ind w:left=\"").append(leftIndent).append("\"/>");
-        }
-        body.append("</w:pPr>");
-        appendWordRuns(body, text, bold, italic, size);
-        body.append("</w:p>");
-    }
-
-    private void appendWordRuns(StringBuilder body, String text, boolean baseBold, boolean baseItalic, int size) {
-        String value = string(text, "");
-        int index = 0;
-        boolean inlineBold = false;
-        while (index < value.length()) {
-            int marker = value.indexOf("**", index);
-            if (marker < 0) {
-                appendWordRun(body, value.substring(index), baseBold || inlineBold, baseItalic, size);
-                break;
-            }
-            if (marker > index) {
-                appendWordRun(body, value.substring(index, marker), baseBold || inlineBold, baseItalic, size);
-            }
-            inlineBold = !inlineBold;
-            index = marker + 2;
-        }
-    }
-
-    private void appendWordRun(StringBuilder body, String text, boolean bold, boolean italic, int size) {
-        if (text == null || text.isEmpty()) return;
-        body.append("<w:r><w:rPr><w:rFonts w:ascii=\"Calibri\" w:eastAsia=\"Microsoft YaHei\" w:hAnsi=\"Calibri\"/>")
-                .append("<w:sz w:val=\"").append(size).append("\"/>")
-                .append("<w:szCs w:val=\"").append(size).append("\"/>");
-        if (bold) body.append("<w:b/>");
-        if (italic) body.append("<w:i/>");
-        body.append("</w:rPr><w:t xml:space=\"preserve\">")
-                .append(xmlEscape(text))
-                .append("</w:t></w:r>");
-    }
-
-    private String xmlEscape(String value) {
-        return value == null ? "" : value
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;");
-    }
-
-    private String stripExtension(String filename) {
-        int dot = filename.lastIndexOf('.');
-        return dot > 0 ? filename.substring(0, dot) : filename;
-    }
-
-    private String cleanUploadFilename(String filename) {
-        String value = string(filename, "导入作品").replace('\\', '/');
-        int slash = value.lastIndexOf('/');
-        return slash >= 0 ? value.substring(slash + 1) : value;
-    }
-
-    private String safeFilename(String filename) {
-        return filename.replaceAll("[\\\\/:*?\"<>|]", "_");
-    }
-
-    public record ExportFile(String filename, String contentType, byte[] bytes) {}
 
     private Map<String, Object> projectMap(StoryProject project) {
         Map<String, Object> map = new LinkedHashMap<>();
@@ -1636,32 +984,6 @@ public class StoryWorkspaceService {
                 .orElse("");
     }
 
-    private Map<String, Object> buildImportPreview(String title, String content, String sourceName) {
-        List<String> chunks = splitImportUnits(content);
-        List<Map<String, Object>> chapterPreview = new ArrayList<>();
-        for (int i = 0; i < Math.min(chunks.size(), 20); i++) {
-            String chunk = chunks.get(i).trim();
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("chapterNo", i + 1);
-            item.put("title", guessChapterTitle(chunk, i + 1));
-            item.put("wordCount", wordCount(chunk));
-            item.put("preview", chunk.length() <= 120 ? chunk : chunk.substring(0, 120));
-            chapterPreview.add(item);
-        }
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("title", title);
-        result.put("sourceName", sourceName);
-        result.put("content", content);
-        String detectedType = detectType(content);
-        result.put("detectedType", detectedType);
-        result.put("detectedTypeLabel", typeLabel(detectedType));
-        result.put("chapterCount", chunks.size());
-        result.put("wordCount", wordCount(content));
-        result.put("chapters", chapterPreview);
-        result.put("truncated", chunks.size() > chapterPreview.size());
-        return result;
-    }
-
     private Map<String, Object> fallbackScriptDraft(String projectTitle, int targetEpisodes) {
         Map<String, Object> draft = new LinkedHashMap<>();
         draft.put("adaptationPlan", fallbackAdaptationPlan());
@@ -1759,24 +1081,6 @@ public class StoryWorkspaceService {
         return report;
     }
 
-    private List<String> splitChapters(String content) {
-        if (content == null || content.isBlank()) return List.of("");
-        String[] parts = content.split("(?=第[一二三四五六七八九十百千万0-9]+[章节回])");
-        List<String> result = new ArrayList<>();
-        for (String part : parts) if (!part.isBlank()) result.add(part);
-        return result.isEmpty() ? List.of(content) : result;
-    }
-
-    private List<String> splitImportUnits(String content) {
-        if ("short_drama".equals(detectType(content))) {
-            String[] parts = content.split("(?=第[一二三四五六七八九十百千万0-9]+集)");
-            List<String> result = new ArrayList<>();
-            for (String part : parts) if (!part.isBlank()) result.add(part);
-            return result.isEmpty() ? List.of(content) : result;
-        }
-        return splitChapters(content);
-    }
-
     private List<String> splitParagraphs(String content) {
         if (content == null || content.isBlank()) return List.of("");
         String[] parts = content.split("\\n\\s*\\n|\\r?\\n");
@@ -1830,15 +1134,6 @@ public class StoryWorkspaceService {
                     """;
             default -> "新的场景从一个更具体的动作开始：门被推开，所有人的视线同时落在主角身上。";
         };
-    }
-
-    private String guessChapterTitle(String text, int index) {
-        String firstLine = text.strip().split("\\R", 2)[0].trim();
-        return firstLine.length() <= 40 ? firstLine : "第" + index + "章";
-    }
-
-    private String detectType(String content) {
-        return StoryImportClassifier.detectType(content);
     }
 
     private String defaultOpening(String type) {

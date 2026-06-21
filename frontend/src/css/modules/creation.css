@@ -1271,6 +1271,100 @@
   gap: 16px;
 }
 
+/* Creation workspace refinement */
+.creation-tabs {
+  border-radius: 10px;
+  padding: 3px;
+  background: #f7f8fb;
+}
+
+.creation-tabs button {
+  min-width: 66px;
+  border-radius: 8px;
+}
+
+.creation-tabs button.active {
+  background: #ffffff;
+  color: #3147d8;
+  box-shadow: 0 1px 5px rgba(20, 31, 56, .08);
+}
+
+.creation-action-card {
+  min-height: 118px;
+}
+
+.creation-action-card .creation-action-icon,
+.creation-action-card span,
+.creation-action-card:nth-child(2n) span,
+.creation-action-card:nth-child(3n) span {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #f3f6ff;
+  color: #3650e6;
+  box-shadow: inset 0 0 0 1px #dbe4ff;
+}
+
+.creation-action-card.action-short .creation-action-icon {
+  background: #ecfdf5;
+  color: #047857;
+  box-shadow: inset 0 0 0 1px #bbf7d0;
+}
+
+.creation-action-card.action-import .creation-action-icon {
+  background: #fff7ed;
+  color: #c2410c;
+  box-shadow: inset 0 0 0 1px #fed7aa;
+}
+
+.creation-action-card.action-rewrite .creation-action-icon {
+  background: #f5f3ff;
+  color: #6d28d9;
+  box-shadow: inset 0 0 0 1px #ddd6fe;
+}
+
+.creation-action-card.action-script .creation-action-icon {
+  background: #eff6ff;
+  color: #0369a1;
+  box-shadow: inset 0 0 0 1px #bfdbfe;
+}
+
+.creation-type-tag {
+  border-radius: 7px !important;
+  padding: 4px 8px !important;
+  font-weight: 700 !important;
+}
+
+.creation-type-tag.type-long_novel {
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+}
+
+.creation-type-tag.type-short_story {
+  background: #ecfdf5 !important;
+  color: #047857 !important;
+}
+
+.creation-type-tag.type-adaptation {
+  background: #fff7ed !important;
+  color: #c2410c !important;
+}
+
+.creation-type-tag.type-short_drama {
+  background: #f5f3ff !important;
+  color: #6d28d9 !important;
+}
+
+.creation-search input {
+  border-radius: 8px;
+}
+
+.creation-ai-result .creation-row,
+.creation-row .creation-primary-btn,
+.creation-row .creation-secondary-btn {
+  white-space: nowrap;
+}
+
 @media (max-width: 900px) {
   .creation-view {
     padding: 18px 18px 28px;

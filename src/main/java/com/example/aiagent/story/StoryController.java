@@ -53,7 +53,7 @@ public class StoryController {
     @PostMapping("/projects/{id}/export/file")
     public ResponseEntity<byte[]> exportProjectFile(@PathVariable Long id,
                                                     @RequestBody(required = false) Map<String, Object> payload) throws IOException {
-        StoryWorkspaceService.ExportFile file = service.exportProjectFile(id, payload == null ? Map.of() : payload);
+        StoryExportFile file = service.exportProjectFile(id, payload == null ? Map.of() : payload);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition(file.filename()))
                 .contentType(MediaType.parseMediaType(file.contentType()))
@@ -209,7 +209,7 @@ public class StoryController {
     @PostMapping("/script/drafts/{draftId}/export/file")
     public ResponseEntity<byte[]> exportDraftFile(@PathVariable Long draftId,
                                                   @RequestBody(required = false) Map<String, Object> payload) throws IOException {
-        StoryWorkspaceService.ExportFile file = service.exportDraftFile(draftId, payload == null ? Map.of() : payload);
+        StoryExportFile file = service.exportDraftFile(draftId, payload == null ? Map.of() : payload);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition(file.filename()))
                 .contentType(MediaType.parseMediaType(file.contentType()))
