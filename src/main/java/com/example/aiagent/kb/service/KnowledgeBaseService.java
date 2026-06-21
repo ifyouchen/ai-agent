@@ -265,6 +265,7 @@ public class KnowledgeBaseService {
      * @throws IllegalStateException    若文档状态不是 FAILED
      */
     public void retryDocument(String tenantId, Long docId) {
+        log.info("开始重试文档解析 docId={} tenantId={}", docId, tenantId);
         Document doc = documentMapper.findById(docId)
                 .orElseThrow(() -> new IllegalArgumentException("文档不存在：docId=" + docId));
 

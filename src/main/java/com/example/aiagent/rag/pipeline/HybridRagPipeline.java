@@ -447,6 +447,7 @@ public class HybridRagPipeline {
             Filter kbIdFilter = MetadataFilterBuilder.metadataKey("kbId").isEqualTo(String.valueOf(kbId));
             filter = (filter != null) ? Filter.and(filter, kbIdFilter) : kbIdFilter;
         }
+        log.debug("构建元数据过滤器 tenantId={} kbId={} filter={}", tenantId, kbId, filter);
         return filter;
     }
 
@@ -480,9 +481,13 @@ public class HybridRagPipeline {
             return;
         }
         if (retrieveOnlyCache.size() >= MAX_CACHE_ENTRIES) {
+            int beforeEvict = retrieveOnlyCache.size();
             evictExpiredCacheEntries();
             if (retrieveOnlyCache.size() >= MAX_CACHE_ENTRIES) {
+                log.info("检索缓存已达上限且无可淘汰过期条目，清除全部缓存（size={}）", retrieveOnlyCache.size());
                 retrieveOnlyCache.clear();
+            } else {
+                log.info("检索缓存接近上限，已淘汰过期条目 before={} after={}", beforeEvict, retrieveOnlyCache.size());
             }
         }
         long expiresAt = System.currentTimeMillis() + ragCacheTtlSeconds * 1000L;
@@ -491,7 +496,12 @@ public class HybridRagPipeline {
 
     private void evictExpiredCacheEntries() {
         long now = System.currentTimeMillis();
+        int before = retrieveOnlyCache.size();
         retrieveOnlyCache.entrySet().removeIf(entry -> entry.getValue().expiresAtMs() <= now);
+        int evicted = before - retrieveOnlyCache.size();
+        if (evicted > 0) {
+            log.info("淘汰过期检索缓存条目 count={}", evicted);
+        }
     }
 
     private String cacheKey(String userQuery, String tenantId, Long kbId) {

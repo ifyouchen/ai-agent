@@ -620,10 +620,12 @@ public class ReActAgent {
         updatedMemory.add(UserMessage.from(userQuery != null ? userQuery : ""));
         updatedMemory.add(AiMessage.from(answer != null ? answer : ""));
         redisChatMemoryStore.updateMessages(sessionId, trimMemory(updatedMemory));
+        log.info("[ReAct] 会话记忆已持久化 sessionId={} msgCount={}", sessionId, updatedMemory.size());
     }
 
     @Async
     public void rememberExchangeAsync(String sessionId, String userQuery, String answer) {
+        log.info("[ReAct] 异步持久化会话记忆 sessionId={}", sessionId);
         rememberExchange(sessionId, userQuery, answer);
     }
 
@@ -632,6 +634,7 @@ public class ReActAgent {
         if (messages.size() <= limit) {
             return new ArrayList<>(messages);
         }
+        log.info("[ReAct] 会话记忆截断 from={} to={}", messages.size(), limit);
         return new ArrayList<>(messages.subList(messages.size() - limit, messages.size()));
     }
 
@@ -654,9 +657,12 @@ public class ReActAgent {
         sb.append("如果片段不能支持回答，请明确说明当前知识库未找到相关信息，不要凭空补充。\n\n");
 
         if (chunks.isEmpty()) {
+            log.info("[ReAct] 知识库检索结果为空 tenantId={} kbId={}", tenantId, kbId);
             sb.append("知识库片段：本次未检索到相关内容。\n");
             return sb.toString();
         }
+
+        log.info("[ReAct] 知识库检索结果 chunkCount={}", chunks.size());
 
         sb.append("知识库片段：\n");
         for (int i = 0; i < chunks.size(); i++) {

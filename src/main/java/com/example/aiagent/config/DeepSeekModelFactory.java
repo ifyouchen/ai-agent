@@ -5,6 +5,7 @@ import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -12,6 +13,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+@Slf4j
 @Component
 @Profile("deepseek")
 @RequiredArgsConstructor
@@ -28,10 +30,15 @@ public class DeepSeekModelFactory {
 
     public String normalizeModelName(String requestedModel) {
         if (requestedModel == null || requestedModel.isBlank()) {
+            log.info("模型名称为空，回退到默认模型 {}", QUICK_MODEL);
             return QUICK_MODEL;
         }
         String modelName = requestedModel.trim();
-        return SUPPORTED_MODELS.contains(modelName) ? modelName : QUICK_MODEL;
+        if (!SUPPORTED_MODELS.contains(modelName)) {
+            log.info("不支持的模型 {}，回退到默认模型 {}", modelName, QUICK_MODEL);
+            return QUICK_MODEL;
+        }
+        return modelName;
     }
 
     public ChatLanguageModel chatModel(String requestedModel) {
@@ -45,6 +52,7 @@ public class DeepSeekModelFactory {
     }
 
     private ChatLanguageModel createChatModel(String modelName) {
+        log.info("创建 ChatLanguageModel model={} baseUrl={}", modelName, props.getBaseUrl());
         return OpenAiChatModel.builder()
                 .baseUrl(props.getBaseUrl())
                 .apiKey(props.getApiKey())
@@ -55,6 +63,7 @@ public class DeepSeekModelFactory {
     }
 
     private StreamingChatLanguageModel createStreamingModel(String modelName) {
+        log.info("创建 StreamingChatLanguageModel model={} baseUrl={}", modelName, props.getBaseUrl());
         return OpenAiStreamingChatModel.builder()
                 .baseUrl(props.getBaseUrl())
                 .apiKey(props.getApiKey())

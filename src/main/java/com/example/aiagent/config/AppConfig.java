@@ -1,5 +1,7 @@
 package com.example.aiagent.config;
 
+import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
@@ -15,6 +17,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 /**
  * 应用级公共 Bean 配置
  */
+@Slf4j
 @Configuration
 @EnableAsync        // 启用 @Async（TokenUsageService 异步写 PostgreSQL 需要）
 @EnableScheduling   // 启用 @Scheduled（AlertService 定时告警需要）
@@ -25,6 +28,11 @@ public class AppConfig {
         // BusinessTools 等 @Tool 方法在 worker 线程上拿不到认证信息的问题
         SecurityContextHolder.setStrategyName(
                 SecurityContextHolder.MODE_INHERITABLETHREADLOCAL);
+    }
+
+    @PostConstruct
+    public void init() {
+        log.info("SecurityContext 策略设置为 INHERITABLETHREADLOCAL");
     }
 
     /**
@@ -67,6 +75,7 @@ public class AppConfig {
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
         executor.initialize();
+        log.info("线程池初始化 name=alertTaskExecutor core=2 max=4 queue=3000");
         return executor;
     }
 
@@ -101,6 +110,7 @@ public class AppConfig {
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
         executor.initialize();
+        log.info("线程池初始化 name=sseTaskExecutor core=10 max=50 queue=200");
         // 包装 SecurityContext 传播：ReAct SSE worker 线程自动继承请求线程的认证信息
         return new DelegatingSecurityContextTaskExecutor(executor);
     }
@@ -133,6 +143,7 @@ public class AppConfig {
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(120);
         executor.initialize();
+        log.info("线程池初始化 name=documentIngestExecutor core=2 max=5 queue=50");
         return executor;
     }
 
@@ -164,6 +175,7 @@ public class AppConfig {
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
         executor.initialize();
+        log.info("线程池初始化 name=mailTaskExecutor core=4 max=10 queue=1000");
         return executor;
     }
 
@@ -183,6 +195,7 @@ public class AppConfig {
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
         executor.initialize();
+        log.info("线程池初始化 name=ragRetrievalExecutor core=4 max=8 queue=100");
         return executor;
     }
 }

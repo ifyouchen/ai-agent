@@ -639,9 +639,11 @@ public class StoryWorkspaceService {
         if (payload.get("scene") instanceof Map<?, ?> scenePayload) {
             scenePayload.forEach((key, value) -> current.put(String.valueOf(key), value));
         }
+        String instruction = string(payload.get("instruction"), "");
         Map<String, Object> improved = storyAiService.improveScene(
                 string(payload.get("action"), "rewrite"),
                 current,
+                instruction,
                 fallbackSceneImprovement(current, string(payload.get("action"), "rewrite"))
         );
         applyScenePayload(scene, improved);
@@ -713,10 +715,20 @@ public class StoryWorkspaceService {
             appendProjectAssets(sb, objectMap(project.get("assets")));
         }
         for (Map<String, Object> chapter : mapList(project.get("chapters"))) {
-            sb.append("## ").append(string(chapter.get("title"), "第" + chapter.get("chapterNo") + "章")).append("\n\n");
-            sb.append(string(chapter.get("content"), "")).append("\n\n");
+            String title = string(chapter.get("title"), "第" + chapter.get("chapterNo") + "章");
+            sb.append("## ").append(title).append("\n\n");
+            sb.append(contentWithoutDuplicateHeading(title, string(chapter.get("content"), ""))).append("\n\n");
         }
         return sb.toString();
+    }
+
+    private String contentWithoutDuplicateHeading(String title, String content) {
+        if (title == null || title.isBlank() || content == null || content.isBlank()) return content;
+        String stripped = content.stripLeading();
+        int lineEnd = stripped.indexOf('\n');
+        String firstLine = lineEnd >= 0 ? stripped.substring(0, lineEnd) : stripped;
+        if (!firstLine.trim().equals(title.trim())) return content;
+        return lineEnd >= 0 ? stripped.substring(lineEnd + 1).stripLeading() : "";
     }
 
     private String buildExportMarkdown(Map<String, Object> draft, Map<String, Object> payload) {
@@ -902,6 +914,7 @@ public class StoryWorkspaceService {
             case "markdown" -> "md";
             case "htm" -> "html";
             case "text" -> "txt";
+            case "word", "doc" -> "docx";
             case "md", "html", "pdf", "txt", "docx" -> value;
             default -> "md";
         };
@@ -1171,9 +1184,7 @@ public class StoryWorkspaceService {
     private String wordDocumentXml(String content) {
         StringBuilder body = new StringBuilder();
         for (String line : content.split("\\R", -1)) {
-            body.append("<w:p><w:r><w:t xml:space=\"preserve\">")
-                    .append(xmlEscape(line))
-                    .append("</w:t></w:r></w:p>");
+            appendWordParagraph(body, line);
         }
         return """
                 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1184,6 +1195,102 @@ public class StoryWorkspaceService {
                   </w:body>
                 </w:document>
                 """;
+    }
+
+    private void appendWordParagraph(StringBuilder body, String rawLine) {
+        String line = rawLine == null ? "" : rawLine.stripTrailing();
+        if (line.isBlank()) {
+            body.append("<w:p/>");
+            return;
+        }
+
+        int headingLevel = markdownHeadingLevel(line);
+        if (headingLevel > 0) {
+            String text = line.substring(headingLevel).stripLeading();
+            int size = switch (headingLevel) {
+                case 1 -> 34;
+                case 2 -> 28;
+                case 3 -> 24;
+                default -> 22;
+            };
+            appendWordTextParagraph(body, text, true, false, size, 180, 80, 0);
+            return;
+        }
+
+        boolean quote = line.startsWith("> ");
+        if (quote) {
+            appendWordTextParagraph(body, line.substring(2).stripLeading(), false, true, 22, 80, 80, 360);
+            return;
+        }
+
+        if (line.matches("^[-*+]\\s+.*")) {
+            appendWordTextParagraph(body, "• " + line.substring(2).stripLeading(), false, false, 22, 40, 40, 240);
+            return;
+        }
+
+        if (line.matches("^\\d+[.)]\\s+.*")) {
+            appendWordTextParagraph(body, line, false, false, 22, 40, 40, 240);
+            return;
+        }
+
+        appendWordTextParagraph(body, line, false, false, 22, 40, 40, 0);
+    }
+
+    private int markdownHeadingLevel(String line) {
+        int count = 0;
+        while (count < line.length() && count < 6 && line.charAt(count) == '#') count++;
+        return count > 0 && count < line.length() && Character.isWhitespace(line.charAt(count)) ? count : 0;
+    }
+
+    private void appendWordTextParagraph(StringBuilder body,
+                                         String text,
+                                         boolean bold,
+                                         boolean italic,
+                                         int size,
+                                         int before,
+                                         int after,
+                                         int leftIndent) {
+        body.append("<w:p><w:pPr><w:spacing w:before=\"")
+                .append(before)
+                .append("\" w:after=\"")
+                .append(after)
+                .append("\"/>");
+        if (leftIndent > 0) {
+            body.append("<w:ind w:left=\"").append(leftIndent).append("\"/>");
+        }
+        body.append("</w:pPr>");
+        appendWordRuns(body, text, bold, italic, size);
+        body.append("</w:p>");
+    }
+
+    private void appendWordRuns(StringBuilder body, String text, boolean baseBold, boolean baseItalic, int size) {
+        String value = string(text, "");
+        int index = 0;
+        boolean inlineBold = false;
+        while (index < value.length()) {
+            int marker = value.indexOf("**", index);
+            if (marker < 0) {
+                appendWordRun(body, value.substring(index), baseBold || inlineBold, baseItalic, size);
+                break;
+            }
+            if (marker > index) {
+                appendWordRun(body, value.substring(index, marker), baseBold || inlineBold, baseItalic, size);
+            }
+            inlineBold = !inlineBold;
+            index = marker + 2;
+        }
+    }
+
+    private void appendWordRun(StringBuilder body, String text, boolean bold, boolean italic, int size) {
+        if (text == null || text.isEmpty()) return;
+        body.append("<w:r><w:rPr><w:rFonts w:ascii=\"Calibri\" w:eastAsia=\"Microsoft YaHei\" w:hAnsi=\"Calibri\"/>")
+                .append("<w:sz w:val=\"").append(size).append("\"/>")
+                .append("<w:szCs w:val=\"").append(size).append("\"/>");
+        if (bold) body.append("<w:b/>");
+        if (italic) body.append("<w:i/>");
+        body.append("</w:rPr><w:t xml:space=\"preserve\">")
+                .append(xmlEscape(text))
+                .append("</w:t></w:r>");
     }
 
     private String xmlEscape(String value) {

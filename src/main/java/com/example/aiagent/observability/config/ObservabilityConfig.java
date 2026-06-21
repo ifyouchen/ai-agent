@@ -2,6 +2,7 @@ package com.example.aiagent.observability.config;
 
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.config.MeterFilter;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,6 +18,7 @@ import java.util.concurrent.Executor;
  * 2. 防止高基数标签（如 userId）被误加到 metrics，导致 Prometheus 内存爆炸
  * 3. 配置独立的异步线程池（写 PostgreSQL 不占用业务线程）
  */
+@Slf4j
 @Configuration
 public class ObservabilityConfig {
 
@@ -32,6 +34,7 @@ public class ObservabilityConfig {
      */
     @Bean
     public MeterFilter globalTagsFilter() {
+        log.info("Prometheus 全局标签 application={} environment={}", appName, environment);
         return MeterFilter.commonTags(List.of(
                 Tag.of("application", appName),
                 Tag.of("environment", environment)
@@ -45,6 +48,7 @@ public class ObservabilityConfig {
      */
     @Bean
     public MeterFilter highCardinalityFilter() {
+        log.info("高基数标签过滤器已启用");
         return MeterFilter.deny(id -> {
             // 如果有人误把 trace/session/user 级别的标签加到 metrics 里，直接拒绝
             return id.getTags().stream().map(Tag::getKey).anyMatch(key ->
@@ -64,7 +68,7 @@ public class ObservabilityConfig {
         executor.setQueueCapacity(1000);
         executor.setThreadNamePrefix("obs-");
         executor.setRejectedExecutionHandler((r, e) -> {
-            // 队列满了就直接丢弃（写 PostgreSQL 失败不能影响业务）
+            log.warn("可观测性任务被丢弃，队列已满（queueCapacity=1000），写 PostgreSQL 失败不能影响业务");
         });
         executor.initialize();
         return executor;

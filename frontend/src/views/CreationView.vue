@@ -275,7 +275,10 @@
     <aside class="creation-side">
       <router-link class="creation-back-link" to="/creation/projects">返回作品库</router-link>
       <h2>{{ draft?.title || '短剧改编' }}</h2>
-      <button class="creation-primary-btn full" type="button" @click="qualityCheck">质检全稿</button>
+      <button class="creation-primary-btn full creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="qualityCheck">
+        <span v-if="scriptActionBusy === 'draft:quality'" class="creation-spinner"></span>
+        {{ scriptActionBusy === 'draft:quality' ? '质检中...' : '质检全稿' }}
+      </button>
       <div v-if="draft?.sourceChapters?.length" class="creation-side-section">
         <h3>原文章节</h3>
         <details v-for="source in draft.sourceChapters" :key="source.id" class="creation-source-item">
@@ -285,8 +288,11 @@
       </div>
       <template v-for="ep in draft?.episodes || []" :key="ep.id">
         <h3>第{{ ep.episodeNo }}集</h3>
-        <button class="creation-secondary-btn full compact" type="button" @click="addScene(ep)">新增场次</button>
-        <button v-for="scene in ep.scenes" :key="scene.id" class="creation-list-btn" :class="{ active: scene.id === currentScene?.id }" type="button" @click="selectScene(ep, scene)">第{{ scene.sceneNo }}场</button>
+        <button class="creation-secondary-btn full compact creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="addScene(ep)">
+          <span v-if="scriptActionBusy === `add:${ep.id}`" class="creation-spinner dark"></span>
+          {{ scriptActionBusy === `add:${ep.id}` ? '新增中...' : '新增场次' }}
+        </button>
+        <button v-for="scene in ep.scenes" :key="scene.id" class="creation-list-btn" :class="{ active: scene.id === currentScene?.id }" type="button" :disabled="!!scriptActionBusy" @click="selectScene(ep, scene)">第{{ scene.sceneNo }}场</button>
       </template>
     </aside>
     <main class="creation-editor script-editor" v-if="currentScene">
@@ -303,16 +309,67 @@
     </main>
     <aside class="creation-ai">
       <h3>短剧助手</h3>
-      <button type="button" @click="improveEpisode">重写本集</button>
-      <button type="button" @click="improveScene('rewrite')">重写本场</button>
-      <button type="button" @click="improveScene('hook')">补钩子</button>
-      <button type="button" @click="improveScene('dialogue')">对白口语化</button>
-      <button type="button" @click="improveScene('externalize')">心理外化</button>
-      <button type="button" @click="moveScene('up')">上移场次</button>
-      <button type="button" @click="moveScene('down')">下移场次</button>
-      <button type="button" @click="deleteScene">删除场次</button>
+      <div v-if="scriptActionBusy" class="creation-assistant-status" aria-live="polite">
+        <span class="creation-spinner dark"></span>
+        <div>
+          <strong>{{ scriptActionTitle }}</strong>
+          <small>处理中，请稍候。完成后会自动刷新当前内容。</small>
+        </div>
+      </div>
+      <button class="creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="improveEpisode">
+        <span v-if="scriptActionBusy === 'episode:rewrite'" class="creation-spinner dark"></span>
+        {{ scriptActionBusy === 'episode:rewrite' ? '重写本集中...' : '重写本集' }}
+      </button>
+      <button class="creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="improveScene('rewrite')">
+        <span v-if="scriptActionBusy === 'scene:rewrite'" class="creation-spinner dark"></span>
+        {{ scriptActionBusy === 'scene:rewrite' ? '重写本场中...' : '重写本场' }}
+      </button>
+      <button class="creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="improveScene('hook')">
+        <span v-if="scriptActionBusy === 'scene:hook'" class="creation-spinner dark"></span>
+        {{ scriptActionBusy === 'scene:hook' ? '补钩子中...' : '补钩子' }}
+      </button>
+      <button class="creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="improveScene('dialogue')">
+        <span v-if="scriptActionBusy === 'scene:dialogue'" class="creation-spinner dark"></span>
+        {{ scriptActionBusy === 'scene:dialogue' ? '对白优化中...' : '对白口语化' }}
+      </button>
+      <button class="creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="improveScene('externalize')">
+        <span v-if="scriptActionBusy === 'scene:externalize'" class="creation-spinner dark"></span>
+        {{ scriptActionBusy === 'scene:externalize' ? '心理外化中...' : '心理外化' }}
+      </button>
+      <button class="creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="moveScene('up')">
+        <span v-if="scriptActionBusy === 'scene:move-up'" class="creation-spinner dark"></span>
+        {{ scriptActionBusy === 'scene:move-up' ? '上移中...' : '上移场次' }}
+      </button>
+      <button class="creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="moveScene('down')">
+        <span v-if="scriptActionBusy === 'scene:move-down'" class="creation-spinner dark"></span>
+        {{ scriptActionBusy === 'scene:move-down' ? '下移中...' : '下移场次' }}
+      </button>
+      <button class="creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="deleteScene">
+        <span v-if="scriptActionBusy === 'scene:delete'" class="creation-spinner dark"></span>
+        {{ scriptActionBusy === 'scene:delete' ? '删除中...' : '删除场次' }}
+      </button>
       <router-link class="creation-primary-btn full" :to="`/creation/scripts/${route.params.draftId}/export`">导出预览</router-link>
-      <div v-if="qualityReport" class="creation-quality"><strong>评分 {{ qualityReport.totalScore }}</strong><p v-for="x in qualityReport.mainIssues" :key="x">{{ x }}</p></div>
+      <div v-if="qualityReport" class="creation-quality">
+        <div class="creation-quality-head">
+          <strong>评分 {{ qualityReport.totalScore }}</strong>
+          <button class="creation-secondary-btn compact" type="button" :disabled="!!scriptActionBusy" @click="qualityCheck">重新质检</button>
+        </div>
+        <div v-if="qualityIssueList.length" class="creation-quality-issues">
+          <div v-for="issue in qualityIssueList" :key="issue" class="creation-quality-issue" :class="{ optimized: isQualityIssueOptimized(issue) }">
+            <p>{{ issue }}</p>
+            <button
+              class="creation-secondary-btn compact"
+              type="button"
+              :class="{ optimized: isQualityIssueOptimized(issue) }"
+              :disabled="!!scriptActionBusy || isQualityIssueOptimized(issue)"
+              @click="improveFromQualityIssue(issue)"
+            >
+              <span v-if="scriptActionBusy === 'quality:fix' && qualityFixingIssue === issue" class="creation-spinner dark"></span>
+              {{ isQualityIssueOptimized(issue) ? '已优化' : 'AI 优化' }}
+            </button>
+          </div>
+        </div>
+      </div>
       <div v-if="adaptationPlanEntries.length" class="creation-quality">
         <strong>改编方案</strong>
         <p v-for="item in adaptationPlanEntries" :key="item.label">{{ item.label }}：{{ item.value }}</p>
@@ -322,7 +379,7 @@
 
   <div v-else-if="mode === 'export'" class="creation-view">
     <header class="creation-header">
-      <div><h1>导出预览</h1><p>生成 Markdown/DOCX 导出内容。</p></div>
+        <div><h1>导出预览</h1><p>生成 Markdown、Word、HTML、PDF 或 TXT 导出内容。</p></div>
       <div class="creation-row">
         <button class="creation-secondary-btn" type="button" @click="downloadExport">下载文件</button>
         <button class="creation-primary-btn" type="button" @click="exportDraft">生成导出内容</button>
@@ -412,6 +469,7 @@ const ProjectCards = defineComponent({
     const projectExportFormats = reactive({});
     const exportOptions = [
       { value: 'md', label: 'MD' },
+      { value: 'docx', label: 'Word' },
       { value: 'html', label: 'HTML' },
       { value: 'pdf', label: 'PDF' },
       { value: 'txt', label: 'TXT' },
@@ -474,6 +532,8 @@ const assetSaving = ref(false);
 const chapterDeletingId = ref(null);
 const scriptConvertingProjectId = ref(null);
 const projectExportingId = ref(null);
+const scriptActionBusy = ref('');
+const qualityFixingIssue = ref('');
 const filter = ref('all');
 const statusFilter = ref('all');
 const sortOrder = ref('updated_desc');
@@ -492,6 +552,7 @@ const activeActionType = ref('continue');
 const aiConfigCollapsed = ref(false);
 const actionForm = reactive({ instruction: '', result: '', loading: false, controller: null });
 const chapterDrafts = reactive({});
+const qualityOptimizedIssues = reactive({});
 const promptConfig = reactive(defaultPromptConfig());
 const globalPreserveText = ref(promptConfig.global.preserve.join('、'));
 const globalAvoidText = ref(promptConfig.global.avoid.join('、'));
@@ -525,6 +586,18 @@ const aiActions = [
   { type: 'conflict', label: '强化冲突', hint: '提高压迫、误会、反转或危机密度。', placeholder: '例如：加入当众打脸和证据反转。' },
   { type: 'review', label: '章节审查', hint: '输出问题诊断和修改建议，不改正文。', placeholder: '例如：重点检查前三秒钩子、人设一致性和爽点。' },
 ];
+const scriptActionLabels = {
+  'draft:quality': '正在质检全稿',
+  'quality:fix': '正在按质检问题优化',
+  'episode:rewrite': '正在重写本集',
+  'scene:rewrite': '正在重写本场',
+  'scene:hook': '正在补充钩子',
+  'scene:dialogue': '正在优化对白',
+  'scene:externalize': '正在心理外化',
+  'scene:move-up': '正在上移场次',
+  'scene:move-down': '正在下移场次',
+  'scene:delete': '正在删除场次',
+};
 const assetTypes = [
   {
     type: 'setting',
@@ -571,6 +644,11 @@ const activeAssetPlaceholder = computed(() => activeAsset.value.placeholder);
 const activeAssetInstructionPlaceholder = computed(() => activeAsset.value.instructionPlaceholder);
 const activeAction = computed(() => aiActions.find(action => action.type === activeActionType.value));
 const activeActionConfig = computed(() => ensureActionConfig(activeActionType.value));
+const scriptActionTitle = computed(() => {
+  if (!scriptActionBusy.value) return '';
+  if (scriptActionBusy.value.startsWith('add:')) return '正在新增场次';
+  return scriptActionLabels[scriptActionBusy.value] || '正在处理短剧';
+});
 const scriptPreview = computed(() => (draft.value?.episodes || []).map(ep => `第${ep.episodeNo}集\n核心爽点：${ep.coreHook}\n结尾钩子：${ep.endingHook}`).join('\n\n'));
 const exportScenes = computed(() => (draft.value?.episodes || []).flatMap(ep => (ep.scenes || []).map(scene => ({
   ...scene,
@@ -588,6 +666,7 @@ const adaptationPlanEntries = computed(() => {
     ['改编策略', plan.strategy],
   ].filter(([, value]) => value).map(([label, value]) => ({ label, value }));
 });
+const qualityIssueList = computed(() => Array.isArray(qualityReport.value?.mainIssues) ? qualityReport.value.mainIssues : []);
 const exportChecks = computed(() => {
   const episodes = draft.value?.episodes || [];
   const scenes = episodes.flatMap(ep => ep.scenes || []);
@@ -1188,50 +1267,151 @@ async function saveScene() {
 }
 
 async function addScene(ep) {
-  const scene = await storyApi.createScene(ep.id, {
-    sceneTitle: '新增场次',
-    location: '内景｜待定｜日',
-    characters: '',
-    sceneFunction: '补充冲突推进',
-  });
-  ep.scenes = [...(ep.scenes || []), scene];
-  selectScene(ep, scene);
-  ui.showToast('success', '场次已新增');
+  if (!ep?.id || scriptActionBusy.value) return;
+  scriptActionBusy.value = `add:${ep.id}`;
+  try {
+    const scene = await storyApi.createScene(ep.id, {
+      sceneTitle: '新增场次',
+      location: '内景｜待定｜日',
+      characters: '',
+      sceneFunction: '补充冲突推进',
+    });
+    ep.scenes = [...(ep.scenes || []), scene];
+    selectScene(ep, scene);
+    ui.showToast('success', '场次已新增');
+  } catch (err) {
+    ui.showToast('error', err.message || '新增场次失败');
+  } finally {
+    scriptActionBusy.value = '';
+  }
 }
 
 async function deleteScene() {
-  if (!currentScene.value || !currentEpisode.value) return;
-  await storyApi.deleteScene(currentScene.value.id);
-  currentEpisode.value.scenes = (currentEpisode.value.scenes || []).filter(scene => scene.id !== currentScene.value.id);
-  currentEpisode.value.scenes.forEach((scene, index) => { scene.sceneNo = index + 1; });
-  selectScene(currentEpisode.value, currentEpisode.value.scenes[0] || null);
-  ui.showToast('success', '场次已删除');
+  if (!currentScene.value || !currentEpisode.value || scriptActionBusy.value) return;
+  scriptActionBusy.value = 'scene:delete';
+  try {
+    await storyApi.deleteScene(currentScene.value.id);
+    currentEpisode.value.scenes = (currentEpisode.value.scenes || []).filter(scene => scene.id !== currentScene.value.id);
+    currentEpisode.value.scenes.forEach((scene, index) => { scene.sceneNo = index + 1; });
+    selectScene(currentEpisode.value, currentEpisode.value.scenes[0] || null);
+    ui.showToast('success', '场次已删除');
+  } catch (err) {
+    ui.showToast('error', err.message || '删除场次失败');
+  } finally {
+    scriptActionBusy.value = '';
+  }
 }
 
 async function moveScene(direction) {
-  if (!currentScene.value || !currentEpisode.value) return;
-  const scenes = await storyApi.moveScene(currentScene.value.id, { direction });
-  currentEpisode.value.scenes = scenes;
-  const moved = scenes.find(scene => scene.id === currentScene.value.id);
-  selectScene(currentEpisode.value, moved || scenes[0] || null);
+  if (!currentScene.value || !currentEpisode.value || scriptActionBusy.value) return;
+  scriptActionBusy.value = `scene:move-${direction}`;
+  try {
+    const scenes = await storyApi.moveScene(currentScene.value.id, { direction });
+    currentEpisode.value.scenes = scenes;
+    const moved = scenes.find(scene => scene.id === currentScene.value.id);
+    selectScene(currentEpisode.value, moved || scenes[0] || null);
+  } catch (err) {
+    ui.showToast('error', err.message || '移动场次失败');
+  } finally {
+    scriptActionBusy.value = '';
+  }
 }
 
 async function improveEpisode() {
-  if (!currentEpisode.value) return;
-  const saved = await storyApi.improveEpisode(currentEpisode.value.id, { action: 'rewrite', episode: currentEpisode.value });
-  Object.assign(currentEpisode.value, saved);
-  ui.showToast('success', '本集已重写');
+  if (!currentEpisode.value || scriptActionBusy.value) return;
+  scriptActionBusy.value = 'episode:rewrite';
+  try {
+    const saved = await storyApi.improveEpisode(currentEpisode.value.id, { action: 'rewrite', episode: currentEpisode.value });
+    Object.assign(currentEpisode.value, saved);
+    ui.showToast('success', '本集已重写');
+  } catch (err) {
+    ui.showToast('error', err.message || '重写本集失败');
+  } finally {
+    scriptActionBusy.value = '';
+  }
 }
 async function improveScene(action) {
-  if (!currentScene.value) return;
-  const saved = await storyApi.improveScene(currentScene.value.id, { action, scene: sceneForm });
-  Object.assign(currentScene.value, saved);
-  Object.assign(sceneForm, saved);
-  ui.showToast('success', '场次已更新');
+  if (!currentScene.value || scriptActionBusy.value) return;
+  scriptActionBusy.value = `scene:${action}`;
+  try {
+    const saved = await storyApi.improveScene(currentScene.value.id, { action, scene: sceneForm });
+    Object.assign(currentScene.value, saved);
+    Object.assign(sceneForm, saved);
+    ui.showToast('success', '场次已更新');
+  } catch (err) {
+    ui.showToast('error', err.message || '场次更新失败');
+  } finally {
+    scriptActionBusy.value = '';
+  }
 }
 
 async function qualityCheck() {
-  qualityReport.value = await storyApi.checkQuality(route.params.draftId);
+  if (scriptActionBusy.value) return;
+  scriptActionBusy.value = 'draft:quality';
+  try {
+    qualityReport.value = await storyApi.checkQuality(route.params.draftId);
+    resetQualityOptimizedIssues();
+    ui.showToast('success', '质检完成');
+  } catch (err) {
+    ui.showToast('error', err.message || '质检失败');
+  } finally {
+    scriptActionBusy.value = '';
+  }
+}
+
+async function improveFromQualityIssue(issue) {
+  if (scriptActionBusy.value) return;
+  const target = findSceneForQualityIssue(issue);
+  if (!target?.scene || !target?.episode) return ui.showToast('warning', '请先选择一个要优化的场次');
+  scriptActionBusy.value = 'quality:fix';
+  qualityFixingIssue.value = issue;
+  try {
+    selectScene(target.episode, target.scene);
+    const action = qualityActionForIssue(issue);
+    const saved = await storyApi.improveScene(target.scene.id, {
+      action,
+      instruction: issue,
+      scene: target.scene,
+    });
+    Object.assign(target.scene, saved);
+    Object.assign(sceneForm, saved);
+    qualityOptimizedIssues[issue] = true;
+    ui.showToast('success', '已按质检问题优化当前场');
+  } catch (err) {
+    ui.showToast('error', err.message || '按质检问题优化失败');
+  } finally {
+    scriptActionBusy.value = '';
+    qualityFixingIssue.value = '';
+  }
+}
+
+function isQualityIssueOptimized(issue) {
+  return Boolean(qualityOptimizedIssues[issue]);
+}
+
+function resetQualityOptimizedIssues() {
+  Object.keys(qualityOptimizedIssues).forEach(key => {
+    delete qualityOptimizedIssues[key];
+  });
+}
+
+function findSceneForQualityIssue(issue) {
+  const episodes = draft.value?.episodes || [];
+  const episodeMatch = String(issue || '').match(/第\s*(\d+)\s*集/);
+  const sceneMatch = String(issue || '').match(/第\s*(\d+)\s*场/);
+  const episodeNo = episodeMatch ? Number(episodeMatch[1]) : currentEpisode.value?.episodeNo;
+  const sceneNo = sceneMatch ? Number(sceneMatch[1]) : currentScene.value?.sceneNo;
+  const episode = episodes.find(ep => Number(ep.episodeNo) === episodeNo) || currentEpisode.value;
+  const scene = (episode?.scenes || []).find(item => Number(item.sceneNo) === sceneNo) || currentScene.value;
+  return { episode, scene };
+}
+
+function qualityActionForIssue(issue) {
+  const text = String(issue || '');
+  if (/钩子|开场|结尾|追看/.test(text)) return 'hook';
+  if (/旁白|心理|内心|小说化|小说残留|不可拍|抽象/.test(text)) return 'externalize';
+  if (/对白|口语|解释/.test(text)) return 'dialogue';
+  return 'quality_fix';
 }
 
 async function autoFixExportIssues() {
@@ -1262,8 +1442,7 @@ async function downloadExport() {
 
 function saveBlobResponse(response, fallbackFilename) {
   const disposition = response.headers?.['content-disposition'] || '';
-  const match = disposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^"]+)"?/i);
-  const filename = match ? decodeURIComponent(match[1] || match[2]) : fallbackFilename;
+  const filename = exportFilenameFromDisposition(disposition) || fallbackFilename;
   const url = URL.createObjectURL(response.data);
   const a = document.createElement('a');
   a.href = url;
@@ -1272,6 +1451,36 @@ function saveBlobResponse(response, fallbackFilename) {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+function exportFilenameFromDisposition(disposition) {
+  if (!disposition) return '';
+  const starMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (starMatch?.[1]) return decodeURIComponent(starMatch[1].trim().replace(/^"|"$/g, ''));
+  const plainMatch = disposition.match(/filename="?([^";]+)"?/i);
+  if (!plainMatch?.[1]) return '';
+  return decodeMimeEncodedFilename(plainMatch[1].trim());
+}
+
+function decodeMimeEncodedFilename(filename) {
+  const normalized = filename.replace(/^=_/, '=?').replace(/_=$/, '?=').replace(/_Q_/i, '?Q?').replace(/_B_/i, '?B?');
+  const match = normalized.match(/^=\?UTF-8\?([QB])\?(.+)\?=$/i);
+  if (!match) return filename;
+  if (match[1].toUpperCase() === 'B') {
+    try {
+      const binary = atob(match[2]);
+      const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+      return new TextDecoder('utf-8').decode(bytes);
+    } catch {
+      return filename;
+    }
+  }
+  const text = match[2].replace(/_/g, ' ').replace(/=([0-9A-F]{2})/gi, '%$1');
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return filename;
+  }
 }
 
 function exportExtension(format) {

@@ -13,6 +13,7 @@ import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.service.UserMessage;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
@@ -34,6 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * </pre>
  * 每次对话前自动执行上述 4 步混合检索，将精排后的文档片段注入 LLM 上下文。
  */
+@Slf4j
 @Configuration
 @RequiredArgsConstructor
 public class AgentFactory {
@@ -63,9 +65,16 @@ public class AgentFactory {
 
     public ChatAssistant chatAssistantForModel(String modelName) {
         DeepSeekModelFactory factory = deepSeekModelFactory.getIfAvailable();
-        if (factory == null) return chatAssistant();
+        if (factory == null) {
+            log.info("DeepSeekModelFactory 不可用，回退到默认模型");
+            return chatAssistant();
+        }
         String key = factory.normalizeModelName(modelName);
-        return chatAssistantCache.computeIfAbsent(key, ignored -> buildChatAssistant(factory.chatModel(key)));
+        log.info("获取同步聊天助手 model={} key={}", modelName, key);
+        return chatAssistantCache.computeIfAbsent(key, ignored -> {
+            log.info("创建新的同步聊天助手 model={}", key);
+            return buildChatAssistant(factory.chatModel(key));
+        });
     }
 
     private ChatAssistant buildChatAssistant(ChatLanguageModel model) {
@@ -95,10 +104,17 @@ public class AgentFactory {
 
     public StreamingChatAssistant streamingChatAssistantForModel(String modelName) {
         DeepSeekModelFactory factory = deepSeekModelFactory.getIfAvailable();
-        if (factory == null) return streamingChatAssistant();
+        if (factory == null) {
+            log.info("DeepSeekModelFactory 不可用，回退到默认流式模型");
+            return streamingChatAssistant();
+        }
         String key = factory.normalizeModelName(modelName);
+        log.info("获取流式聊天助手 model={} key={}", modelName, key);
         return streamingChatAssistantCache.computeIfAbsent(key,
-                ignored -> buildStreamingChatAssistant(factory.streamingModel(key)));
+                ignored -> {
+                    log.info("创建新的流式聊天助手 model={}", key);
+                    return buildStreamingChatAssistant(factory.streamingModel(key));
+                });
     }
 
     private StreamingChatAssistant buildStreamingChatAssistant(StreamingChatLanguageModel model) {

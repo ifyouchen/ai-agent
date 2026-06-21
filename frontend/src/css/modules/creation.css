@@ -120,6 +120,53 @@
 .script-editor label { display: grid; gap: 6px; color: var(--text-secondary); font-size: 12px; }
 .creation-quality { margin-top: 14px; padding: 12px; border-radius: 8px; background: #f8fafc; color: var(--text-secondary); }
 .creation-quality p { margin: 8px 0 0; line-height: 1.6; }
+.creation-quality-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.creation-quality-issues {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.creation-quality-issue {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #e5e9f1;
+  border-radius: 8px;
+  background: #fff;
+}
+.creation-quality-issue.optimized {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+.creation-quality-issue p {
+  margin: 0;
+}
+.creation-quality-issue.optimized p {
+  color: #166534;
+}
+.creation-secondary-btn.compact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+.creation-secondary-btn.compact.optimized {
+  border-color: #bbf7d0;
+  background: #dcfce7;
+  color: #166534;
+  cursor: default;
+  opacity: 1;
+}
 .creation-export { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 16px; }
 .creation-export label { display: grid; gap: 7px; margin-bottom: 12px; color: var(--text-secondary); font-size: 13px; }
 .creation-export pre { white-space: pre-wrap; line-height: 1.75; background: #f8fafc; border-radius: 8px; padding: 16px; }
@@ -579,6 +626,56 @@
 .creation-spinner.dark {
   border-color: rgba(79, 103, 245, .18);
   border-top-color: #4f67f5;
+}
+
+.creation-assist-btn {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.creation-assistant-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 11px 12px;
+  border: 1px solid #dbe4ff;
+  border-radius: 8px;
+  background: #f6f8ff;
+  color: #5b667a;
+}
+
+.creation-assistant-status strong {
+  display: block;
+  margin-bottom: 2px;
+  color: #172033;
+  font-size: 13px;
+}
+
+.creation-assistant-status small {
+  display: block;
+  line-height: 1.5;
+}
+
+.script-editor input,
+.script-editor textarea {
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.script-editor textarea {
+  min-height: 64px;
+}
+
+.script-editor label {
+  font-size: 13px;
+}
+
+.creation-list-btn:disabled {
+  cursor: not-allowed;
+  opacity: .56;
 }
 
 .creation-workbench {

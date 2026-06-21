@@ -1,7 +1,7 @@
 package com.example.aiagent.story;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ContentDisposition;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -10,10 +10,12 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/story")
@@ -28,6 +30,7 @@ public class StoryController {
 
     @PostMapping("/projects")
     public Map<String, Object> createProject(@RequestBody Map<String, Object> payload) {
+        log.info("创建故事项目 title={}", payload.get("title"));
         return service.createProject(payload);
     }
 
@@ -38,6 +41,7 @@ public class StoryController {
 
     @PutMapping("/projects/{id}")
     public Map<String, Object> updateProject(@PathVariable Long id, @RequestBody Map<String, Object> payload) {
+        log.info("更新故事项目 projectId={}", id);
         return service.updateProject(id, payload);
     }
 
@@ -51,16 +55,14 @@ public class StoryController {
                                                     @RequestBody(required = false) Map<String, Object> payload) throws IOException {
         StoryWorkspaceService.ExportFile file = service.exportProjectFile(id, payload == null ? Map.of() : payload);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-                        .filename(file.filename(), StandardCharsets.UTF_8)
-                        .build()
-                        .toString())
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition(file.filename()))
                 .contentType(MediaType.parseMediaType(file.contentType()))
                 .body(file.bytes());
     }
 
     @PostMapping("/projects/{id}/chapters")
     public Map<String, Object> createChapter(@PathVariable Long id, @RequestBody Map<String, Object> payload) {
+        log.info("创建章节 projectId={}", id);
         return service.createChapter(id, payload);
     }
 
@@ -92,6 +94,7 @@ public class StoryController {
 
     @PostMapping("/import/text")
     public Map<String, Object> importText(@RequestBody Map<String, Object> payload) {
+        log.info("文本导入 projectId={}", payload.get("projectId"));
         return service.importText(payload);
     }
 
@@ -103,6 +106,7 @@ public class StoryController {
     @PostMapping(path = "/import/file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Map<String, Object> importFile(@RequestParam("file") MultipartFile file,
                                           @RequestParam(required = false) String title) throws IOException {
+        log.info("文件导入 fileName={} size={} title={}", file.getOriginalFilename(), file.getSize(), title);
         return service.importFile(file, title);
     }
 
@@ -207,12 +211,18 @@ public class StoryController {
                                                   @RequestBody(required = false) Map<String, Object> payload) throws IOException {
         StoryWorkspaceService.ExportFile file = service.exportDraftFile(draftId, payload == null ? Map.of() : payload);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-                        .filename(file.filename(), StandardCharsets.UTF_8)
-                        .build()
-                        .toString())
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition(file.filename()))
                 .contentType(MediaType.parseMediaType(file.contentType()))
                 .body(file.bytes());
+    }
+
+    private String contentDisposition(String filename) {
+        String fallback = filename == null || filename.isBlank() ? "download" : filename;
+        fallback = fallback.replaceAll("[\\\\/:*?\"<>|\\r\\n]", "_")
+                .replaceAll("[^\\x20-\\x7E]", "_");
+        String encoded = URLEncoder.encode(filename == null ? "download" : filename, StandardCharsets.UTF_8)
+                .replace("+", "%20");
+        return "attachment; filename=\"" + fallback + "\"; filename*=UTF-8''" + encoded;
     }
 
     @GetMapping(path = "/tasks/{taskId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -222,6 +232,7 @@ public class StoryController {
             emitter.send(SseEmitter.event().name("progress").data(service.getGenerationTask(taskId)));
             emitter.complete();
         } catch (Exception e) {
+            log.error("streamTask 失败 taskId={}", taskId, e);
             emitter.send(SseEmitter.event().name("error").data(Map.of(
                     "taskId", taskId,
                     "status", "failed",

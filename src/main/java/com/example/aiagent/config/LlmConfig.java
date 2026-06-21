@@ -6,11 +6,13 @@ import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 
+@Slf4j
 @Configuration
 public class LlmConfig {
 
@@ -23,6 +25,7 @@ public class LlmConfig {
     @Bean
     @Profile("deepseek")
     public ChatLanguageModel deepSeekChatModel(DeepSeekProperties props) {
+        log.info("创建 DeepSeek ChatLanguageModel model={} baseUrl={}", props.getModelName(), props.getBaseUrl());
         return OpenAiChatModel.builder()
                 .baseUrl(props.getBaseUrl())
                 .apiKey(props.getApiKey())
@@ -38,6 +41,7 @@ public class LlmConfig {
     @Bean
     @Profile("deepseek")
     public StreamingChatLanguageModel deepSeekStreamingModel(DeepSeekProperties props) {
+        log.info("创建 DeepSeek StreamingChatLanguageModel model={} baseUrl={}", props.getModelName(), props.getBaseUrl());
         return OpenAiStreamingChatModel.builder()
                 .baseUrl(props.getBaseUrl())
                 .apiKey(props.getApiKey())
@@ -57,6 +61,7 @@ public class LlmConfig {
             @Value("${anthropic.api-key}") String apiKey,
             @Value("${anthropic.model-name:claude-opus-4-8}") String modelName,
             @Value("${anthropic.max-tokens:8192}") int maxTokens) {
+        log.info("创建 Claude ChatLanguageModel model={} maxTokens={}", modelName, maxTokens);
         return AnthropicChatModel.builder()
                 .apiKey(apiKey)
                 .modelName(modelName)
@@ -72,6 +77,7 @@ public class LlmConfig {
     public StreamingChatLanguageModel claudeStreamingModel(
             @Value("${anthropic.api-key}") String apiKey,
             @Value("${anthropic.model-name:claude-opus-4-8}") String modelName) {
+        log.info("创建 Claude StreamingChatLanguageModel model={}", modelName);
         return AnthropicStreamingChatModel.builder()
                 .apiKey(apiKey)
                 .modelName(modelName)

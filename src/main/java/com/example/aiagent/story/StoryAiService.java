@@ -227,12 +227,14 @@ public class StoryAiService {
 
     public Map<String, Object> improveScene(String action,
                                             Map<String, Object> scene,
+                                            String instruction,
                                             Map<String, Object> fallback) {
         String fallbackJson = toJson(fallback);
         String prompt = """
                 你是短剧分场稿编辑。请按任务修复当前场次，只输出 JSON，不要 Markdown，不要解释。
 
                 任务：%s
+                质检问题/额外要求：%s
                 当前场次 JSON：
                 %s
 
@@ -255,7 +257,8 @@ public class StoryAiService {
                 - hook：补强开场或结尾钩子。
                 - dialogue：对白口语化，减少解释。
                 - externalize：把心理活动外化为动作、对白、道具或人物反应。
-                """.formatted(action, toJson(scene));
+                - quality_fix：根据质检问题精准修复当前场，优先解决额外要求里的问题。
+                """.formatted(action, string(instruction, "无"), toJson(scene));
         return completeJson(prompt, fallbackJson, fallback);
     }
 
