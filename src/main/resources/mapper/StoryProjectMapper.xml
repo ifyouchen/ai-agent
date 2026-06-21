@@ -86,4 +86,9 @@
         SET status = #{status}, updated_at = NOW()
         WHERE id = #{id}
     </update>
+
+    <delete id="deleteById">
+        DELETE FROM story_project
+        WHERE id = #{id}
+    </delete>
 </mapper>

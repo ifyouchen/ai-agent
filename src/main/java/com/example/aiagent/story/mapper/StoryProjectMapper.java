@@ -14,4 +14,5 @@ public interface StoryProjectMapper {
     void insert(StoryProject project);
     void update(StoryProject project);
     void updateStatus(@Param("id") Long id, @Param("status") String status);
+    void deleteById(@Param("id") Long id);
 }

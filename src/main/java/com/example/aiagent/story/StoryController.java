@@ -45,6 +45,12 @@ public class StoryController {
         return service.updateProject(id, payload);
     }
 
+    @DeleteMapping("/projects/{id}")
+    public Map<String, Object> deleteProject(@PathVariable Long id) {
+        log.info("删除故事项目 projectId={}", id);
+        return service.deleteProject(id);
+    }
+
     @PostMapping("/projects/{id}/export")
     public Map<String, Object> exportProject(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> payload) {
         return service.exportProject(id, payload == null ? Map.of() : payload);

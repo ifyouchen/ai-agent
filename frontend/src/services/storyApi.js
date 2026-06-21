@@ -17,6 +17,10 @@ export const storyApi = {
     const { data } = await http.put(`/api/v1/story/projects/${id}`, payload);
     return data;
   },
+  async deleteProject(id) {
+    const { data } = await http.delete(`/api/v1/story/projects/${id}`);
+    return data;
+  },
   async exportProject(id, payload) {
     const { data } = await http.post(`/api/v1/story/projects/${id}/export`, payload || {});
     return data;

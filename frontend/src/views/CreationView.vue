@@ -9,20 +9,33 @@
         <span class="creation-action-icon">{{ item.icon }}</span><strong>{{ item.title }}</strong><small>{{ item.desc }}</small>
       </button>
     </section>
-    <section v-if="activeTask" class="creation-panel">
+    <section v-if="activeTask" class="creation-panel creation-task-card" :class="`status-${activeTask.status || 'unknown'}`">
       <div class="creation-section-title">
-        <h2>进行中任务</h2>
+        <div>
+          <h2>{{ taskPanelTitle }}</h2>
+          <p>{{ activeTaskName }}</p>
+        </div>
         <div class="creation-row">
+          <button class="creation-primary-btn" type="button" :disabled="!taskCanOpen" @click="openActiveTask">{{ activeTaskOpenLabel }}</button>
           <button class="creation-secondary-btn" type="button" @click="refreshTask">刷新</button>
           <button class="creation-secondary-btn" type="button" :disabled="!taskCanCancel" @click="cancelTask">取消</button>
           <button class="creation-secondary-btn" type="button" :disabled="!taskCanRetry" @click="retryTask">重试</button>
+          <button class="creation-secondary-btn" type="button" @click="dismissTask">隐藏</button>
         </div>
       </div>
-      <p>{{ activeTask.currentStep || activeTask.status }} · {{ activeTask.progress || 0 }}%</p>
+      <div class="creation-task-body">
+        <div>
+          <strong>{{ activeTask.currentStep || activeTaskStatusLabel }}</strong>
+          <span>{{ activeTaskStatusLabel }} · {{ activeTaskProgress }}%</span>
+        </div>
+        <div class="creation-task-progress" :aria-label="`任务进度 ${activeTaskProgress}%`">
+          <i :style="{ width: `${activeTaskProgress}%` }"></i>
+        </div>
+      </div>
       <p v-if="activeTask.tokenUsage?.totalTokens" class="creation-muted">预估 Token：{{ activeTask.tokenUsage.totalTokens }}（输入 {{ activeTask.tokenUsage.inputTokens }} / 输出 {{ activeTask.tokenUsage.outputTokens }}）</p>
       <p v-if="activeTask.errorMessage" class="creation-risk">{{ activeTask.errorMessage }}</p>
     </section>
-    <ProjectCards title="最近作品" :projects="projects.slice(0, 6)" :converting-project-id="scriptConvertingProjectId" :exporting-project-id="projectExportingId" @script="startScript" @export="downloadProjectExport" />
+    <ProjectCards title="最近作品" :projects="projects.slice(0, 6)" :converting-project-id="scriptConvertingProjectId" :exporting-project-id="projectExportingId" :deleting-project-id="projectDeletingId" @script="startScript" @export="downloadProjectExport" @delete="deleteProject" />
   </div>
 
   <div v-else-if="mode === 'projects'" class="creation-view">
@@ -38,8 +51,8 @@
     </div>
     <div class="creation-toolbar">
       <div class="creation-filters">
-        <label>状态<select v-model="statusFilter"><option value="all">全部状态</option><option value="writing">写作中</option><option value="rewriting">改写中</option><option value="adapting">改编中</option><option value="completed">已完成</option></select></label>
-        <label>排序<select v-model="sortOrder"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="title_asc">标题 A-Z</option></select></label>
+        <label>状态<CreationSelect v-model="statusFilter" :options="statusOptions" /></label>
+        <label>排序<CreationSelect v-model="sortOrder" :options="sortOptions" /></label>
       </div>
       <form class="creation-search" @submit.prevent="applyProjectSearch">
         <input v-model="searchInput" type="search" placeholder="搜索作品标题" />
@@ -47,7 +60,7 @@
         <button v-if="searchQuery" class="creation-secondary-btn" type="button" @click="clearProjectSearch">清空</button>
       </form>
     </div>
-    <ProjectCards title="全部作品" :projects="filteredProjects" :converting-project-id="scriptConvertingProjectId" :exporting-project-id="projectExportingId" @script="startScript" @export="downloadProjectExport" />
+    <ProjectCards title="全部作品" :projects="filteredProjects" :converting-project-id="scriptConvertingProjectId" :exporting-project-id="projectExportingId" :deleting-project-id="projectDeletingId" @script="startScript" @export="downloadProjectExport" @delete="deleteProject" />
   </div>
 
   <div v-else-if="mode === 'editor'" class="creation-workbench has-ai-config" :class="{ 'ai-config-collapsed': aiConfigCollapsed }">
@@ -151,30 +164,16 @@
         <div class="creation-mini-grid">
           <label>
             <span>文风</span>
-            <select v-model="promptConfig.global.style">
-              <option>爽文</option>
-              <option>悬疑</option>
-              <option>现实向</option>
-              <option>轻喜剧</option>
-              <option>虐恋</option>
-            </select>
+            <CreationSelect v-model="promptConfig.global.style" :options="styleOptions" />
           </label>
           <label>
             <span>节奏</span>
-            <select v-model="promptConfig.global.pace">
-              <option>快节奏</option>
-              <option>中等节奏</option>
-              <option>慢热</option>
-            </select>
+            <CreationSelect v-model="promptConfig.global.pace" :options="paceOptions" />
           </label>
         </div>
         <label>
           <span>改写力度</span>
-          <select v-model="promptConfig.global.rewriteStrength">
-            <option>轻微</option>
-            <option>中等</option>
-            <option>大幅</option>
-          </select>
+          <CreationSelect v-model="promptConfig.global.rewriteStrength" :options="rewriteStrengthOptions" />
         </label>
         <label>
           <span>保留项</span>
@@ -187,11 +186,7 @@
         <div class="creation-mini-grid">
           <label>
             <span>动作强度</span>
-            <select v-model="activeActionConfig.params.strength">
-              <option>轻微</option>
-              <option>中等</option>
-              <option>强</option>
-            </select>
+            <CreationSelect v-model="activeActionConfig.params.strength" :options="actionStrengthOptions" />
           </label>
           <label class="creation-inline-check">
             <input v-model="activeActionConfig.params.keepPlot" type="checkbox" />
@@ -393,10 +388,10 @@
     </header>
     <section class="creation-export">
       <aside class="creation-panel">
-        <label>格式<select v-model="exportForm.format"><option value="md">Markdown</option><option value="html">HTML</option><option value="pdf">PDF</option><option value="txt">TXT</option><option value="docx">DOCX</option></select></label>
-        <label>范围<select v-model="exportForm.scope"><option value="all">全部</option><option value="episode">选中集</option><option value="scene">选中场</option></select></label>
-        <label v-if="exportForm.scope === 'episode'">集数<select v-model.number="exportForm.episodeNo"><option v-for="ep in draft?.episodes || []" :key="ep.id" :value="ep.episodeNo">第{{ ep.episodeNo }}集</option></select></label>
-        <label v-if="exportForm.scope === 'scene'">场次<select v-model.number="exportForm.sceneId"><option v-for="scene in exportScenes" :key="scene.id" :value="scene.id">{{ scene.label }}</option></select></label>
+        <label>格式<CreationSelect v-model="exportForm.format" :options="exportFormatOptions" /></label>
+        <label>范围<CreationSelect v-model="exportForm.scope" :options="exportScopeOptions" /></label>
+        <label v-if="exportForm.scope === 'episode'">集数<CreationSelect v-model="exportForm.episodeNo" :options="exportEpisodeOptions" /></label>
+        <label v-if="exportForm.scope === 'scene'">场次<CreationSelect v-model="exportForm.sceneId" :options="exportSceneOptions" /></label>
         <label><input v-model="exportForm.includeQualityReport" type="checkbox" /> 包含质量报告</label>
         <label><input v-model="exportForm.includeAdaptationPlan" type="checkbox" /> 包含改编方案</label>
         <label><input v-model="exportForm.includeCharacterTable" type="checkbox" /> 包含人物表</label>
@@ -413,7 +408,7 @@
   </div>
 
   <div v-if="showCreate" class="creation-modal" @click.self="showCreate = false">
-    <form class="creation-dialog" @submit.prevent="createProject"><h2>新建作品</h2><input v-model="createForm.title" required placeholder="作品名" /><select v-model="createForm.type"><option value="long_novel">长篇小说</option><option value="short_story">短篇故事</option><option value="adaptation">改编项目</option></select><textarea v-model="createForm.description" placeholder="简介"></textarea><button class="creation-primary-btn">创建</button></form>
+    <form class="creation-dialog" @submit.prevent="createProject"><h2>新建作品</h2><input v-model="createForm.title" required placeholder="作品名" /><CreationSelect v-model="createForm.type" :options="createTypeOptions" /><textarea v-model="createForm.description" placeholder="简介"></textarea><button class="creation-primary-btn">创建</button></form>
   </div>
   <div v-if="showImport" class="creation-modal" @click.self="closeImportDialog">
     <form class="creation-dialog wide" @submit.prevent="previewImport">
@@ -468,9 +463,64 @@ import { useRoute, useRouter } from 'vue-router';
 import { storyApi } from '../services/storyApi.js';
 import { useUiStore } from '../stores/ui.js';
 
+const CreationSelect = defineComponent({
+  props: {
+    modelValue: { type: [String, Number, Boolean], default: null },
+    options: { type: Array, default: () => [] },
+    disabled: Boolean,
+    placeholder: { type: String, default: '请选择' },
+  },
+  emits: ['update:modelValue', 'change'],
+  setup(props, { emit }) {
+    const open = ref(false);
+    const current = computed(() => props.options.find(option => option.value === props.modelValue));
+    const selectOption = option => {
+      if (option.disabled) return;
+      emit('update:modelValue', option.value);
+      emit('change', option.value);
+      open.value = false;
+    };
+    const closeOnFocusOut = event => {
+      if (!event.currentTarget.contains(event.relatedTarget)) open.value = false;
+    };
+    const onKeydown = event => {
+      if (event.key === 'Escape') open.value = false;
+    };
+    return () => h('div', {
+      class: ['creation-select', { open: open.value, disabled: props.disabled }],
+      onFocusout: closeOnFocusOut,
+      onKeydown,
+    }, [
+      h('button', {
+        class: 'creation-select-trigger',
+        type: 'button',
+        disabled: props.disabled,
+        'aria-haspopup': 'listbox',
+        'aria-expanded': open.value ? 'true' : 'false',
+        onClick: () => { if (!props.disabled) open.value = !open.value; },
+      }, [
+        h('span', current.value?.label ?? props.placeholder),
+        h('i', { 'aria-hidden': 'true' }),
+      ]),
+      open.value ? h('div', { class: 'creation-select-menu', role: 'listbox' }, props.options.map(option => h('button', {
+        key: option.value,
+        class: ['creation-select-option', { selected: option.value === props.modelValue }],
+        type: 'button',
+        role: 'option',
+        disabled: option.disabled,
+        'aria-selected': option.value === props.modelValue ? 'true' : 'false',
+        onClick: () => selectOption(option),
+      }, [
+        h('span', option.label),
+        option.value === props.modelValue ? h('em', '✓') : null,
+      ]))) : null,
+    ]);
+  },
+});
+
 const ProjectCards = defineComponent({
-  props: { title: String, projects: Array, convertingProjectId: [String, Number], exportingProjectId: [String, Number] },
-  emits: ['script', 'export'],
+  props: { title: String, projects: Array, convertingProjectId: [String, Number], exportingProjectId: [String, Number], deletingProjectId: [String, Number] },
+  emits: ['script', 'export', 'delete'],
   setup(props, { emit }) {
     const projectExportFormats = reactive({});
     const exportOptions = [
@@ -500,18 +550,24 @@ const ProjectCards = defineComponent({
               }, props.convertingProjectId === project.id ? '转短剧中...' : '转短剧'),
             ]),
             h('div', { class: 'creation-export-controls' }, [
-              h('select', {
-                class: 'creation-export-select',
-                value: selectedFormat(project),
+              h(CreationSelect, {
+                modelValue: selectedFormat(project),
+                options: exportOptions,
                 disabled: props.exportingProjectId === project.id,
-                onChange: event => { projectExportFormats[project.id] = event.target.value; },
-              }, exportOptions.map(option => h('option', { value: option.value }, option.label))),
+                'onUpdate:modelValue': value => { projectExportFormats[project.id] = value; },
+              }),
               h('button', {
                 class: 'creation-secondary-btn',
                 type: 'button',
                 disabled: props.exportingProjectId === project.id,
                 onClick: () => emit('export', { project, format: selectedFormat(project) }),
               }, props.exportingProjectId === project.id ? '导出中...' : '导出'),
+              h('button', {
+                class: 'creation-danger-btn',
+                type: 'button',
+                disabled: props.deletingProjectId === project.id || props.convertingProjectId === project.id || props.exportingProjectId === project.id,
+                onClick: () => emit('delete', project),
+              }, props.deletingProjectId === project.id ? '删除中...' : '删除'),
             ]),
           ]))),
     ]);
@@ -538,6 +594,7 @@ const assetSaving = ref(false);
 const chapterDeletingId = ref(null);
 const scriptConvertingProjectId = ref(null);
 const projectExportingId = ref(null);
+const projectDeletingId = ref(null);
 const scriptActionBusy = ref('');
 const qualityFixingIssue = ref('');
 const filter = ref('all');
@@ -554,6 +611,7 @@ const importConfirming = ref(false);
 const editorPanel = ref('chapter');
 const activeAssetType = ref('setting');
 const assetForm = reactive({ content: '', instruction: '' });
+const assetInstructions = reactive({ setting: '', characters: '', outline: '' });
 const activeActionType = ref('continue');
 const aiConfigCollapsed = ref(false);
 const actionForm = reactive({ instruction: '', result: '', resultTarget: '', loading: false, controller: null });
@@ -577,6 +635,39 @@ const exportForm = reactive({
   includeCharacterTable: true,
   includeSceneDirectory: true,
 });
+const statusOptions = [
+  { value: 'all', label: '全部状态' },
+  { value: 'writing', label: '写作中' },
+  { value: 'rewriting', label: '改写中' },
+  { value: 'adapting', label: '改编中' },
+  { value: 'completed', label: '已完成' },
+];
+const sortOptions = [
+  { value: 'updated_desc', label: '最近更新' },
+  { value: 'updated_asc', label: '最早更新' },
+  { value: 'title_asc', label: '标题 A-Z' },
+];
+const styleOptions = ['爽文', '悬疑', '现实向', '轻喜剧', '虐恋'].map(value => ({ value, label: value }));
+const paceOptions = ['快节奏', '中等节奏', '慢热'].map(value => ({ value, label: value }));
+const rewriteStrengthOptions = ['轻微', '中等', '大幅'].map(value => ({ value, label: value }));
+const actionStrengthOptions = ['轻微', '中等', '强'].map(value => ({ value, label: value }));
+const exportFormatOptions = [
+  { value: 'md', label: 'Markdown' },
+  { value: 'docx', label: 'Word' },
+  { value: 'html', label: 'HTML' },
+  { value: 'pdf', label: 'PDF' },
+  { value: 'txt', label: 'TXT' },
+];
+const exportScopeOptions = [
+  { value: 'all', label: '全部' },
+  { value: 'episode', label: '选中集' },
+  { value: 'scene', label: '选中场' },
+];
+const createTypeOptions = [
+  { value: 'long_novel', label: '长篇小说' },
+  { value: 'short_story', label: '短篇故事' },
+  { value: 'adaptation', label: '改编项目' },
+];
 const filters = [{ value: 'all', label: '全部' }, { value: 'long_novel', label: '长篇' }, { value: 'short_story', label: '短篇' }, { value: 'adaptation', label: '改编' }, { value: 'short_drama', label: '短剧' }];
 const aiActions = [
   { type: 'setting', label: '编辑设定', hint: '生成或补全世界观、题材基调、爽点机制。', placeholder: '例如：古代科举权谋，男主重生，不要系统。' },
@@ -660,6 +751,28 @@ const exportScenes = computed(() => (draft.value?.episodes || []).flatMap(ep => 
   ...scene,
   label: `第${ep.episodeNo}集 第${scene.sceneNo}场 ${scene.sceneTitle || ''}`,
 }))));
+const exportEpisodeOptions = computed(() => (draft.value?.episodes || []).map(ep => ({ value: ep.episodeNo, label: `第${ep.episodeNo}集` })));
+const exportSceneOptions = computed(() => exportScenes.value.map(scene => ({ value: scene.id, label: scene.label })));
+const activeTaskProgress = computed(() => Math.max(0, Math.min(100, Number(activeTask.value?.progress || 0))));
+const activeTaskStatusLabel = computed(() => ({
+  completed: '已完成',
+  running: '生成中',
+  pending: '排队中',
+  failed: '失败',
+  canceled: '已取消',
+}[activeTask.value?.status] || activeTask.value?.status || '未知状态'));
+const activeTaskName = computed(() => ({
+  script_convert: '短剧分场稿生成',
+}[activeTask.value?.taskType] || 'AI 生成任务'));
+const taskPanelTitle = computed(() => activeTask.value?.status === 'completed' ? '最近生成任务' : '生成任务');
+const activeTaskDestination = computed(() => {
+  if (!activeTask.value) return '';
+  if (activeTask.value.draftId) return `/creation/scripts/${activeTask.value.draftId}`;
+  if (activeTask.value.projectId) return `/creation/projects/${activeTask.value.projectId}/editor`;
+  return '';
+});
+const taskCanOpen = computed(() => Boolean(activeTaskDestination.value));
+const activeTaskOpenLabel = computed(() => activeTask.value?.draftId ? '查看结果' : '打开作品');
 const taskCanCancel = computed(() => activeTask.value && !['completed', 'failed', 'canceled'].includes(activeTask.value.status));
 const taskCanRetry = computed(() => activeTask.value && ['failed', 'canceled', 'completed'].includes(activeTask.value.status));
 const importBusy = computed(() => importPreviewLoading.value || importConfirming.value);
@@ -821,6 +934,7 @@ async function loadProject() {
 
 function selectChapter(chapter, options = {}) {
   if (!options.skipCache) cacheCurrentChapterDraft();
+  cacheCurrentAssetInstruction();
   editorPanel.value = 'chapter';
   currentChapter.value = chapter;
   const draft = chapterDraft(chapter);
@@ -885,6 +999,7 @@ function projectAssets() {
 
 function selectAsset(type) {
   cacheCurrentChapterDraft();
+  cacheCurrentAssetInstruction();
   editorPanel.value = 'asset';
   activeAssetType.value = type;
   syncAssetForm();
@@ -993,6 +1108,7 @@ function restoreActionPrompt() {
 
 function openActionPanel(type) {
   if (actionForm.loading) return;
+  cacheCurrentAssetInstruction();
   activeActionType.value = type;
   aiConfigCollapsed.value = false;
   actionForm.result = '';
@@ -1000,7 +1116,7 @@ function openActionPanel(type) {
   ensureActionConfig(type);
   if (isAssetAction(type)) {
     selectAsset(type);
-    actionForm.instruction = assetForm.instruction || actionForm.instruction;
+    actionForm.instruction = assetForm.instruction;
   }
 }
 
@@ -1030,6 +1146,7 @@ async function executeAction() {
   const config = ensureActionConfig(actionType);
   if (targetAssetType) {
     assetForm.instruction = actionForm.instruction;
+    assetInstructions[targetAssetType] = actionForm.instruction;
   }
   actionForm.result = '';
   actionForm.resultTarget = actionType;
@@ -1101,6 +1218,12 @@ function discardActionResult() {
 
 function syncAssetForm() {
   assetForm.content = projectAssets()[activeAssetType.value] || '';
+  assetForm.instruction = assetInstructions[activeAssetType.value] || '';
+}
+
+function cacheCurrentAssetInstruction() {
+  if (editorPanel.value !== 'asset') return;
+  assetInstructions[activeAssetType.value] = assetForm.instruction || '';
 }
 
 async function addChapter() {
@@ -1265,11 +1388,37 @@ async function downloadProjectExport({ project: targetProject, format }) {
   }
 }
 
+async function deleteProject(targetProject) {
+  if (!targetProject?.id || projectDeletingId.value) return;
+  const confirmed = await ui.showConfirm({
+    title: '删除作品',
+    message: `确定删除「${targetProject.title || '未命名作品'}」吗？关联章节、短剧脚本和生成任务也会一起删除。`,
+    confirmText: '删除作品',
+    cancelText: '取消',
+    variant: 'danger',
+  });
+  if (!confirmed) return;
+  projectDeletingId.value = targetProject.id;
+  try {
+    await storyApi.deleteProject(targetProject.id);
+    projects.value = projects.value.filter(item => item.id !== targetProject.id);
+    if (activeTask.value?.projectId === targetProject.id) dismissTask();
+    ui.showToast('success', '作品已删除');
+  } catch (err) {
+    ui.showToast('error', err.message || '删除作品失败');
+  } finally {
+    projectDeletingId.value = null;
+  }
+}
+
 async function loadActiveTask() {
   const taskId = localStorage.getItem('story:lastTaskId');
   if (!taskId) return;
   try {
     activeTask.value = await storyApi.getTask(taskId);
+    if (!activeTask.value?.projectId && !activeTask.value?.draftId) {
+      dismissTask();
+    }
   } catch {
     activeTask.value = null;
   }
@@ -1278,6 +1427,16 @@ async function loadActiveTask() {
 async function refreshTask() {
   if (!activeTask.value?.id) return;
   activeTask.value = await storyApi.getTask(activeTask.value.id);
+}
+
+function openActiveTask() {
+  if (!activeTaskDestination.value) return;
+  router.push(activeTaskDestination.value);
+}
+
+function dismissTask() {
+  activeTask.value = null;
+  localStorage.removeItem('story:lastTaskId');
 }
 
 async function cancelTask() {

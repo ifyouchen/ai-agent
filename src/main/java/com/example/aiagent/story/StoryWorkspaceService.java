@@ -169,6 +169,15 @@ public class StoryWorkspaceService {
         return getProject(id);
     }
 
+    @Transactional
+    public Map<String, Object> deleteProject(Long id) {
+        StoryProject project = projectMapper.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("作品不存在：" + id));
+        projectMapper.deleteById(id);
+        log.info("删除故事项目 projectId={} title={}", id, project.getTitle());
+        return Map.of("deletedProjectId", id, "status", "deleted");
+    }
+
     @Transactional(readOnly = true)
     public Map<String, Object> exportProject(Long projectId, Map<String, Object> payload) {
         Map<String, Object> project = getProject(projectId);
@@ -824,6 +833,11 @@ public class StoryWorkspaceService {
         map.put("id", task.getId());
         map.put("taskType", task.getTaskType());
         map.put("projectId", task.getProjectId());
+        if ("script_convert".equals(task.getTaskType()) && task.getProjectId() != null) {
+            draftMapper.findByProjectId(task.getProjectId()).stream()
+                    .max((a, b) -> Long.compare(a.getId(), b.getId()))
+                    .ifPresent(draft -> map.put("draftId", draft.getId()));
+        }
         map.put("status", task.getStatus());
         map.put("progress", task.getProgress());
         map.put("currentStep", task.getCurrentStep());
