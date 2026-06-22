@@ -11,13 +11,18 @@ export async function chatSync(sessionId, message, kbId, model, orgId) {
   return data;
 }
 
-export function chatStream(sessionId, message, kbId, model, orgId) {
+export async function chatStream(sessionId, message, kbId, model, orgId) {
   const token = getToken();
-  const params = new URLSearchParams({ sessionId, message, ...(token ? { token } : {}) });
-  if (kbId) params.set('kbId', String(kbId));
-  if (model) params.set('model', model);
-  if (orgId) params.set('orgId', orgId);
-  return new EventSource(`${BASE}/api/v1/chat/stream?${params.toString()}`);
+  const { data } = await http.post('/api/v1/chat/stream', {
+    sessionId,
+    message,
+    kbId: kbId ? String(kbId) : null,
+    model,
+    orgId: orgId || null,
+  });
+  const params = new URLSearchParams(token ? { token } : {});
+  const query = params.toString();
+  return new EventSource(`${BASE}/api/v1/chat/stream/${encodeURIComponent(data.streamId)}${query ? `?${query}` : ''}`);
 }
 
 export async function chatReact(sessionId, message, kbId, model, orgId) {
@@ -31,13 +36,18 @@ export async function chatReact(sessionId, message, kbId, model, orgId) {
   return data;
 }
 
-export function chatReactStream(sessionId, message, kbId, model, orgId) {
+export async function chatReactStream(sessionId, message, kbId, model, orgId) {
   const token = getToken();
-  const params = new URLSearchParams({ sessionId, message, ...(token ? { token } : {}) });
-  if (kbId) params.set('kbId', String(kbId));
-  if (model) params.set('model', model);
-  if (orgId) params.set('orgId', orgId);
-  return new EventSource(`${BASE}/api/v1/chat/react/stream?${params.toString()}`);
+  const { data } = await http.post('/api/v1/chat/react/stream', {
+    sessionId,
+    message,
+    kbId: kbId ? String(kbId) : null,
+    model,
+    orgId: orgId || null,
+  });
+  const params = new URLSearchParams(token ? { token } : {});
+  const query = params.toString();
+  return new EventSource(`${BASE}/api/v1/chat/react/stream/${encodeURIComponent(data.streamId)}${query ? `?${query}` : ''}`);
 }
 
 export async function clearMemory(sessionId) {

@@ -142,6 +142,11 @@ public class StoryController {
         return service.retryRewrite(taskId, payload == null ? Map.of() : payload);
     }
 
+    @PostMapping("/rewrite/{taskId}/cancel")
+    public Map<String, Object> cancelRewrite(@PathVariable Long taskId) {
+        return service.cancelRewrite(taskId);
+    }
+
     @PostMapping("/script/convert")
     public Map<String, Object> convertToScript(@RequestBody Map<String, Object> payload) {
         return service.convertToScript(payload);
@@ -155,6 +160,11 @@ public class StoryController {
     @GetMapping("/tasks/{taskId}")
     public Map<String, Object> getTask(@PathVariable Long taskId) {
         return service.getGenerationTask(taskId);
+    }
+
+    @GetMapping("/tasks/history")
+    public Map<String, Object> listTaskHistory(@RequestParam(defaultValue = "30") int limit) {
+        return service.listTaskHistory(limit);
     }
 
     @PostMapping("/tasks/{taskId}/cancel")

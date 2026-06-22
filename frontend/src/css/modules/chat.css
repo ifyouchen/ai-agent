@@ -302,6 +302,7 @@
 }
 
 .hint-text { font-size: 11px; color: var(--text-light); }
+.hint-text.over { color: #dc2626; font-weight: 650; }
 
 .stream-toggle {
     display: flex;

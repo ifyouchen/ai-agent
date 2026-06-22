@@ -95,7 +95,7 @@
             v-if="isEditing"
             class="edit-send-btn"
             type="button"
-            :disabled="!inputText.trim()"
+            :disabled="!canSend"
             @click="handleSend"
           >
             发送
@@ -127,7 +127,7 @@
             v-else-if="!isEditing"
             class="send-btn"
             type="button"
-            :disabled="!inputText.trim()"
+            :disabled="!canSend"
             @click="handleSend"
           >
             <svg viewBox="0 0 24 24" fill="none">
@@ -148,7 +148,7 @@
         {{ currentKbName }}
         <button class="kb-active-clear" type="button" title="取消关联知识库" @click.stop="sess.currentKbId = null">×</button>
       </span>
-      <span class="hint-text">{{ inputHintText }}</span>
+      <span class="hint-text" :class="{ over: inputTooLong }">{{ inputHintText }}</span>
     </div>
   </div>
 </template>
@@ -158,6 +158,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useSessionStore } from '../../stores/sessions.js';
 import { useKbStore } from '../../stores/kb.js';
 import { useOrgStore } from '../../stores/org.js';
+import { MAX_CHAT_MESSAGE_CHARS } from '../../stores/sessionUtils.js';
 
 const emit = defineEmits(['attachKb', 'uploadFiles']);
 
@@ -192,14 +193,18 @@ const mentionDocs = computed(() => {
 });
 const mentionVisible = computed(() => mentionOpen.value);
 const isEditing = computed(() => !!sess.editingMessageId);
+const inputTooLong = computed(() => inputText.value.length > MAX_CHAT_MESSAGE_CHARS);
+const canSend = computed(() => Boolean(inputText.value.trim()) && !inputTooLong.value);
 
 const enterToSendHint = computed(() =>
   '给 AI Agent 发送消息'
 );
 const inputHintText = computed(() =>
-  isMobileInput.value
-    ? '点击发送按钮发送 · 回车换行'
-    : (sess.enterToSend ? 'Enter 发送 · Shift+Enter 换行' : 'Ctrl+Enter 发送 · Enter 换行')
+  inputTooLong.value
+    ? `内容过长：${inputText.value.length}/${MAX_CHAT_MESSAGE_CHARS} 字`
+    : (isMobileInput.value
+      ? `点击发送按钮发送 · ${inputText.value.length}/${MAX_CHAT_MESSAGE_CHARS} 字`
+      : `${sess.enterToSend ? 'Enter 发送 · Shift+Enter 换行' : 'Ctrl+Enter 发送 · Enter 换行'} · ${inputText.value.length}/${MAX_CHAT_MESSAGE_CHARS} 字`)
 );
 
 onMounted(() => {
@@ -348,6 +353,7 @@ function handleFileChange(event) {
 async function handleSend() {
   const text = inputText.value.trim();
   if (!text || sess.currentSessionSending) return;
+  if (inputTooLong.value) return;
   const referencedDocs = getReferencedDocs(text);
   const message = buildMentionAwareMessage(text);
   const effectiveKbId = sess.currentKbId ?? (referencedDocs.length ? kb.currentKbId : null);

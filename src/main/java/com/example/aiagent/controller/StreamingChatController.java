@@ -4,6 +4,7 @@ import com.example.aiagent.agent.AgentFactory;
 import com.example.aiagent.chat.service.ChatHistoryService;
 import com.example.aiagent.controller.sse.SseDeltaBuffer;
 import com.example.aiagent.kb.service.ChatRagContextService;
+import com.example.aiagent.memory.RedisChatMemoryStore;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
 import com.example.aiagent.security.filter.PromptInjectionFilter;
@@ -15,8 +16,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,6 +29,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -52,6 +59,9 @@ public class StreamingChatController {
     private final AuditLogService auditLogService;
     private final ChatHistoryService chatHistoryService;
     private final ChatRagContextService chatRagContextService;
+    private final RedisChatMemoryStore redisChatMemoryStore;
+    private final Map<String, PendingStreamChat> pendingStreamChats = new ConcurrentHashMap<>();
+    private static final long STREAM_CHAT_TASK_TTL_MS = 120_000L;
 
     @Value("${chat.stream.flush-interval-ms:50}")
     private long streamFlushIntervalMs;
@@ -59,10 +69,17 @@ public class StreamingChatController {
     @Value("${chat.stream.flush-min-chars:40}")
     private int streamFlushMinChars;
 
+    @Value("${chat.stream.isolated-memory-threshold-chars:8000}")
+    private int isolatedMemoryThresholdChars;
+
     /**
      * 流式对话（SSE 推送，字符逐步出现）
      *
-     * GET /api/v1/chat/stream?sessionId=user-123&message=你好
+     * POST /api/v1/chat/stream
+     * Body: {"sessionId":"user-123","message":"你好"}
+     * Response: {"streamId":"..."}
+     *
+     * GET /api/v1/chat/stream/{streamId}?token=<jwt>
      * Header: Authorization: Bearer <token>
      *
      * 前端接收示例（JavaScript）：
@@ -73,6 +90,53 @@ public class StreamingChatController {
      * 注意：SSE（EventSource）不支持自定义 Header，因此 Token 通过 URL 参数传递。
      *       JwtAuthFilter 已支持从 ?token= 参数中读取。
      */
+    @PostMapping("/stream")
+    public ResponseEntity<Map<String, String>> createStreamChat(
+            @RequestBody Map<String, String> request,
+            @AuthenticationPrincipal String userId) {
+
+        cleanupExpiredStreamChats();
+        String streamId = UUID.randomUUID().toString();
+        pendingStreamChats.put(streamId, new PendingStreamChat(
+                userId,
+                request.getOrDefault("sessionId", "unknown"),
+                request.getOrDefault("message", ""),
+                parseLong(request.get("kbId")),
+                request.get("orgId"),
+                request.get("model"),
+                System.currentTimeMillis()
+        ));
+        return ResponseEntity.ok(Map.of("streamId", streamId));
+    }
+
+    @GetMapping(value = "/stream/{streamId}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamChatById(
+            @PathVariable String streamId,
+            @AuthenticationPrincipal String userId,
+            HttpServletRequest httpRequest) {
+
+        PendingStreamChat request = pendingStreamChats.remove(streamId);
+        if (request == null) {
+            return streamErrorEmitter("流式任务不存在或已过期，请重试");
+        }
+        if (System.currentTimeMillis() - request.createdAtMs() > STREAM_CHAT_TASK_TTL_MS) {
+            return streamErrorEmitter("流式任务已过期，请重试");
+        }
+        if (request.userId() != null && !request.userId().equals(userId)) {
+            log.warn("流式任务用户不匹配 creator={} current={}", request.userId(), userId);
+            return streamErrorEmitter("无权访问该流式任务");
+        }
+        return openStreamChat(
+                request.sessionId(),
+                request.message(),
+                request.kbId(),
+                request.orgId(),
+                request.model(),
+                userId,
+                httpRequest
+        );
+    }
+
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter streamChat(
             @RequestParam String sessionId,
@@ -83,6 +147,16 @@ public class StreamingChatController {
             @AuthenticationPrincipal String userId,
             HttpServletRequest httpRequest) {
 
+        return openStreamChat(sessionId, message, kbId, orgId, model, userId, httpRequest);
+    }
+
+    private SseEmitter openStreamChat(String sessionId,
+                                      String message,
+                                      Long kbId,
+                                      String orgId,
+                                      String model,
+                                      String userId,
+                                      HttpServletRequest httpRequest) {
         SseEmitter emitter = new SseEmitter(120_000L);
         AtomicBoolean completed = new AtomicBoolean(false);
         emitter.onCompletion(() -> completed.set(true));
@@ -140,6 +214,13 @@ public class StreamingChatController {
         log.info("开始流式对话 userId={} sessionId={} orgId={} kbId={} model={}",
                 userId, sessionId, orgId, kbId, model);
 
+        String memorySessionId = isolatedMemorySessionId(sessionId, sanitizedMessage);
+        boolean isolatedMemory = !memorySessionId.equals(sessionId);
+        if (isolatedMemory) {
+            log.info("长文本流式对话使用隔离记忆 userId={} sessionId={} memorySessionId={} messageLength={}",
+                    userId, sessionId, memorySessionId, sanitizedMessage.length());
+        }
+
         // 设置 RAG 检索上下文：只有显式选择知识库（kbId 非空）时生效。
         HybridRagContentRetriever.RetrievalContext ragContext;
         try {
@@ -169,7 +250,7 @@ public class StreamingChatController {
                 (eventName, data) -> sendSseEvent(emitter, completed, eventName, data));
         long startMs = System.currentTimeMillis();
 
-        agentFactory.streamingChatAssistantForModel(model).streamChat(sessionId, sanitizedMessage)
+        agentFactory.streamingChatAssistantForModel(model).streamChat(memorySessionId, sanitizedMessage)
                 .onNext(token -> {
                     // 累积 token 用于后续脱敏
                     fullTextRef.get().append(token);
@@ -227,6 +308,7 @@ public class StreamingChatController {
                     } finally {
                         // 清除 RAG ThreadLocal 上下文，防止内存泄漏
                         HybridRagContentRetriever.clearContext();
+                        cleanupIsolatedMemory(isolatedMemory, memorySessionId);
                     }
                 })
                 .onError(error -> {
@@ -243,11 +325,51 @@ public class StreamingChatController {
                                 error.getMessage() != null ? error.getMessage() : "LLM 调用失败，请重试");
                     } finally {
                         HybridRagContentRetriever.clearContext();
+                        cleanupIsolatedMemory(isolatedMemory, memorySessionId);
                     }
                     completeOnce(emitter, completed);
                 })
                 .start();
 
+        return emitter;
+    }
+
+    private void cleanupExpiredStreamChats() {
+        long now = System.currentTimeMillis();
+        pendingStreamChats.entrySet().removeIf(entry ->
+                now - entry.getValue().createdAtMs() > STREAM_CHAT_TASK_TTL_MS);
+    }
+
+    private Long parseLong(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException ignore) {
+            return null;
+        }
+    }
+
+    private String isolatedMemorySessionId(String sessionId, String message) {
+        if (message == null || message.length() <= isolatedMemoryThresholdChars) {
+            return sessionId;
+        }
+        return sessionId + ":long:" + UUID.randomUUID();
+    }
+
+    private void cleanupIsolatedMemory(boolean isolatedMemory, String memorySessionId) {
+        if (!isolatedMemory) return;
+        try {
+            redisChatMemoryStore.deleteMessages(memorySessionId);
+        } catch (Exception e) {
+            log.debug("清理长文本隔离记忆失败 memorySessionId={} reason={}", memorySessionId, e.getMessage());
+        }
+    }
+
+    private SseEmitter streamErrorEmitter(String message) {
+        SseEmitter emitter = new SseEmitter(10_000L);
+        AtomicBoolean completed = new AtomicBoolean(false);
+        sendSseEvent(emitter, completed, "error", message);
+        completeOnce(emitter, completed);
         return emitter;
     }
 
@@ -283,4 +405,14 @@ public class StreamingChatController {
             emitter.complete();
         }
     }
+
+    private record PendingStreamChat(
+            String userId,
+            String sessionId,
+            String message,
+            Long kbId,
+            String orgId,
+            String model,
+            long createdAtMs
+    ) {}
 }

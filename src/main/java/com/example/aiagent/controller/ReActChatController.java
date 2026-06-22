@@ -20,6 +20,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,6 +31,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -62,6 +65,8 @@ public class ReActChatController {
     private final ChatHistoryService chatHistoryService;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final long REACT_STREAM_TASK_TTL_MS = 120_000L;
+    private final Map<String, PendingReactStream> pendingReactStreams = new ConcurrentHashMap<>();
 
     @Value("${chat.stream.flush-interval-ms:50}")
     private long streamFlushIntervalMs;
@@ -246,7 +251,11 @@ public class ReActChatController {
      * 前端可实时看到思考过程，而不必等全部完成。
      *
      * <pre>
-     * GET /api/v1/chat/react/stream?sessionId=user-123&message=...&token=&lt;jwt&gt;
+     * POST /api/v1/chat/react/stream
+     * Body: {"sessionId": "user-123", "message": "..."}
+     * Response: {"streamId": "..."}
+     *
+     * GET /api/v1/chat/react/stream/{streamId}?token=&lt;jwt&gt;
      *
      * SSE 事件类型：
      *   status          - 当前阶段提示 JSON：{message}
@@ -264,6 +273,53 @@ public class ReActChatController {
      *   done            - 结束标识
      * </pre>
      */
+    @PostMapping("/react/stream")
+    public ResponseEntity<Map<String, String>> createReactStream(
+            @RequestBody Map<String, String> request,
+            @AuthenticationPrincipal String userId) {
+
+        cleanupExpiredReactStreams();
+        String streamId = UUID.randomUUID().toString();
+        pendingReactStreams.put(streamId, new PendingReactStream(
+                userId,
+                request.getOrDefault("sessionId", "unknown"),
+                request.getOrDefault("message", ""),
+                parseLong(request.get("kbId")),
+                request.get("orgId"),
+                request.get("model"),
+                System.currentTimeMillis()
+        ));
+        return ResponseEntity.ok(Map.of("streamId", streamId));
+    }
+
+    @GetMapping(value = "/react/stream/{streamId}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter reactStreamById(
+            @PathVariable String streamId,
+            @AuthenticationPrincipal String userId,
+            HttpServletRequest httpRequest) {
+
+        PendingReactStream request = pendingReactStreams.remove(streamId);
+        if (request == null) {
+            return reactStreamErrorEmitter("深度推理任务不存在或已过期，请重试", "stream_not_found");
+        }
+        if (System.currentTimeMillis() - request.createdAtMs() > REACT_STREAM_TASK_TTL_MS) {
+            return reactStreamErrorEmitter("深度推理任务已过期，请重试", "stream_expired");
+        }
+        if (request.userId() != null && !request.userId().equals(userId)) {
+            log.warn("[ReAct-Stream] streamId 用户不匹配 creator={} current={}", request.userId(), userId);
+            return reactStreamErrorEmitter("无权访问该深度推理任务", "stream_forbidden");
+        }
+        return openReactStream(
+                request.sessionId(),
+                request.message(),
+                request.kbId(),
+                request.orgId(),
+                request.model(),
+                userId,
+                httpRequest
+        );
+    }
+
     @GetMapping(value = "/react/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter reactStream(
             @RequestParam String sessionId,
@@ -274,6 +330,16 @@ public class ReActChatController {
             @AuthenticationPrincipal String userId,
             HttpServletRequest httpRequest) {
 
+        return openReactStream(sessionId, message, kbId, orgId, model, userId, httpRequest);
+    }
+
+    private SseEmitter openReactStream(String sessionId,
+                                      String message,
+                                      Long kbId,
+                                      String orgId,
+                                      String model,
+                                      String userId,
+                                      HttpServletRequest httpRequest) {
         SseEmitter emitter = new SseEmitter(300_000L); // ReAct 可能较慢，超时设 5 分钟
         AtomicBoolean completed = new AtomicBoolean(false);
         emitter.onCompletion(() -> completed.set(true));
@@ -505,6 +571,32 @@ public class ReActChatController {
         return emitter;
     }
 
+    private void cleanupExpiredReactStreams() {
+        long now = System.currentTimeMillis();
+        pendingReactStreams.entrySet().removeIf(entry ->
+                now - entry.getValue().createdAtMs() > REACT_STREAM_TASK_TTL_MS);
+    }
+
+    private Long parseLong(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException ignore) {
+            return null;
+        }
+    }
+
+    private SseEmitter reactStreamErrorEmitter(String message, String code) {
+        SseEmitter emitter = new SseEmitter(10_000L);
+        AtomicBoolean completed = new AtomicBoolean(false);
+        try {
+            sseExecutor.execute(() -> sendReactErrorAndComplete(emitter, completed, message, code));
+        } catch (RejectedExecutionException ex) {
+            sendReactErrorAndComplete(emitter, completed, message, code);
+        }
+        return emitter;
+    }
+
     private void sendReactStatus(SseEmitter emitter, AtomicBoolean completed, String message) {
         try {
             sendSseEvent(emitter, completed, "status", MAPPER.writeValueAsString(Map.of("message", message)));
@@ -607,6 +699,16 @@ public class ReActChatController {
     }
 
     private record ReactError(String message, String code) {}
+
+    private record PendingReactStream(
+            String userId,
+            String sessionId,
+            String message,
+            Long kbId,
+            String orgId,
+            String model,
+            long createdAtMs
+    ) {}
 
     /** 提取客户端真实 IP（兼容 Nginx 反向代理） */
     private String getClientIp(HttpServletRequest request) {

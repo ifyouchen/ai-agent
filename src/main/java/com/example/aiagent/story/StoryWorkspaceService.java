@@ -4,10 +4,13 @@ import com.example.aiagent.story.entity.*;
 import com.example.aiagent.story.mapper.*;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.Resource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -16,6 +19,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.RejectedExecutionException;
 
 @Service
 @RequiredArgsConstructor
@@ -36,6 +44,10 @@ public class StoryWorkspaceService {
     private final StoryAiService storyAiService;
     private final StoryExportService storyExportService;
     private final StoryImportService storyImportService;
+    @Resource(name = "sseTaskExecutor")
+    private Executor rewriteTaskExecutor;
+    private final Map<Long, FutureTask<Void>> runningRewriteTasks = new ConcurrentHashMap<>();
+    private final Map<Long, FutureTask<Void>> runningGenerationTasks = new ConcurrentHashMap<>();
 
     @Transactional(readOnly = true)
     public List<Map<String, Object>> listProjects(String type) {
@@ -331,15 +343,7 @@ public class StoryWorkspaceService {
         String rewriteMode = string(payload.get("rewriteMode"), "deslop");
         String instruction = string(payload.get("instruction"), "");
         List<Map<String, Object>> segments = splitParagraphs(source).stream()
-                .map(text -> {
-                    Map<String, Object> segment = new LinkedHashMap<>();
-                    String fallback = rewriteText(text, rewriteMode);
-                    segment.put("source", text);
-                    segment.put("rewritten", useFallback(payload) ? fallback : storyAiService.rewriteSegment(text, rewriteMode, instruction, fallback));
-                    segment.put("note", "降低书面腔，保留剧情功能，增加动作和口语感。");
-                    segment.put("status", "pending");
-                    return segment;
-                })
+                .map(text -> rewriteSegmentSkeleton(text))
                 .toList();
 
         RewriteTask task = RewriteTask.builder()
@@ -349,16 +353,17 @@ public class StoryWorkspaceService {
                 .sourceText(source)
                 .rewriteMode(rewriteMode)
                 .instruction(instruction)
-                .status("completed")
+                .status("pending")
                 .segmentsJson(toJson(segments))
-                .resultText(segments.stream().map(s -> string(s.get("rewritten"), "")).reduce((a, b) -> a + "\n\n" + b).orElse(""))
-                .diffPayload("{}")
-                .completedAt(Instant.now())
+                .resultText("")
+                .diffPayload(toJson(rewriteMeta(0, "排队中", null, rewriteSummaryNote(rewriteMode))))
+                .completedAt(null)
                 .build();
         rewriteTaskMapper.insert(task);
         projectMapper.updateStatus(projectId, "rewriting");
-        log.info("创建改写任务 projectId={} chapterId={} taskId={} mode={} segmentCount={} sourceLength={}",
+        log.info("提交改写任务 projectId={} chapterId={} taskId={} mode={} segmentCount={} sourceLength={}",
                 projectId, task.getChapterId(), task.getId(), rewriteMode, segments.size(), source.length());
+        startRewriteTask(task.getId(), useFallback(payload));
         return rewriteTaskMap(task);
     }
 
@@ -372,18 +377,18 @@ public class StoryWorkspaceService {
     public Map<String, Object> acceptRewrite(Long id, Map<String, Object> payload) {
         RewriteTask task = rewriteTaskMapper.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("改写任务不存在：" + id));
+        if (!List.of("completed", "accepted").contains(task.getStatus())) {
+            throw new IllegalArgumentException("改写任务尚未完成，不能保存为新版本");
+        }
         List<Map<String, Object>> segments = segmentsFrom(payload.get("segments") == null ? task.getSegmentsJson() : payload.get("segments"));
+        String content = rewriteResultText(segments);
         if (task.getChapterId() != null) {
-            String content = segments.stream()
-                    .map(segment -> "rejected".equals(segment.get("status")) ? string(segment.get("source"), "") : string(segment.get("rewritten"), ""))
-                    .reduce((a, b) -> a + "\n\n" + b)
-                    .orElse("");
             updateChapter(task.getChapterId(), Map.of("content", content, "source", "rewrite_accept", "note", "接受改写任务 " + id));
         }
         task.setStatus("accepted");
         task.setSegmentsJson(toJson(segments));
-        task.setResultText(segments.stream().map(s -> string(s.get("rewritten"), "")).reduce((a, b) -> a + "\n\n" + b).orElse(""));
-        task.setDiffPayload("{}");
+        task.setResultText(content);
+        task.setDiffPayload(toJson(rewriteMeta(100, "已保存为新版本", null, rewriteSummaryNote(task.getRewriteMode()))));
         task.setCompletedAt(Instant.now());
         rewriteTaskMapper.update(task);
         log.info("接受改写结果 projectId={} chapterId={} taskId={} segmentCount={}",
@@ -407,65 +412,343 @@ public class StoryWorkspaceService {
     }
 
     @Transactional
+    public Map<String, Object> cancelRewrite(Long id) {
+        RewriteTask task = rewriteTaskMapper.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("改写任务不存在：" + id));
+        if (List.of("completed", "accepted", "failed", "canceled").contains(task.getStatus())) {
+            return rewriteTaskMap(task);
+        }
+        FutureTask<Void> future = runningRewriteTasks.remove(id);
+        if (future != null) future.cancel(true);
+        task.setStatus("canceled");
+        task.setDiffPayload(toJson(rewriteMeta(
+                progressFromMeta(task.getDiffPayload()),
+                "用户已终止改写",
+                null,
+                rewriteSummaryNote(task.getRewriteMode())
+        )));
+        task.setCompletedAt(Instant.now());
+        rewriteTaskMapper.update(task);
+        log.info("取消改写任务 taskId={} projectId={} chapterId={}", id, task.getProjectId(), task.getChapterId());
+        return rewriteTaskMap(task);
+    }
+
+    private void startRewriteTask(Long taskId, boolean forceFallback) {
+        Runnable start = () -> {
+            try {
+                FutureTask<Void> future = new FutureTask<>(() -> {
+                    try {
+                        runRewriteTask(taskId, forceFallback);
+                    } finally {
+                        runningRewriteTasks.remove(taskId);
+                    }
+                    return null;
+                });
+                runningRewriteTasks.put(taskId, future);
+                rewriteTaskExecutor.execute(future);
+            } catch (RejectedExecutionException e) {
+                runningRewriteTasks.remove(taskId);
+                log.warn("改写任务线程池已满 taskId={}", taskId);
+                markRewriteFailed(taskId, "服务繁忙，请稍后重试");
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    start.run();
+                }
+            });
+        } else {
+            start.run();
+        }
+    }
+
+    private void runRewriteTask(Long taskId, boolean forceFallback) {
+        RewriteTask task = rewriteTaskMapper.findById(taskId)
+                .orElseThrow(() -> new IllegalArgumentException("改写任务不存在：" + taskId));
+        if ("canceled".equals(task.getStatus()) || Thread.currentThread().isInterrupted()) {
+            markRewriteCanceled(taskId, task);
+            return;
+        }
+        List<Map<String, Object>> segments = new ArrayList<>(segmentsFrom(task.getSegmentsJson()));
+        int total = Math.max(segments.size(), 1);
+        task.setStatus("running");
+        task.setDiffPayload(toJson(rewriteMeta(1, "开始逐段改写", null, rewriteSummaryNote(task.getRewriteMode()))));
+        rewriteTaskMapper.update(task);
+        try {
+            for (int i = 0; i < segments.size(); i++) {
+                ensureRewriteNotCanceled(taskId);
+                Map<String, Object> segment = new LinkedHashMap<>(segments.get(i));
+                String source = string(segment.get("source"), "");
+                String fallback = rewriteText(source, task.getRewriteMode());
+                String rewritten = forceFallback
+                        ? fallback
+                        : storyAiService.rewriteSegment(source, task.getRewriteMode(), task.getInstruction(), fallback);
+                ensureRewriteNotCanceled(taskId);
+                segment.put("rewritten", rewritten);
+                segment.put("status", "accepted");
+                segment.put("note", "");
+                segments.set(i, segment);
+                int progress = Math.min(95, Math.max(5, ((i + 1) * 95) / total));
+                task.setSegmentsJson(toJson(segments));
+                task.setResultText(rewriteResultText(segments));
+                task.setDiffPayload(toJson(rewriteMeta(
+                        progress,
+                        "正在改写第 " + (i + 1) + " / " + segments.size() + " 段",
+                        null,
+                        rewriteSummaryNote(task.getRewriteMode())
+                )));
+                rewriteTaskMapper.update(task);
+            }
+            ensureRewriteNotCanceled(taskId);
+            task.setStatus("completed");
+            task.setSegmentsJson(toJson(segments));
+            task.setResultText(rewriteResultText(segments));
+            task.setDiffPayload(toJson(rewriteMeta(100, "改写完成，可进入三栏对照审核", null, rewriteSummaryNote(task.getRewriteMode()))));
+            task.setCompletedAt(Instant.now());
+            rewriteTaskMapper.update(task);
+            log.info("改写任务完成 taskId={} projectId={} segmentCount={}", taskId, task.getProjectId(), segments.size());
+        } catch (CancellationException e) {
+            markRewriteCanceled(taskId, task);
+        } catch (Exception e) {
+            log.error("改写任务失败 taskId={}", taskId, e);
+            task.setStatus("failed");
+            task.setDiffPayload(toJson(rewriteMeta(
+                    progressFromMeta(task.getDiffPayload()),
+                    "改写失败",
+                    e.getMessage(),
+                    rewriteSummaryNote(task.getRewriteMode())
+            )));
+            task.setCompletedAt(Instant.now());
+            rewriteTaskMapper.update(task);
+        }
+    }
+
+    private void ensureRewriteNotCanceled(Long taskId) {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new CancellationException("改写任务已取消");
+        }
+        rewriteTaskMapper.findById(taskId).ifPresent(task -> {
+            if ("canceled".equals(task.getStatus())) {
+                throw new CancellationException("改写任务已取消");
+            }
+        });
+    }
+
+    private void markRewriteCanceled(Long taskId, RewriteTask task) {
+        task.setStatus("canceled");
+        task.setDiffPayload(toJson(rewriteMeta(
+                progressFromMeta(task.getDiffPayload()),
+                "用户已终止改写",
+                null,
+                rewriteSummaryNote(task.getRewriteMode())
+        )));
+        task.setCompletedAt(Instant.now());
+        rewriteTaskMapper.update(task);
+        log.info("改写任务已终止 taskId={} projectId={}", taskId, task.getProjectId());
+    }
+
+    private void markRewriteFailed(Long taskId, String message) {
+        rewriteTaskMapper.findById(taskId).ifPresent(task -> {
+            task.setStatus("failed");
+            task.setDiffPayload(toJson(rewriteMeta(0, "改写失败", message, rewriteSummaryNote(task.getRewriteMode()))));
+            task.setCompletedAt(Instant.now());
+            rewriteTaskMapper.update(task);
+        });
+    }
+
+    @Transactional
     public Map<String, Object> convertToScript(Map<String, Object> payload) {
         Long projectId = longValue(payload.get("projectId"));
-        StoryProject project = projectMapper.findById(projectId)
+        projectMapper.findById(projectId)
                 .orElseThrow(() -> new IllegalArgumentException("作品不存在：" + projectId));
         int targetEpisodes = intValue(payload.get("targetEpisodes"), 3);
-        String sourceText = projectSourceText(projectId);
-        Map<String, Object> fallback = fallbackScriptDraft(project.getTitle(), targetEpisodes);
-        Map<String, Object> generated = useFallback(payload)
-                ? fallback
-                : storyAiService.generateScriptDraft(project.getTitle(), sourceText, targetEpisodes, fallback);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> adaptationPlan = generated.get("adaptationPlan") instanceof Map<?, ?> map
-                ? (Map<String, Object>) map
-                : fallbackAdaptationPlan();
-        List<Map<String, Object>> generatedEpisodes = mapList(generated.get("episodes"));
-        if (generatedEpisodes.isEmpty()) {
-            generatedEpisodes = mapList(fallbackScriptDraft(project.getTitle(), targetEpisodes).get("episodes"));
-        }
-
         GenerationTask task = GenerationTask.builder()
                 .taskType("script_convert")
                 .projectId(projectId)
-                .status("completed")
-                .progress(100)
-                .currentStep("短剧分场稿已生成")
-                .tokenUsage(estimateTokenUsage(sourceText, generatedEpisodes))
+                .status("pending")
+                .progress(0)
+                .currentStep("排队中")
+                .errorMessage(null)
+                .tokenUsage("{}")
                 .build();
         generationTaskMapper.insert(task);
-
-        ScriptDraft draft = ScriptDraft.builder()
-                .projectId(projectId)
-                .title(project.getTitle() + " - 短剧分场稿")
-                .sourceRef("project:" + projectId)
-                .episodeCount(generatedEpisodes.size())
-                .status("draft")
-                .qualityScore(0)
-                .adaptationPlan(toJson(adaptationPlan))
-                .qualityReport("{}")
-                .build();
-        draftMapper.insert(draft);
-
-        int episodeIndex = 1;
-        for (Map<String, Object> episodePayload : generatedEpisodes) {
-            ScriptEpisode episode = buildEpisode(draft.getId(), episodePayload, episodeIndex);
-            episodeMapper.insert(episode);
-            List<Map<String, Object>> scenes = mapList(episodePayload.get("scenes"));
-            if (scenes.isEmpty()) scenes = mapList(fallbackEpisode(episodeIndex).get("scenes"));
-            int sceneIndex = 1;
-            for (Map<String, Object> scenePayload : scenes) {
-                ScriptScene scene = buildScene(episode.getId(), scenePayload, sceneIndex);
-                sceneMapper.insert(scene);
-                sceneIndex++;
-            }
-            episodeIndex++;
-        }
         projectMapper.updateStatus(projectId, "adapting");
-        log.info("转短剧完成 projectId={} taskId={} draftId={} targetEpisodes={} generatedEpisodes={} 使用兜底={} sourceLength={}",
-                projectId, task.getId(), draft.getId(), targetEpisodes, generatedEpisodes.size(), useFallback(payload), sourceText.length());
-        return Map.of("id", task.getId(), "draftId", draft.getId(), "projectId", projectId, "status", "completed", "progress", 100);
+        log.info("提交转短剧任务 projectId={} taskId={} targetEpisodes={} 使用兜底={}",
+                projectId, task.getId(), targetEpisodes, useFallback(payload));
+        startScriptConvertTask(task.getId(), projectId, targetEpisodes, useFallback(payload));
+        return generationTaskMap(task);
+    }
+
+    private void startScriptConvertTask(Long taskId, Long projectId, int targetEpisodes, boolean forceFallback) {
+        Runnable start = () -> {
+            try {
+                FutureTask<Void> future = new FutureTask<>(() -> {
+                    try {
+                        runScriptConvertTask(taskId, projectId, targetEpisodes, forceFallback);
+                    } finally {
+                        runningGenerationTasks.remove(taskId);
+                    }
+                    return null;
+                });
+                runningGenerationTasks.put(taskId, future);
+                rewriteTaskExecutor.execute(future);
+            } catch (RejectedExecutionException e) {
+                runningGenerationTasks.remove(taskId);
+                log.warn("转短剧任务线程池已满 taskId={}", taskId);
+                markGenerationFailed(taskId, "服务繁忙，请稍后重试");
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    start.run();
+                }
+            });
+        } else {
+            start.run();
+        }
+    }
+
+    private void runScriptConvertTask(Long taskId, Long projectId, int targetEpisodes, boolean forceFallback) {
+        GenerationTask task = generationTaskMapper.findById(taskId)
+                .orElseThrow(() -> new IllegalArgumentException("生成任务不存在：" + taskId));
+        Long draftId = null;
+        try {
+            ensureGenerationNotCanceled(taskId);
+            task.setStatus("running");
+            task.setProgress(5);
+            task.setCurrentStep("正在读取小说正文");
+            task.setErrorMessage(null);
+            generationTaskMapper.update(task);
+
+            StoryProject project = projectMapper.findById(projectId)
+                    .orElseThrow(() -> new IllegalArgumentException("作品不存在：" + projectId));
+            String sourceText = projectSourceText(projectId);
+            Map<String, Object> fallback = fallbackScriptDraft(project.getTitle(), sourceText, targetEpisodes);
+            ensureGenerationNotCanceled(taskId);
+
+            task.setProgress(15);
+            task.setCurrentStep("正在生成改编方案和分集");
+            generationTaskMapper.update(task);
+
+            Map<String, Object> generated = forceFallback
+                    ? fallback
+                    : storyAiService.generateScriptDraft(project.getTitle(), sourceText, targetEpisodes, fallback);
+            ensureGenerationNotCanceled(taskId);
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> adaptationPlan = generated.get("adaptationPlan") instanceof Map<?, ?> map
+                    ? (Map<String, Object>) map
+                    : fallbackAdaptationPlan();
+            List<Map<String, Object>> generatedEpisodes = mapList(generated.get("episodes"));
+            if (generatedEpisodes.isEmpty()) {
+                generatedEpisodes = mapList(fallbackScriptDraft(project.getTitle(), sourceText, targetEpisodes).get("episodes"));
+            }
+
+            task.setProgress(65);
+            task.setCurrentStep("正在保存短剧分场稿");
+            task.setTokenUsage(estimateTokenUsage(sourceText, generatedEpisodes));
+            generationTaskMapper.update(task);
+
+            ScriptDraft draft = ScriptDraft.builder()
+                    .projectId(projectId)
+                    .title(project.getTitle() + " - 短剧分场稿")
+                    .sourceRef("project:" + projectId)
+                    .episodeCount(generatedEpisodes.size())
+                    .status("draft")
+                    .qualityScore(0)
+                    .adaptationPlan(toJson(adaptationPlan))
+                    .qualityReport("{}")
+                    .build();
+            draftMapper.insert(draft);
+            draftId = draft.getId();
+
+            int episodeIndex = 1;
+            for (Map<String, Object> episodePayload : generatedEpisodes) {
+                ensureGenerationNotCanceled(taskId);
+                ScriptEpisode episode = buildEpisode(draft.getId(), episodePayload, episodeIndex);
+                episodeMapper.insert(episode);
+                List<Map<String, Object>> scenes = mapList(episodePayload.get("scenes"));
+                if (scenes.isEmpty()) scenes = mapList(fallbackEpisode(episodeIndex, episodePayload).get("scenes"));
+                int sceneIndex = 1;
+                for (Map<String, Object> scenePayload : scenes) {
+                    ensureGenerationNotCanceled(taskId);
+                    ScriptScene scene = buildScene(episode.getId(), scenePayload, sceneIndex, episodePayload);
+                    sceneMapper.insert(scene);
+                    sceneIndex++;
+                }
+                int progress = Math.min(95, 65 + (episodeIndex * 30) / Math.max(generatedEpisodes.size(), 1));
+                task.setProgress(progress);
+                task.setCurrentStep("正在保存第 " + episodeIndex + " / " + generatedEpisodes.size() + " 集");
+                generationTaskMapper.update(task);
+                episodeIndex++;
+            }
+
+            ensureGenerationNotCanceled(taskId);
+            task.setStatus("completed");
+            task.setProgress(100);
+            task.setCurrentStep("短剧分场稿已生成");
+            task.setErrorMessage(null);
+            generationTaskMapper.update(task);
+            projectMapper.updateStatus(projectId, "adapting");
+            log.info("转短剧完成 projectId={} taskId={} draftId={} targetEpisodes={} generatedEpisodes={} 使用兜底={} sourceLength={}",
+                    projectId, taskId, draft.getId(), targetEpisodes, generatedEpisodes.size(), forceFallback, sourceText.length());
+        } catch (CancellationException e) {
+            cleanupScriptDraft(draftId);
+            markGenerationCanceled(taskId);
+        } catch (Exception e) {
+            cleanupScriptDraft(draftId);
+            log.error("转短剧任务失败 taskId={} projectId={}", taskId, projectId, e);
+            markGenerationFailed(taskId, e.getMessage());
+        }
+    }
+
+    private void cleanupScriptDraft(Long draftId) {
+        if (draftId == null) return;
+        try {
+            draftMapper.deleteById(draftId);
+            log.info("清理未完成短剧草稿 draftId={}", draftId);
+        } catch (Exception cleanupError) {
+            log.warn("清理未完成短剧草稿失败 draftId={} error={}", draftId, cleanupError.getMessage());
+        }
+    }
+
+    private void ensureGenerationNotCanceled(Long taskId) {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new CancellationException("生成任务已取消");
+        }
+        generationTaskMapper.findById(taskId).ifPresent(task -> {
+            if ("canceled".equals(task.getStatus())) {
+                throw new CancellationException("生成任务已取消");
+            }
+        });
+    }
+
+    private void markGenerationCanceled(Long taskId) {
+        generationTaskMapper.findById(taskId).ifPresent(task -> {
+            if ("completed".equals(task.getStatus())) return;
+            task.setStatus("canceled");
+            task.setProgress(task.getProgress() == null ? 0 : task.getProgress());
+            task.setCurrentStep("用户已终止任务");
+            task.setErrorMessage(null);
+            generationTaskMapper.update(task);
+            log.info("生成任务已终止 taskId={} projectId={} taskType={}",
+                    taskId, task.getProjectId(), task.getTaskType());
+        });
+    }
+
+    private void markGenerationFailed(Long taskId, String message) {
+        generationTaskMapper.findById(taskId).ifPresent(task -> {
+            if ("canceled".equals(task.getStatus())) return;
+            task.setStatus("failed");
+            task.setProgress(task.getProgress() == null ? 0 : task.getProgress());
+            task.setCurrentStep("任务失败");
+            task.setErrorMessage(string(message, "生成失败"));
+            generationTaskMapper.update(task);
+        });
     }
 
     @Transactional(readOnly = true)
@@ -482,16 +765,37 @@ public class StoryWorkspaceService {
         return generationTaskMap(task);
     }
 
+    @Transactional(readOnly = true)
+    public Map<String, Object> listTaskHistory(int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 100));
+        List<Map<String, Object>> generationTasks = generationTaskMapper.findRecent(safeLimit).stream()
+                .map(this::generationTaskHistoryMap)
+                .toList();
+        List<Map<String, Object>> rewriteTasks = rewriteTaskMapper.findRecent(safeLimit).stream()
+                .map(this::rewriteTaskHistoryMap)
+                .toList();
+        List<Map<String, Object>> tasks = new ArrayList<>();
+        tasks.addAll(generationTasks);
+        tasks.addAll(rewriteTasks);
+        tasks.sort((a, b) -> String.valueOf(b.get("updatedAt")).compareTo(String.valueOf(a.get("updatedAt"))));
+        if (tasks.size() > safeLimit) {
+            tasks = new ArrayList<>(tasks.subList(0, safeLimit));
+        }
+        return Map.of("tasks", tasks, "limit", safeLimit);
+    }
+
     @Transactional
     public Map<String, Object> cancelGenerationTask(Long taskId) {
         GenerationTask task = generationTaskMapper.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("生成任务不存在：" + taskId));
-        if ("completed".equals(task.getStatus())) {
+        if (List.of("completed", "failed", "canceled").contains(task.getStatus())) {
             return generationTaskMap(task);
         }
+        FutureTask<Void> future = runningGenerationTasks.remove(taskId);
+        if (future != null) future.cancel(true);
         task.setStatus("canceled");
         task.setProgress(task.getProgress() == null ? 0 : task.getProgress());
-        task.setCurrentStep("用户已取消任务");
+        task.setCurrentStep("用户已终止任务");
         task.setErrorMessage(null);
         generationTaskMapper.update(task);
         log.info("取消生成任务 taskId={} projectId={} taskType={} status={}",
@@ -734,6 +1038,7 @@ public class StoryWorkspaceService {
 
     private Map<String, Object> rewriteTaskMap(RewriteTask task) {
         Map<String, Object> map = new LinkedHashMap<>();
+        Map<String, Object> diff = fromJsonObject(task.getDiffPayload());
         map.put("id", task.getId());
         map.put("projectId", task.getProjectId());
         map.put("chapterId", task.getChapterId());
@@ -744,10 +1049,75 @@ public class StoryWorkspaceService {
         map.put("status", task.getStatus());
         map.put("segments", segmentsFrom(task.getSegmentsJson()));
         map.put("resultText", task.getResultText());
-        map.put("diffPayload", fromJsonObject(task.getDiffPayload()));
+        map.put("progress", intValue(diff.get("progress"), rewriteProgressFallback(task)));
+        map.put("currentStep", string(diff.get("currentStep"), rewriteStepFallback(task)));
+        map.put("errorMessage", string(diff.get("errorMessage"), ""));
+        map.put("summaryNote", string(diff.get("summaryNote"), rewriteSummaryNote(task.getRewriteMode())));
+        map.put("diffPayload", diff);
         map.put("createdAt", instant(task.getCreatedAt()));
         map.put("completedAt", instant(task.getCompletedAt()));
         return map;
+    }
+
+    private Map<String, Object> rewriteSegmentSkeleton(String source) {
+        Map<String, Object> segment = new LinkedHashMap<>();
+        segment.put("source", source);
+        segment.put("rewritten", "");
+        segment.put("note", "");
+        segment.put("status", "accepted");
+        return segment;
+    }
+
+    private String rewriteResultText(List<Map<String, Object>> segments) {
+        return segments.stream()
+                .map(segment -> "rejected".equals(segment.get("status"))
+                        ? string(segment.get("source"), "")
+                        : string(segment.get("rewritten"), string(segment.get("source"), "")))
+                .reduce((a, b) -> a + "\n\n" + b)
+                .orElse("");
+    }
+
+    private Map<String, Object> rewriteMeta(int progress, String currentStep, String errorMessage, String summaryNote) {
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("progress", Math.max(0, Math.min(100, progress)));
+        meta.put("currentStep", string(currentStep, ""));
+        meta.put("errorMessage", string(errorMessage, ""));
+        meta.put("summaryNote", string(summaryNote, rewriteSummaryNote("deslop")));
+        return meta;
+    }
+
+    private int progressFromMeta(String diffPayload) {
+        return intValue(fromJsonObject(diffPayload).get("progress"), 0);
+    }
+
+    private int rewriteProgressFallback(RewriteTask task) {
+        return switch (string(task.getStatus(), "")) {
+            case "completed", "accepted" -> 100;
+            case "failed" -> 0;
+            case "canceled" -> progressFromMeta(task.getDiffPayload());
+            case "running" -> 50;
+            default -> 0;
+        };
+    }
+
+    private String rewriteStepFallback(RewriteTask task) {
+        return switch (string(task.getStatus(), "")) {
+            case "completed" -> "改写完成，可进入三栏对照审核";
+            case "accepted" -> "已保存为新版本";
+            case "failed" -> "改写失败";
+            case "canceled" -> "用户已终止改写";
+            case "running" -> "正在改写";
+            default -> "排队中";
+        };
+    }
+
+    private String rewriteSummaryNote(String rewriteMode) {
+        return switch (string(rewriteMode, "deslop")) {
+            case "dialogue" -> "本次重点优化对白口语感和冲突感，逐段确认后保存为新版本。";
+            case "polish" -> "本次重点提升文字流畅度和可读性，逐段确认后保存为新版本。";
+            case "conflict" -> "本次重点强化压迫、误会和反转密度，逐段确认后保存为新版本。";
+            default -> "本次重点降低书面腔，保留剧情功能，增加动作和口语感。逐段确认后保存为新版本。";
+        };
     }
 
     private Map<String, Object> draftSummaryMap(ScriptDraft draft) {
@@ -833,7 +1203,7 @@ public class StoryWorkspaceService {
         map.put("id", task.getId());
         map.put("taskType", task.getTaskType());
         map.put("projectId", task.getProjectId());
-        if ("script_convert".equals(task.getTaskType()) && task.getProjectId() != null) {
+        if ("script_convert".equals(task.getTaskType()) && task.getProjectId() != null && "completed".equals(task.getStatus())) {
             draftMapper.findByProjectId(task.getProjectId()).stream()
                     .max((a, b) -> Long.compare(a.getId(), b.getId()))
                     .ifPresent(draft -> map.put("draftId", draft.getId()));
@@ -844,6 +1214,62 @@ public class StoryWorkspaceService {
         map.put("errorMessage", task.getErrorMessage());
         map.put("tokenUsage", fromJsonObject(task.getTokenUsage()));
         return map;
+    }
+
+    private Map<String, Object> generationTaskHistoryMap(GenerationTask task) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("kind", "generation");
+        map.put("id", "generation-" + task.getId());
+        map.put("taskId", task.getId());
+        map.put("taskType", task.getTaskType());
+        map.put("title", generationTaskTitle(task));
+        map.put("status", task.getStatus());
+        map.put("progress", task.getProgress());
+        map.put("currentStep", task.getCurrentStep());
+        map.put("errorMessage", task.getErrorMessage());
+        map.put("projectId", task.getProjectId());
+        map.put("projectTitle", projectTitle(task.getProjectId()));
+        if ("script_convert".equals(task.getTaskType()) && task.getProjectId() != null && "completed".equals(task.getStatus())) {
+            draftMapper.findByProjectId(task.getProjectId()).stream()
+                    .max((a, b) -> Long.compare(a.getId(), b.getId()))
+                    .ifPresent(draft -> map.put("draftId", draft.getId()));
+        }
+        map.put("createdAt", instant(task.getCreatedAt()));
+        map.put("updatedAt", instant(task.getUpdatedAt()));
+        return map;
+    }
+
+    private Map<String, Object> rewriteTaskHistoryMap(RewriteTask task) {
+        Map<String, Object> diff = fromJsonObject(task.getDiffPayload());
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("kind", "rewrite");
+        map.put("id", "rewrite-" + task.getId());
+        map.put("taskId", task.getId());
+        map.put("taskType", "story_rewrite");
+        map.put("title", "改小说三栏对照");
+        map.put("status", task.getStatus());
+        map.put("progress", intValue(diff.get("progress"), rewriteProgressFallback(task)));
+        map.put("currentStep", string(diff.get("currentStep"), rewriteStepFallback(task)));
+        map.put("errorMessage", string(diff.get("errorMessage"), ""));
+        map.put("projectId", task.getProjectId());
+        map.put("projectTitle", projectTitle(task.getProjectId()));
+        map.put("chapterId", task.getChapterId());
+        map.put("rewriteMode", task.getRewriteMode());
+        map.put("createdAt", instant(task.getCreatedAt()));
+        map.put("updatedAt", instant(task.getCompletedAt() == null ? task.getCreatedAt() : task.getCompletedAt()));
+        return map;
+    }
+
+    private String generationTaskTitle(GenerationTask task) {
+        return switch (string(task.getTaskType(), "")) {
+            case "script_convert" -> "短剧分场稿生成";
+            default -> "AI 生成任务";
+        };
+    }
+
+    private String projectTitle(Long projectId) {
+        if (projectId == null) return "";
+        return projectMapper.findById(projectId).map(StoryProject::getTitle).orElse("");
     }
 
     private ScriptEpisode buildEpisode(Long draftId, Map<String, Object> payload, int fallbackNo) {
@@ -874,21 +1300,32 @@ public class StoryWorkspaceService {
     }
 
     private ScriptScene buildScene(Long episodeId, Map<String, Object> payload, int fallbackNo) {
+        return buildScene(episodeId, payload, fallbackNo, Map.of());
+    }
+
+    private ScriptScene buildScene(Long episodeId, Map<String, Object> payload, int fallbackNo, Map<String, Object> episodePayload) {
         int sceneNo = intValue(payload.get("sceneNo"), fallbackNo);
+        Map<String, Object> fallback = fallbackScene(
+                intValue(episodePayload.get("episodeNo"), 1),
+                sceneNo,
+                string(episodePayload.get("title"), "第" + intValue(episodePayload.get("episodeNo"), 1) + "集"),
+                string(episodePayload.get("mainConflict"), ""),
+                string(episodePayload.get("summary"), "")
+        );
         return ScriptScene.builder()
                 .episodeId(episodeId)
                 .sceneNo(sceneNo)
-                .sceneTitle(string(payload.get("sceneTitle"), sceneNo == 1 ? "开场压迫" : "反击前夜"))
-                .location(string(payload.get("location"), "内景｜议事厅｜夜"))
-                .timeOfDay(string(payload.get("timeOfDay"), "夜"))
-                .characters(string(payload.get("characters"), "主角、对手、旁观者"))
-                .sceneFunction(string(payload.get("sceneFunction"), sceneNo == 1 ? "建立冲突和压迫" : "推进反转并留下钩子"))
-                .estimatedDuration(string(payload.get("estimatedDuration"), "40秒"))
-                .visualAction(string(payload.get("visualAction"), "众人围住主角，对手把证据拍在桌上，主角没有退后。"))
-                .narration(string(payload.get("narration"), "少量交代背景，避免替代表演。"))
-                .dialogue(string(payload.get("dialogue"), "对手：你还有什么话说？\n主角：话当然有，但不是现在说。"))
-                .performanceCameraNote(string(payload.get("performanceCameraNote"), "镜头从证据推到主角手指，手指收紧。"))
-                .hook(string(payload.get("hook"), "门外传来一句：证据是假的。"))
+                .sceneTitle(scriptField(payload, "sceneTitle", fallback))
+                .location(scriptField(payload, "location", fallback))
+                .timeOfDay(scriptField(payload, "timeOfDay", fallback))
+                .characters(scriptField(payload, "characters", fallback))
+                .sceneFunction(scriptField(payload, "sceneFunction", fallback))
+                .estimatedDuration(scriptField(payload, "estimatedDuration", fallback))
+                .visualAction(scriptField(payload, "visualAction", fallback))
+                .narration(scriptField(payload, "narration", fallback))
+                .dialogue(scriptField(payload, "dialogue", fallback))
+                .performanceCameraNote(scriptField(payload, "performanceCameraNote", fallback))
+                .hook(scriptField(payload, "hook", fallback))
                 .build();
     }
 
@@ -999,11 +1436,19 @@ public class StoryWorkspaceService {
     }
 
     private Map<String, Object> fallbackScriptDraft(String projectTitle, int targetEpisodes) {
+        return fallbackScriptDraft(projectTitle, "", targetEpisodes);
+    }
+
+    private Map<String, Object> fallbackScriptDraft(String projectTitle, String sourceText, int targetEpisodes) {
         Map<String, Object> draft = new LinkedHashMap<>();
         draft.put("adaptationPlan", fallbackAdaptationPlan());
         List<Map<String, Object>> episodes = new ArrayList<>();
         int count = Math.max(1, Math.min(targetEpisodes, 8));
-        for (int i = 1; i <= count; i++) episodes.add(fallbackEpisode(i));
+        List<String> sourceSlices = sourceSlices(sourceText, count);
+        for (int i = 1; i <= count; i++) {
+            String slice = sourceSlices.size() >= i ? sourceSlices.get(i - 1) : "";
+            episodes.add(fallbackEpisode(i, projectTitle, slice));
+        }
         draft.put("episodes", episodes);
         return draft;
     }
@@ -1018,33 +1463,122 @@ public class StoryWorkspaceService {
     }
 
     private Map<String, Object> fallbackEpisode(int episodeNo) {
+        return fallbackEpisode(episodeNo, "", "");
+    }
+
+    private Map<String, Object> fallbackEpisode(int episodeNo, Map<String, Object> base) {
+        Map<String, Object> episode = new LinkedHashMap<>(base);
+        episode.put("episodeNo", intValue(base.get("episodeNo"), episodeNo));
+        episode.put("title", string(base.get("title"), "第" + episodeNo + "集"));
+        episode.put("estimatedDuration", string(base.get("estimatedDuration"), "1-3分钟"));
+        episode.put("coreHook", string(base.get("coreHook"), episodeNo == 1 ? "主角被迫面对突发压力" : "关系误会升级"));
+        episode.put("mainConflict", string(base.get("mainConflict"), string(base.get("summary"), "主角目标与现实阻碍正面冲突")));
+        episode.put("endingHook", string(base.get("endingHook"), "新的线索出现，逼出下一场选择"));
+        episode.put("summary", string(base.get("summary"), "围绕当前事件推进一次冲突与反转。"));
+        episode.put("scenes", List.of(
+                fallbackScene(episodeNo, 1, string(episode.get("title"), ""), string(episode.get("mainConflict"), ""), string(episode.get("summary"), "")),
+                fallbackScene(episodeNo, 2, string(episode.get("title"), ""), string(episode.get("mainConflict"), ""), string(episode.get("summary"), ""))
+        ));
+        return episode;
+    }
+
+    private Map<String, Object> fallbackEpisode(int episodeNo, String projectTitle, String sourceExcerpt) {
+        String seed = trimForFallback(sourceExcerpt, 120);
+        String title = episodeNo == 1 ? "第1集：变故开场" : "第" + episodeNo + "集：压力升级";
+        String conflict = seed.isBlank()
+                ? "主角在关键节点被外部压力逼到必须表态"
+                : "围绕“" + seed + "”外化为当场冲突";
+        String summary = seed.isBlank()
+                ? "从" + string(projectTitle, "原作") + "中提炼当前阶段事件，压缩成一轮可拍的短剧冲突。"
+                : "本集截取原文事件：“" + seed + "”，改成动作、对白和场面推进。";
         Map<String, Object> episode = new LinkedHashMap<>();
         episode.put("episodeNo", episodeNo);
-        episode.put("title", "第" + episodeNo + "集");
+        episode.put("title", title);
         episode.put("estimatedDuration", "1-3分钟");
-        episode.put("coreHook", episodeNo == 1 ? "主角被当众逼入绝境" : "误会升级，关系反转");
-        episode.put("mainConflict", "主角目标与外部阻碍正面冲突");
-        episode.put("endingHook", "关键证据出现，但说出真相的人突然沉默");
-        episode.put("summary", "围绕核心冲突推进一轮短剧节奏。");
-        episode.put("scenes", List.of(fallbackScene(1), fallbackScene(2)));
+        episode.put("coreHook", episodeNo == 1 ? "开场直接抛出异常事件和主角反应" : "上一集压力继续发酵，人物关系进一步绷紧");
+        episode.put("mainConflict", conflict);
+        episode.put("endingHook", episodeNo % 2 == 0 ? "关键人物给出反常回应，下一集必须追问原因" : "一个细节证明事情并不简单");
+        episode.put("summary", summary);
+        episode.put("scenes", List.of(
+                fallbackScene(episodeNo, 1, title, conflict, summary),
+                fallbackScene(episodeNo, 2, title, conflict, summary)
+        ));
         return episode;
     }
 
     private Map<String, Object> fallbackScene(int sceneNo) {
+        return fallbackScene(1, sceneNo, "第1集", "主角目标与外部阻碍正面冲突", "");
+    }
+
+    private Map<String, Object> fallbackScene(int episodeNo, int sceneNo, String episodeTitle, String conflict, String summary) {
+        boolean opening = sceneNo == 1;
+        String conflictText = string(conflict, "当前事件产生新的压力");
+        String summaryText = trimForFallback(summary, 100);
+        String focus = summaryText.isBlank() ? conflictText : summaryText;
         Map<String, Object> scene = new LinkedHashMap<>();
         scene.put("sceneNo", sceneNo);
-        scene.put("sceneTitle", sceneNo == 1 ? "开场压迫" : "反击前夜");
-        scene.put("location", "内景｜议事厅｜夜");
+        scene.put("sceneTitle", opening ? "第" + episodeNo + "集开场钩子" : "第" + episodeNo + "集场内反转");
+        scene.put("location", opening ? "内景｜办公区｜夜" : "内景｜走廊/茶水间｜夜");
         scene.put("timeOfDay", "夜");
-        scene.put("characters", "主角、对手、旁观者");
-        scene.put("sceneFunction", sceneNo == 1 ? "建立冲突和压迫" : "推进反转并留下钩子");
-        scene.put("estimatedDuration", "40秒");
-        scene.put("visualAction", "众人围住主角，对手把证据拍在桌上，主角没有退后。");
-        scene.put("narration", "少量交代背景，避免替代表演。");
-        scene.put("dialogue", "对手：你还有什么话说？\n主角：话当然有，但不是现在说。");
-        scene.put("performanceCameraNote", "镜头从证据推到主角手指，手指收紧。");
-        scene.put("hook", "门外传来一句：证据是假的。");
+        scene.put("characters", opening ? "主角、关键对手、同事/旁观者" : "主角、关键知情人");
+        scene.put("sceneFunction", opening ? "把“" + conflictText + "”直接摆到主角面前" : "围绕“" + conflictText + "”给出新线索并留下钩子");
+        scene.put("estimatedDuration", opening ? "35秒" : "45秒");
+        scene.put("visualAction", opening
+                ? "主角停在原地，手机屏幕亮起；周围声音压低，所有目光集中到他/她身上。"
+                : "主角追到门口拦住知情人，对方避开视线，把一个细节压低声音说出来。");
+        scene.put("narration", opening
+                ? "只用一句话点出本集处境：" + focus
+                : "不解释前因，只保留能推动下一步选择的关键信息。");
+        scene.put("dialogue", opening
+                ? "对手：这件事，你现在就给个说法。\n主角：我可以说，但你先把话说完整。"
+                : "知情人：刚才那句话，不是随口说的。\n主角：你知道什么？\n知情人：现在说出来，我们都脱不了身。");
+        scene.put("performanceCameraNote", opening
+                ? "近景拍手机屏幕和主角眼神，背景人声逐渐压低。"
+                : "跟拍主角追问，切到知情人攥紧的手。");
+        scene.put("hook", opening
+                ? "对手突然补一句：证据不止这一份。"
+                : "知情人转身前留下半句：真正该查的人，不是他/她。");
         return scene;
+    }
+
+    private String scriptField(Map<String, Object> payload, String key, Map<String, Object> fallback) {
+        String value = string(payload.get(key), "");
+        if (!value.isBlank() && !isGenericScriptFallback(value)) return value;
+        return string(fallback.get(key), "");
+    }
+
+    private boolean isGenericScriptFallback(String value) {
+        String text = value == null ? "" : value.trim();
+        return text.equals("少量交代背景，避免替代表演。")
+                || text.equals("对手：你还有什么话说？\n主角：话当然有，但不是现在说。")
+                || text.equals("镜头从证据推到主角手指，手指收紧。")
+                || text.equals("众人围住主角，对手把证据拍在桌上，主角没有退后。")
+                || text.equals("门外传来一句：证据是假的。");
+    }
+
+    private List<String> sourceSlices(String sourceText, int count) {
+        String normalized = string(sourceText, "")
+                .replaceAll("(?m)^第[一二三四五六七八九十百0-9]+[章节].*$", "\n")
+                .replaceAll("\\s+", " ")
+                .trim();
+        if (normalized.isBlank()) return List.of();
+        int safeCount = Math.max(1, count);
+        int sliceLength = Math.max(120, normalized.length() / safeCount);
+        List<String> slices = new ArrayList<>();
+        for (int i = 0; i < safeCount; i++) {
+            int start = Math.min(normalized.length(), i * sliceLength);
+            int end = i == safeCount - 1
+                    ? normalized.length()
+                    : Math.min(normalized.length(), start + sliceLength);
+            if (start < end) slices.add(normalized.substring(start, end));
+        }
+        return slices;
+    }
+
+    private String trimForFallback(String value, int maxChars) {
+        String text = string(value, "").replaceAll("\\s+", " ").trim();
+        if (text.length() <= maxChars) return text;
+        return text.substring(0, maxChars);
     }
 
     private Map<String, Object> fallbackEpisodeImprovement(Map<String, Object> current, String action) {

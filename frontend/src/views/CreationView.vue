@@ -18,7 +18,7 @@
         <div class="creation-row">
           <button class="creation-primary-btn" type="button" :disabled="!taskCanOpen" @click="openActiveTask">{{ activeTaskOpenLabel }}</button>
           <button class="creation-secondary-btn" type="button" @click="refreshTask">刷新</button>
-          <button class="creation-secondary-btn" type="button" :disabled="!taskCanCancel" @click="cancelTask">取消</button>
+          <button class="creation-secondary-btn" type="button" :disabled="!taskCanCancel" @click="cancelTask">终止</button>
           <button class="creation-secondary-btn" type="button" :disabled="!taskCanRetry" @click="retryTask">重试</button>
           <button class="creation-secondary-btn" type="button" @click="dismissTask">隐藏</button>
         </div>
@@ -35,7 +35,57 @@
       <p v-if="activeTask.tokenUsage?.totalTokens" class="creation-muted">预估 Token：{{ activeTask.tokenUsage.totalTokens }}（输入 {{ activeTask.tokenUsage.inputTokens }} / 输出 {{ activeTask.tokenUsage.outputTokens }}）</p>
       <p v-if="activeTask.errorMessage" class="creation-risk">{{ activeTask.errorMessage }}</p>
     </section>
-    <ProjectCards title="最近作品" :projects="projects.slice(0, 6)" :converting-project-id="scriptConvertingProjectId" :exporting-project-id="projectExportingId" :deleting-project-id="projectDeletingId" @script="startScript" @export="downloadProjectExport" @delete="deleteProject" />
+    <section v-if="activeRewriteTask" class="creation-panel creation-task-card" :class="`status-${activeRewriteTask.status || 'unknown'}`">
+      <div class="creation-section-title">
+        <div>
+          <h2>{{ rewriteTaskPanelTitle }}</h2>
+          <p>改小说三栏对照</p>
+        </div>
+        <div class="creation-row">
+          <button class="creation-primary-btn" type="button" :disabled="!rewriteTaskCanOpen" @click="openActiveRewriteTask">{{ rewriteTaskOpenLabel }}</button>
+          <button class="creation-secondary-btn" type="button" @click="refreshRewriteTask">刷新</button>
+          <button class="creation-secondary-btn" type="button" :disabled="!rewriteTaskCanCancel" @click="cancelActiveRewriteTask">终止</button>
+          <button class="creation-secondary-btn" type="button" :disabled="!rewriteTaskCanRetry" @click="retryActiveRewriteTask">重试</button>
+          <button class="creation-secondary-btn" type="button" @click="dismissRewriteTask">隐藏</button>
+        </div>
+      </div>
+      <div class="creation-task-body">
+        <div>
+          <strong>{{ activeRewriteTask.currentStep || rewriteTaskStatusLabel }}</strong>
+          <span>{{ rewriteTaskStatusLabel }} · {{ rewriteTaskProgress }}%</span>
+        </div>
+        <div class="creation-task-progress" :aria-label="`改写任务进度 ${rewriteTaskProgress}%`">
+          <i :style="{ width: `${rewriteTaskProgress}%` }"></i>
+        </div>
+      </div>
+      <p v-if="activeRewriteTask.errorMessage" class="creation-risk">{{ activeRewriteTask.errorMessage }}</p>
+    </section>
+    <section class="creation-panel creation-task-history">
+      <div class="creation-section-title">
+        <div>
+          <h2>历史任务</h2>
+          <p>隐藏后的任务也会保留在这里，可查看进度和结果。</p>
+        </div>
+        <button class="creation-secondary-btn" type="button" :disabled="taskHistoryLoading" @click="loadTaskHistory">{{ taskHistoryLoading ? '刷新中...' : '刷新' }}</button>
+      </div>
+      <div v-if="!taskHistory.length" class="creation-muted">暂无历史任务</div>
+      <div v-else class="creation-history-list">
+        <div v-for="item in taskHistory" :key="item.id" class="creation-history-item" :class="`status-${item.status || 'unknown'}`">
+          <div>
+            <strong>{{ item.title }}</strong>
+            <span>{{ item.projectTitle || '未关联作品' }} · {{ taskStatusLabelFor(item.status) }} · {{ taskProgressFor(item) }}%</span>
+            <small>{{ item.currentStep || '暂无进度信息' }}</small>
+          </div>
+          <div class="creation-history-actions">
+            <button class="creation-secondary-btn compact" type="button" @click="restoreHistoryTask(item)">恢复到任务卡</button>
+            <button class="creation-primary-btn compact" type="button" :disabled="!historyTaskCanOpen(item)" @click="openHistoryTask(item)">打开</button>
+            <button class="creation-secondary-btn compact" type="button" :disabled="!historyTaskCanCancel(item)" @click="cancelHistoryTask(item)">终止</button>
+            <button class="creation-secondary-btn compact" type="button" :disabled="!historyTaskCanRetry(item)" @click="retryHistoryTask(item)">重试</button>
+          </div>
+        </div>
+      </div>
+    </section>
+    <ProjectCards title="最近作品" :projects="projects.slice(0, 6)" :converting-project-id="activeScriptProjectId" :exporting-project-id="projectExportingId" :deleting-project-id="projectDeletingId" @script="startScript" @export="downloadProjectExport" @delete="deleteProject" />
   </div>
 
   <div v-else-if="mode === 'projects'" class="creation-view">
@@ -60,13 +110,113 @@
         <button v-if="searchQuery" class="creation-secondary-btn" type="button" @click="clearProjectSearch">清空</button>
       </form>
     </div>
-    <ProjectCards title="全部作品" :projects="filteredProjects" :converting-project-id="scriptConvertingProjectId" :exporting-project-id="projectExportingId" :deleting-project-id="projectDeletingId" @script="startScript" @export="downloadProjectExport" @delete="deleteProject" />
+    <section v-if="activeTask" class="creation-panel creation-task-card" :class="`status-${activeTask.status || 'unknown'}`">
+      <div class="creation-section-title">
+        <div>
+          <h2>{{ taskPanelTitle }}</h2>
+          <p>{{ activeTaskName }}</p>
+        </div>
+        <div class="creation-row">
+          <button class="creation-primary-btn" type="button" :disabled="!taskCanOpen" @click="openActiveTask">{{ activeTaskOpenLabel }}</button>
+          <button class="creation-secondary-btn" type="button" @click="refreshTask">刷新</button>
+          <button class="creation-secondary-btn" type="button" :disabled="!taskCanCancel" @click="cancelTask">终止</button>
+          <button class="creation-secondary-btn" type="button" :disabled="!taskCanRetry" @click="retryTask">重试</button>
+          <button class="creation-secondary-btn" type="button" @click="dismissTask">隐藏</button>
+        </div>
+      </div>
+      <div class="creation-task-body">
+        <div>
+          <strong>{{ activeTask.currentStep || activeTaskStatusLabel }}</strong>
+          <span>{{ activeTaskStatusLabel }} · {{ activeTaskProgress }}%</span>
+        </div>
+        <div class="creation-task-progress" :aria-label="`任务进度 ${activeTaskProgress}%`">
+          <i :style="{ width: `${activeTaskProgress}%` }"></i>
+        </div>
+      </div>
+      <p v-if="activeTask.tokenUsage?.totalTokens" class="creation-muted">预估 Token：{{ activeTask.tokenUsage.totalTokens }}（输入 {{ activeTask.tokenUsage.inputTokens }} / 输出 {{ activeTask.tokenUsage.outputTokens }}）</p>
+      <p v-if="activeTask.errorMessage" class="creation-risk">{{ activeTask.errorMessage }}</p>
+    </section>
+    <section v-if="activeRewriteTask" class="creation-panel creation-task-card" :class="`status-${activeRewriteTask.status || 'unknown'}`">
+      <div class="creation-section-title">
+        <div>
+          <h2>{{ rewriteTaskPanelTitle }}</h2>
+          <p>改小说三栏对照</p>
+        </div>
+        <div class="creation-row">
+          <button class="creation-primary-btn" type="button" :disabled="!rewriteTaskCanOpen" @click="openActiveRewriteTask">{{ rewriteTaskOpenLabel }}</button>
+          <button class="creation-secondary-btn" type="button" @click="refreshRewriteTask">刷新</button>
+          <button class="creation-secondary-btn" type="button" :disabled="!rewriteTaskCanCancel" @click="cancelActiveRewriteTask">终止</button>
+          <button class="creation-secondary-btn" type="button" :disabled="!rewriteTaskCanRetry" @click="retryActiveRewriteTask">重试</button>
+          <button class="creation-secondary-btn" type="button" @click="dismissRewriteTask">隐藏</button>
+        </div>
+      </div>
+      <div class="creation-task-body">
+        <div>
+          <strong>{{ activeRewriteTask.currentStep || rewriteTaskStatusLabel }}</strong>
+          <span>{{ rewriteTaskStatusLabel }} · {{ rewriteTaskProgress }}%</span>
+        </div>
+        <div class="creation-task-progress" :aria-label="`改写任务进度 ${rewriteTaskProgress}%`">
+          <i :style="{ width: `${rewriteTaskProgress}%` }"></i>
+        </div>
+      </div>
+      <p v-if="activeRewriteTask.errorMessage" class="creation-risk">{{ activeRewriteTask.errorMessage }}</p>
+    </section>
+    <section class="creation-panel creation-task-history">
+      <div class="creation-section-title">
+        <div>
+          <h2>历史任务</h2>
+          <p>隐藏后的任务也会保留在这里，可查看进度和结果。</p>
+        </div>
+        <button class="creation-secondary-btn" type="button" :disabled="taskHistoryLoading" @click="loadTaskHistory">{{ taskHistoryLoading ? '刷新中...' : '刷新' }}</button>
+      </div>
+      <div v-if="!taskHistory.length" class="creation-muted">暂无历史任务</div>
+      <div v-else class="creation-history-list">
+        <div v-for="item in taskHistory" :key="item.id" class="creation-history-item" :class="`status-${item.status || 'unknown'}`">
+          <div>
+            <strong>{{ item.title }}</strong>
+            <span>{{ item.projectTitle || '未关联作品' }} · {{ taskStatusLabelFor(item.status) }} · {{ taskProgressFor(item) }}%</span>
+            <small>{{ item.currentStep || '暂无进度信息' }}</small>
+          </div>
+          <div class="creation-history-actions">
+            <button class="creation-secondary-btn compact" type="button" @click="restoreHistoryTask(item)">恢复到任务卡</button>
+            <button class="creation-primary-btn compact" type="button" :disabled="!historyTaskCanOpen(item)" @click="openHistoryTask(item)">打开</button>
+            <button class="creation-secondary-btn compact" type="button" :disabled="!historyTaskCanCancel(item)" @click="cancelHistoryTask(item)">终止</button>
+            <button class="creation-secondary-btn compact" type="button" :disabled="!historyTaskCanRetry(item)" @click="retryHistoryTask(item)">重试</button>
+          </div>
+        </div>
+      </div>
+    </section>
+    <ProjectCards title="全部作品" :projects="filteredProjects" :converting-project-id="activeScriptProjectId" :exporting-project-id="projectExportingId" :deleting-project-id="projectDeletingId" @script="startScript" @export="downloadProjectExport" @delete="deleteProject" />
   </div>
 
   <div v-else-if="mode === 'editor'" class="creation-workbench has-ai-config" :class="{ 'ai-config-collapsed': aiConfigCollapsed }">
     <aside class="creation-side">
       <router-link class="creation-back-link" to="/creation/projects">返回作品库</router-link>
       <h2>{{ project?.title || '作品编辑器' }}</h2>
+      <div v-if="activeTask" class="creation-side-section creation-side-task" :class="`status-${activeTask.status || 'unknown'}`">
+        <h3>{{ taskPanelTitle }}</h3>
+        <strong>{{ activeTask.currentStep || activeTaskStatusLabel }}</strong>
+        <div class="creation-task-progress" :aria-label="`任务进度 ${activeTaskProgress}%`">
+          <i :style="{ width: `${activeTaskProgress}%` }"></i>
+        </div>
+        <small>{{ activeTaskStatusLabel }} · {{ activeTaskProgress }}%</small>
+        <button class="creation-primary-btn full compact" type="button" :disabled="!taskCanOpen" @click="openActiveTask">{{ activeTaskOpenLabel }}</button>
+        <button class="creation-secondary-btn full compact" type="button" @click="refreshTask">刷新</button>
+        <button class="creation-secondary-btn full compact" type="button" :disabled="!taskCanCancel" @click="cancelTask">终止</button>
+        <button class="creation-secondary-btn full compact" type="button" :disabled="!taskCanRetry" @click="retryTask">重试</button>
+      </div>
+      <div v-if="activeRewriteTask" class="creation-side-section creation-side-task" :class="`status-${activeRewriteTask.status || 'unknown'}`">
+        <h3>{{ rewriteTaskPanelTitle }}</h3>
+        <strong>{{ activeRewriteTask.currentStep || rewriteTaskStatusLabel }}</strong>
+        <div class="creation-task-progress" :aria-label="`改写任务进度 ${rewriteTaskProgress}%`">
+          <i :style="{ width: `${rewriteTaskProgress}%` }"></i>
+        </div>
+        <small>{{ rewriteTaskStatusLabel }} · {{ rewriteTaskProgress }}%</small>
+        <button class="creation-primary-btn full compact" type="button" :disabled="!rewriteTaskCanOpen" @click="openActiveRewriteTask">{{ rewriteTaskOpenLabel }}</button>
+        <button class="creation-secondary-btn full compact" type="button" @click="refreshRewriteTask">刷新</button>
+        <button class="creation-secondary-btn full compact" type="button" :disabled="!rewriteTaskCanCancel" @click="cancelActiveRewriteTask">终止</button>
+        <button class="creation-secondary-btn full compact" type="button" :disabled="!rewriteTaskCanRetry" @click="retryActiveRewriteTask">重试</button>
+      </div>
       <div class="creation-side-section">
         <h3>创作资产</h3>
         <button
@@ -89,17 +239,22 @@
           class="creation-list-btn creation-chapter-btn"
           :class="{ active: editorPanel === 'chapter' && chapter.id === currentChapter?.id, draft: hasChapterDraft(chapter) }"
           :title="chapterDisplayTitle(chapter)"
+          role="button"
+          tabindex="0"
+          @click="selectChapter(chapter)"
+          @keydown.enter.prevent="selectChapter(chapter)"
+          @keydown.space.prevent="selectChapter(chapter)"
         >
-          <button class="creation-chapter-main" type="button" @click="selectChapter(chapter)">
+          <span class="creation-chapter-main">
             <span class="creation-chapter-title">{{ chapterDisplayTitle(chapter) }}</span>
-          </button>
+          </span>
           <span v-if="hasChapterDraft(chapter)" class="creation-draft-dot" title="有未保存草稿"></span>
           <button
             class="creation-chapter-delete"
             type="button"
             title="删除章节"
             :disabled="chapters.length <= 1 || chapterDeletingId === chapter.id"
-            @click="deleteChapter(chapter)"
+            @click.stop="deleteChapter(chapter)"
           >
             {{ chapterDeletingId === chapter.id ? '...' : '×' }}
           </button>
@@ -241,9 +396,12 @@
       >
         {{ action.label }}
       </button>
-      <button type="button" @click="startRewrite">改小说三栏对照</button>
-      <button class="creation-primary-btn full" type="button" :disabled="scriptConvertingProjectId === project?.id" @click="startScript(project)">
-        {{ scriptConvertingProjectId === project?.id ? '转短剧中...' : '转短剧' }}
+      <button type="button" :disabled="rewriteStarting || rewriteTaskRunning" @click="startRewrite">
+        <span v-if="rewriteStarting || rewriteTaskRunning" class="creation-spinner dark"></span>
+        {{ rewriteStarting || rewriteTaskRunning ? '改写中...' : '改小说三栏对照' }}
+      </button>
+      <button class="creation-primary-btn full" type="button" :disabled="activeScriptProjectId === project?.id" @click="startScript(project)">
+        {{ activeScriptProjectId === project?.id ? '转短剧中...' : '转短剧' }}
       </button>
       <div class="creation-versions">
         <h3>版本快照</h3>
@@ -257,17 +415,83 @@
 
   <div v-else-if="mode === 'rewrite'" class="creation-view">
     <header class="creation-header">
-      <div><h1>改小说三栏对照</h1><p>原文、AI 改写稿和修改说明逐段确认。</p></div>
-      <button class="creation-primary-btn" type="button" @click="acceptRewrite">保存为新版本</button>
+      <div>
+        <h1>改小说三栏对照</h1>
+        <p>{{ rewriteReviewSummary }}</p>
+      </div>
+      <div class="creation-row">
+        <button class="creation-secondary-btn" type="button" @click="router.push(rewriteBackPath)">返回作品</button>
+        <button class="creation-secondary-btn" type="button" @click="refreshRewritePage">刷新</button>
+        <button class="creation-primary-btn" type="button" :disabled="!rewriteReady || rewriteAccepting" @click="acceptRewrite">
+          <span v-if="rewriteAccepting" class="creation-spinner"></span>
+          {{ rewriteAccepting ? '保存中...' : '保存为新版本' }}
+        </button>
+      </div>
     </header>
-    <section class="creation-columns" v-if="rewriteTask">
-      <article><h2>原文</h2><p v-for="(s, i) in rewriteTask.segments" :key="i">{{ s.source }}</p></article>
-      <article><h2>AI 改写稿</h2><div v-for="(s, i) in rewriteTask.segments" :key="i"><textarea v-model="s.rewritten"></textarea><button type="button" @click="s.status = 'accepted'">接受</button><button type="button" @click="s.status = 'rejected'">拒绝</button></div></article>
+    <section v-if="rewriteTask && !rewriteReady" class="creation-panel creation-task-card" :class="`status-${rewriteTask.status || 'unknown'}`">
+      <div class="creation-section-title">
+        <div>
+          <h2>{{ rewriteTaskStatusLabelFor(rewriteTask) }}</h2>
+          <p>{{ rewriteTask.currentStep || '正在准备改写内容' }}</p>
+        </div>
+        <div class="creation-row">
+          <button class="creation-secondary-btn" type="button" @click="refreshRewritePage">刷新</button>
+          <button class="creation-secondary-btn" type="button" :disabled="!rewritePageCanCancel" @click="cancelRewritePage">终止</button>
+          <button class="creation-secondary-btn" type="button" :disabled="!rewritePageCanRetry" @click="retryRewrite">重试</button>
+        </div>
+      </div>
+      <div class="creation-task-body">
+        <div>
+          <strong>{{ rewriteTask.currentStep || rewriteTaskStatusLabelFor(rewriteTask) }}</strong>
+          <span>{{ rewriteTaskStatusLabelFor(rewriteTask) }} · {{ rewritePageProgress }}%</span>
+        </div>
+        <div class="creation-task-progress" :aria-label="`改写任务进度 ${rewritePageProgress}%`">
+          <i :style="{ width: `${rewritePageProgress}%` }"></i>
+        </div>
+      </div>
+      <p v-if="rewriteTask.errorMessage" class="creation-risk">{{ rewriteTask.errorMessage }}</p>
+    </section>
+    <section class="creation-rewrite-summary" v-if="rewriteReady">
+      <span>共 {{ rewriteSegments.length }} 段</span>
+      <span>采用 AI {{ rewriteAcceptedCount }} 段</span>
+      <span>保留原文 {{ rewriteRejectedCount }} 段</span>
+    </section>
+    <section class="creation-columns creation-rewrite-columns" v-if="rewriteReady">
       <article>
-        <h2>修改说明</h2>
+        <h2>原文</h2>
+        <div v-for="(s, i) in rewriteSegments" :key="i" class="creation-rewrite-segment">
+          <strong>第 {{ i + 1 }} 段</strong>
+          <p>{{ s.source }}</p>
+        </div>
+      </article>
+      <article>
+        <h2>AI 改写稿</h2>
+        <div v-for="(s, i) in rewriteSegments" :key="i" class="creation-rewrite-choice" :class="`status-${s.status || 'accepted'}`">
+          <div class="creation-rewrite-choice-head">
+            <strong>第 {{ i + 1 }} 段</strong>
+            <span>{{ s.status === 'rejected' ? '将保留原文' : '将采用 AI 改写' }}</span>
+          </div>
+          <textarea v-model="s.rewritten"></textarea>
+          <div class="creation-segment-actions">
+            <button type="button" :class="{ active: s.status !== 'rejected' }" @click="setRewriteSegmentStatus(s, 'accepted')">采用 AI 改写</button>
+            <button type="button" :class="{ active: s.status === 'rejected' }" @click="setRewriteSegmentStatus(s, 'rejected')">保留原文</button>
+          </div>
+        </div>
+      </article>
+      <article>
+        <h2>本次改写说明</h2>
+        <div class="creation-rewrite-note">
+          <strong>{{ rewriteTask.summaryNote || '本次改写已完成，请逐段确认采用 AI 改写或保留原文。' }}</strong>
+          <p>保存为新版本时，采用 AI 的段落会写入改写稿；选择保留原文的段落会写回原文。</p>
+        </div>
         <label class="creation-field">指定要求<textarea v-model="rewriteForm.instruction" rows="4" placeholder="例如：更口语、更狠一点、保留某个设定"></textarea></label>
-        <button class="creation-secondary-btn full" type="button" @click="retryRewrite">按要求再改一次</button>
-        <p v-for="(s, i) in rewriteTask.segments" :key="i">{{ s.note }}</p>
+        <button class="creation-secondary-btn full" type="button" :disabled="rewriteRetrying" @click="retryRewrite">
+          <span v-if="rewriteRetrying" class="creation-spinner dark"></span>
+          {{ rewriteRetrying ? '提交中...' : '按要求再改一次' }}
+        </button>
+        <div v-if="rewriteSegmentNotes.length" class="creation-rewrite-note-list">
+          <p v-for="item in rewriteSegmentNotes" :key="item.index">第 {{ item.index }} 段：{{ item.note }}</p>
+        </div>
       </article>
     </section>
   </div>
@@ -458,7 +682,7 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onMounted, reactive, ref, watch } from 'vue';
+import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { storyApi } from '../services/storyApi.js';
 import { useUiStore } from '../stores/ui.js';
@@ -589,8 +813,13 @@ const qualityReport = ref(null);
 const exported = ref(null);
 const chapterVersions = ref([]);
 const activeTask = ref(null);
+const activeRewriteTask = ref(null);
+const taskHistory = ref([]);
 const chapterSaving = ref(false);
 const assetSaving = ref(false);
+const rewriteStarting = ref(false);
+const rewriteAccepting = ref(false);
+const rewriteRetrying = ref(false);
 const chapterDeletingId = ref(null);
 const scriptConvertingProjectId = ref(null);
 const projectExportingId = ref(null);
@@ -608,6 +837,7 @@ const importFileRef = ref(null);
 const importPreview = ref(null);
 const importPreviewLoading = ref(false);
 const importConfirming = ref(false);
+const taskHistoryLoading = ref(false);
 const editorPanel = ref('chapter');
 const activeAssetType = ref('setting');
 const assetForm = reactive({ content: '', instruction: '' });
@@ -625,6 +855,8 @@ const createForm = reactive({ title: '', type: 'long_novel', description: '' });
 const importForm = reactive({ title: '', content: '' });
 const rewriteForm = reactive({ instruction: '' });
 const sceneForm = reactive({});
+let rewritePollTimer = null;
+let activeTaskPollTimer = null;
 const exportForm = reactive({
   format: 'md',
   scope: 'all',
@@ -765,16 +997,47 @@ const activeTaskName = computed(() => ({
   script_convert: '短剧分场稿生成',
 }[activeTask.value?.taskType] || 'AI 生成任务'));
 const taskPanelTitle = computed(() => activeTask.value?.status === 'completed' ? '最近生成任务' : '生成任务');
+const activeScriptProjectId = computed(() => {
+  if (scriptConvertingProjectId.value) return scriptConvertingProjectId.value;
+  if (activeTask.value?.taskType === 'script_convert' && ['pending', 'running'].includes(activeTask.value.status)) {
+    return activeTask.value.projectId;
+  }
+  return null;
+});
 const activeTaskDestination = computed(() => {
   if (!activeTask.value) return '';
   if (activeTask.value.draftId) return `/creation/scripts/${activeTask.value.draftId}`;
-  if (activeTask.value.projectId) return `/creation/projects/${activeTask.value.projectId}/editor`;
+  if (activeTask.value.projectId && activeTask.value.status === 'completed') return `/creation/projects/${activeTask.value.projectId}/editor`;
   return '';
 });
 const taskCanOpen = computed(() => Boolean(activeTaskDestination.value));
-const activeTaskOpenLabel = computed(() => activeTask.value?.draftId ? '查看结果' : '打开作品');
+const activeTaskOpenLabel = computed(() => taskCanOpen.value ? (activeTask.value?.draftId ? '查看结果' : '打开作品') : '等待完成');
 const taskCanCancel = computed(() => activeTask.value && !['completed', 'failed', 'canceled'].includes(activeTask.value.status));
 const taskCanRetry = computed(() => activeTask.value && ['failed', 'canceled', 'completed'].includes(activeTask.value.status));
+const rewriteTaskProgress = computed(() => rewriteProgress(activeRewriteTask.value));
+const rewriteTaskStatusLabel = computed(() => rewriteTaskStatusLabelFor(activeRewriteTask.value));
+const rewriteTaskRunning = computed(() => activeRewriteTask.value && ['pending', 'running'].includes(activeRewriteTask.value.status));
+const rewriteTaskPanelTitle = computed(() => activeRewriteTask.value?.status === 'completed' ? '最近改写任务' : '改写任务');
+const rewriteTaskCanOpen = computed(() => activeRewriteTask.value && ['completed', 'accepted'].includes(activeRewriteTask.value.status));
+const rewriteTaskCanCancel = computed(() => activeRewriteTask.value && ['pending', 'running'].includes(activeRewriteTask.value.status));
+const rewriteTaskCanRetry = computed(() => activeRewriteTask.value && ['failed', 'canceled', 'completed', 'accepted'].includes(activeRewriteTask.value.status));
+const rewriteTaskOpenLabel = computed(() => rewriteTaskCanOpen.value ? '查看三栏对照' : '等待完成');
+const rewriteReady = computed(() => rewriteTask.value && ['completed', 'accepted'].includes(rewriteTask.value.status));
+const rewriteSegments = computed(() => Array.isArray(rewriteTask.value?.segments) ? rewriteTask.value.segments : []);
+const rewriteAcceptedCount = computed(() => rewriteSegments.value.filter(segment => segment.status !== 'rejected').length);
+const rewriteRejectedCount = computed(() => rewriteSegments.value.filter(segment => segment.status === 'rejected').length);
+const rewriteReviewSummary = computed(() => {
+  if (!rewriteTask.value) return '正在加载改写任务。';
+  if (!rewriteReady.value) return rewriteTask.value.currentStep || '改写任务处理中，完成后可逐段确认。';
+  return `共 ${rewriteSegments.value.length} 段，采用 AI ${rewriteAcceptedCount.value} 段，保留原文 ${rewriteRejectedCount.value} 段。`;
+});
+const rewriteSegmentNotes = computed(() => rewriteSegments.value
+  .map((segment, index) => ({ index: index + 1, note: String(segment.note || '').trim() }))
+  .filter(item => item.note && item.note !== rewriteTask.value?.summaryNote));
+const rewritePageProgress = computed(() => rewriteProgress(rewriteTask.value));
+const rewritePageCanCancel = computed(() => rewriteTask.value && ['pending', 'running'].includes(rewriteTask.value.status));
+const rewritePageCanRetry = computed(() => rewriteTask.value && ['failed', 'canceled', 'completed', 'accepted'].includes(rewriteTask.value.status));
+const rewriteBackPath = computed(() => rewriteTask.value?.projectId ? `/creation/projects/${rewriteTask.value.projectId}/editor` : '/creation/projects');
 const importBusy = computed(() => importPreviewLoading.value || importConfirming.value);
 const adaptationPlanEntries = computed(() => {
   const plan = draft.value?.adaptationPlan || {};
@@ -825,15 +1088,26 @@ function selectedExportSceneCount(episodes) {
 }
 
 onMounted(loadByMode);
+onUnmounted(() => {
+  stopActiveTaskPolling();
+  stopRewritePolling();
+});
 watch(() => route.fullPath, loadByMode);
 
 async function loadByMode() {
   try {
     if (mode.value === 'projects' && route.query.import === '1') showImport.value = true;
     if (mode.value === 'home' || mode.value === 'projects') projects.value = await storyApi.listProjects();
-    if (mode.value === 'home') await loadActiveTask();
+    if (mode.value === 'home' || mode.value === 'projects') await loadTaskHistory();
+    if (['home', 'projects', 'editor'].includes(mode.value)) await loadActiveTask();
+    if (['home', 'projects', 'editor'].includes(mode.value)) await loadActiveRewriteTask();
     if (mode.value === 'editor') await loadProject();
-    if (mode.value === 'rewrite') rewriteTask.value = await storyApi.getRewrite(route.params.taskId);
+    if (mode.value === 'rewrite') {
+      rewriteTask.value = await storyApi.getRewrite(route.params.taskId);
+      activeRewriteTask.value = rewriteTask.value;
+      localStorage.setItem('story:lastRewriteTaskId', String(rewriteTask.value.id));
+      if (['pending', 'running'].includes(rewriteTask.value.status)) startRewritePolling();
+    }
     if (mode.value === 'script' || mode.value === 'export') await loadDraft();
   } catch (err) {
     ui.showToast('error', err.message || '加载失败');
@@ -1335,38 +1609,75 @@ async function generateAsset(type) {
 
 async function startRewrite() {
   if (!chapterForm.content.trim()) return ui.showToast('warning', '请先输入正文');
-  const task = await storyApi.createRewrite({ projectId: project.value.id, chapterId: currentChapter.value?.id, sourceText: chapterForm.content, rewriteMode: 'deslop' });
-  router.push(`/creation/rewrite/${task.id}`);
+  if (rewriteStarting.value || rewriteTaskRunning.value) return;
+  rewriteStarting.value = true;
+  try {
+    const task = await storyApi.createRewrite({ projectId: project.value.id, chapterId: currentChapter.value?.id, sourceText: chapterForm.content, rewriteMode: 'deslop' });
+    activeRewriteTask.value = task;
+    localStorage.setItem('story:lastRewriteTaskId', String(task.id));
+    startRewritePolling();
+    await loadTaskHistory();
+    ui.showToast('info', '改写任务已开始，可切换页面，完成后从任务卡查看');
+  } catch (err) {
+    ui.showToast('error', err.message || '改写任务提交失败');
+  } finally {
+    rewriteStarting.value = false;
+  }
 }
 
 async function acceptRewrite() {
-  const result = await storyApi.acceptRewrite(route.params.taskId, { segments: rewriteTask.value.segments });
-  router.push(`/creation/projects/${result.projectId}/editor`);
+  if (!rewriteReady.value || rewriteAccepting.value) return;
+  rewriteAccepting.value = true;
+  try {
+    const result = await storyApi.acceptRewrite(route.params.taskId, { segments: rewriteTask.value.segments });
+    if (activeRewriteTask.value?.id === Number(route.params.taskId)) {
+      activeRewriteTask.value = { ...activeRewriteTask.value, status: 'accepted', progress: 100, currentStep: '已保存为新版本' };
+    }
+    ui.showToast('success', '已保存为新版本');
+    router.push(`/creation/projects/${result.projectId}/editor`);
+  } catch (err) {
+    ui.showToast('error', err.message || '保存改写结果失败');
+  } finally {
+    rewriteAccepting.value = false;
+  }
 }
 
 async function retryRewrite() {
-  const task = await storyApi.retryRewrite(route.params.taskId, {
-    rewriteMode: rewriteTask.value?.rewriteMode || 'deslop',
-    instruction: rewriteForm.instruction,
-  });
-  rewriteTask.value = task;
-  ui.showToast('success', '已重新改写');
+  if (rewriteRetrying.value) return;
+  rewriteRetrying.value = true;
+  try {
+    const task = await storyApi.retryRewrite(route.params.taskId, {
+      rewriteMode: rewriteTask.value?.rewriteMode || 'deslop',
+      instruction: rewriteForm.instruction,
+    });
+    rewriteTask.value = task;
+    activeRewriteTask.value = task;
+    localStorage.setItem('story:lastRewriteTaskId', String(task.id));
+    startRewritePolling();
+    await loadTaskHistory();
+    ui.showToast('success', '已重新提交改写任务');
+    router.replace(`/creation/rewrite/${task.id}`);
+  } catch (err) {
+    ui.showToast('error', err.message || '重新改写失败');
+  } finally {
+    rewriteRetrying.value = false;
+  }
 }
 
 async function startScript(p) {
-  if (!p?.id || scriptConvertingProjectId.value) return;
-  const startPath = route.fullPath;
+  if (!p?.id || scriptConvertingProjectId.value || activeScriptProjectId.value === p.id) return;
   scriptConvertingProjectId.value = p.id;
-  ui.showToast('info', '已开始转短剧，请稍候');
+  ui.showToast('info', '已提交转短剧任务，可切换页面，完成后从任务卡查看');
   try {
     const task = await storyApi.convertToScript({ projectId: p.id, targetEpisodes: 20 });
     activeTask.value = task;
     localStorage.setItem('story:lastTaskId', String(task.id));
-    if (route.fullPath === startPath) {
+    if (['pending', 'running'].includes(task.status)) {
+      startActiveTaskPolling();
+    } else if (task.draftId) {
       router.push(`/creation/scripts/${task.draftId}`);
-    } else {
-      ui.showToast('success', '短剧分场稿已生成，可从作品卡片或任务入口打开');
     }
+    await loadTaskHistory();
   } catch (err) {
     ui.showToast('error', err.message || '转短剧失败');
   } finally {
@@ -1418,15 +1729,43 @@ async function loadActiveTask() {
     activeTask.value = await storyApi.getTask(taskId);
     if (!activeTask.value?.projectId && !activeTask.value?.draftId) {
       dismissTask();
+      return;
     }
+    if (['pending', 'running'].includes(activeTask.value.status)) startActiveTaskPolling();
   } catch {
     activeTask.value = null;
   }
 }
 
-async function refreshTask() {
+async function refreshTask(options = {}) {
   if (!activeTask.value?.id) return;
+  const previousStatus = activeTask.value.status;
   activeTask.value = await storyApi.getTask(activeTask.value.id);
+  if (['pending', 'running'].includes(activeTask.value.status)) {
+    startActiveTaskPolling();
+  } else {
+    stopActiveTaskPolling();
+  }
+  if (!options.silent && ['pending', 'running'].includes(previousStatus) && activeTask.value.status === 'completed') {
+    ui.showToast('success', '短剧分场稿已生成，可从任务卡查看');
+  }
+}
+
+function startActiveTaskPolling() {
+  if (activeTaskPollTimer) return;
+  activeTaskPollTimer = window.setInterval(() => {
+    if (!activeTask.value?.id || !['pending', 'running'].includes(activeTask.value.status)) {
+      stopActiveTaskPolling();
+      return;
+    }
+    refreshTask().catch(() => {});
+  }, 3000);
+}
+
+function stopActiveTaskPolling() {
+  if (!activeTaskPollTimer) return;
+  window.clearInterval(activeTaskPollTimer);
+  activeTaskPollTimer = null;
 }
 
 function openActiveTask() {
@@ -1435,6 +1774,7 @@ function openActiveTask() {
 }
 
 function dismissTask() {
+  stopActiveTaskPolling();
   activeTask.value = null;
   localStorage.removeItem('story:lastTaskId');
 }
@@ -1442,6 +1782,9 @@ function dismissTask() {
 async function cancelTask() {
   if (!activeTask.value?.id) return;
   activeTask.value = await storyApi.cancelTask(activeTask.value.id);
+  stopActiveTaskPolling();
+  await loadTaskHistory();
+  ui.showToast('success', '已终止转短剧任务');
 }
 
 async function retryTask() {
@@ -1449,6 +1792,260 @@ async function retryTask() {
   const task = await storyApi.retryTask(activeTask.value.id);
   activeTask.value = task;
   localStorage.setItem('story:lastTaskId', String(task.id));
+  if (['pending', 'running'].includes(task.status)) startActiveTaskPolling();
+  await loadTaskHistory();
+}
+
+async function loadTaskHistory() {
+  taskHistoryLoading.value = true;
+  try {
+    const result = await storyApi.listTaskHistory(30);
+    taskHistory.value = Array.isArray(result.tasks) ? result.tasks : [];
+  } catch (err) {
+    ui.showToast('error', err.message || '历史任务加载失败');
+  } finally {
+    taskHistoryLoading.value = false;
+  }
+}
+
+function taskStatusLabelFor(status) {
+  return ({
+    completed: '已完成',
+    accepted: '已保存',
+    running: '进行中',
+    pending: '排队中',
+    failed: '失败',
+    canceled: '已取消',
+  }[status] || status || '未知状态');
+}
+
+function taskProgressFor(item) {
+  return Math.max(0, Math.min(100, Number(item?.progress || 0)));
+}
+
+function historyTaskCanOpen(item) {
+  if (!item) return false;
+  if (item.kind === 'generation') return Boolean(item.draftId || item.projectId);
+  if (item.kind === 'rewrite') return ['completed', 'accepted'].includes(item.status);
+  return false;
+}
+
+function historyTaskCanCancel(item) {
+  return item && ['pending', 'running'].includes(item.status);
+}
+
+function historyTaskCanRetry(item) {
+  return item && ['failed', 'canceled', 'completed', 'accepted'].includes(item.status);
+}
+
+async function restoreHistoryTask(item) {
+  if (!item?.taskId) return;
+  try {
+    if (item.kind === 'generation') {
+      activeTask.value = await storyApi.getTask(item.taskId);
+      localStorage.setItem('story:lastTaskId', String(activeTask.value.id));
+      if (['pending', 'running'].includes(activeTask.value.status)) startActiveTaskPolling();
+    } else if (item.kind === 'rewrite') {
+      activeRewriteTask.value = await storyApi.getRewrite(item.taskId);
+      localStorage.setItem('story:lastRewriteTaskId', String(activeRewriteTask.value.id));
+      if (['pending', 'running'].includes(activeRewriteTask.value.status)) startRewritePolling();
+    }
+    ui.showToast('success', '已恢复到任务卡');
+  } catch (err) {
+    ui.showToast('error', err.message || '恢复任务失败');
+  }
+}
+
+async function openHistoryTask(item) {
+  if (!historyTaskCanOpen(item)) return;
+  if (item.kind === 'generation') {
+    if (item.draftId) {
+      router.push(`/creation/scripts/${item.draftId}`);
+    } else if (item.projectId) {
+      router.push(`/creation/projects/${item.projectId}/editor`);
+    }
+    return;
+  }
+  if (item.kind === 'rewrite') {
+    router.push(`/creation/rewrite/${item.taskId}`);
+  }
+}
+
+async function cancelHistoryTask(item) {
+  if (!historyTaskCanCancel(item)) return;
+  try {
+    if (item.kind === 'generation') {
+      const task = await storyApi.cancelTask(item.taskId);
+      if (activeTask.value?.id === task.id) activeTask.value = task;
+    } else if (item.kind === 'rewrite') {
+      const task = await storyApi.cancelRewrite(item.taskId);
+      if (activeRewriteTask.value?.id === task.id) activeRewriteTask.value = task;
+    }
+    await loadTaskHistory();
+    ui.showToast('success', '任务已终止');
+  } catch (err) {
+    ui.showToast('error', err.message || '终止任务失败');
+  }
+}
+
+async function retryHistoryTask(item) {
+  if (!historyTaskCanRetry(item)) return;
+  try {
+    if (item.kind === 'generation') {
+      const task = await storyApi.retryTask(item.taskId);
+      activeTask.value = task;
+      localStorage.setItem('story:lastTaskId', String(task.id));
+      if (['pending', 'running'].includes(task.status)) startActiveTaskPolling();
+    } else if (item.kind === 'rewrite') {
+      const task = await storyApi.retryRewrite(item.taskId, {
+        rewriteMode: item.rewriteMode || 'deslop',
+      });
+      activeRewriteTask.value = task;
+      localStorage.setItem('story:lastRewriteTaskId', String(task.id));
+      if (['pending', 'running'].includes(task.status)) startRewritePolling();
+    }
+    await loadTaskHistory();
+    ui.showToast('success', '已重新提交任务');
+  } catch (err) {
+    ui.showToast('error', err.message || '重试任务失败');
+  }
+}
+
+function rewriteProgress(task) {
+  return Math.max(0, Math.min(100, Number(task?.progress || 0)));
+}
+
+function rewriteTaskStatusLabelFor(task) {
+  return ({
+    completed: '已完成',
+    accepted: '已保存',
+    running: '改写中',
+    pending: '排队中',
+    failed: '失败',
+    canceled: '已取消',
+  }[task?.status] || task?.status || '未知状态');
+}
+
+async function loadActiveRewriteTask() {
+  const taskId = localStorage.getItem('story:lastRewriteTaskId');
+  if (!taskId) return;
+  try {
+    activeRewriteTask.value = await storyApi.getRewrite(taskId);
+    if (!activeRewriteTask.value?.projectId) {
+      dismissRewriteTask();
+      return;
+    }
+    if (['pending', 'running'].includes(activeRewriteTask.value.status)) startRewritePolling();
+  } catch {
+    activeRewriteTask.value = null;
+  }
+}
+
+async function refreshRewriteTask(options = {}) {
+  if (!activeRewriteTask.value?.id) return;
+  const previousStatus = activeRewriteTask.value.status;
+  const task = await storyApi.getRewrite(activeRewriteTask.value.id);
+  activeRewriteTask.value = task;
+  if (rewriteTask.value?.id === task.id) rewriteTask.value = task;
+  if (['pending', 'running'].includes(task.status)) {
+    startRewritePolling();
+  } else {
+    stopRewritePolling();
+  }
+  if (!options.silent && ['pending', 'running'].includes(previousStatus) && task.status === 'completed') {
+    ui.showToast('success', '改写任务已完成，可从任务卡查看三栏对照');
+  }
+}
+
+function startRewritePolling() {
+  if (rewritePollTimer) return;
+  rewritePollTimer = window.setInterval(() => {
+    if (!activeRewriteTask.value?.id || !['pending', 'running'].includes(activeRewriteTask.value.status)) {
+      stopRewritePolling();
+      return;
+    }
+    refreshRewriteTask().catch(() => {});
+  }, 3000);
+}
+
+function stopRewritePolling() {
+  if (!rewritePollTimer) return;
+  window.clearInterval(rewritePollTimer);
+  rewritePollTimer = null;
+}
+
+function openActiveRewriteTask() {
+  if (!rewriteTaskCanOpen.value || !activeRewriteTask.value?.id) return;
+  router.push(`/creation/rewrite/${activeRewriteTask.value.id}`);
+}
+
+function dismissRewriteTask() {
+  stopRewritePolling();
+  activeRewriteTask.value = null;
+  localStorage.removeItem('story:lastRewriteTaskId');
+}
+
+async function cancelActiveRewriteTask() {
+  if (!activeRewriteTask.value?.id || !rewriteTaskCanCancel.value) return;
+  try {
+    const task = await storyApi.cancelRewrite(activeRewriteTask.value.id);
+    activeRewriteTask.value = task;
+    if (rewriteTask.value?.id === task.id) rewriteTask.value = task;
+    stopRewritePolling();
+    await loadTaskHistory();
+    ui.showToast('success', '已终止改写任务');
+  } catch (err) {
+    ui.showToast('error', err.message || '终止改写失败');
+  }
+}
+
+async function cancelRewritePage() {
+  if (!rewriteTask.value?.id || !rewritePageCanCancel.value) return;
+  try {
+    const task = await storyApi.cancelRewrite(rewriteTask.value.id);
+    rewriteTask.value = task;
+    activeRewriteTask.value = task;
+    stopRewritePolling();
+    await loadTaskHistory();
+    ui.showToast('success', '已终止改写任务');
+  } catch (err) {
+    ui.showToast('error', err.message || '终止改写失败');
+  }
+}
+
+async function retryActiveRewriteTask() {
+  if (!activeRewriteTask.value?.id || !rewriteTaskCanRetry.value || rewriteRetrying.value) return;
+  rewriteRetrying.value = true;
+  try {
+    const task = await storyApi.retryRewrite(activeRewriteTask.value.id, {
+      rewriteMode: activeRewriteTask.value.rewriteMode || 'deslop',
+      instruction: activeRewriteTask.value.instruction || '',
+    });
+    activeRewriteTask.value = task;
+    localStorage.setItem('story:lastRewriteTaskId', String(task.id));
+    startRewritePolling();
+    await loadTaskHistory();
+    ui.showToast('success', '已重新提交改写任务');
+  } catch (err) {
+    ui.showToast('error', err.message || '重新改写失败');
+  } finally {
+    rewriteRetrying.value = false;
+  }
+}
+
+async function refreshRewritePage() {
+  if (!route.params.taskId) return;
+  rewriteTask.value = await storyApi.getRewrite(route.params.taskId);
+  activeRewriteTask.value = rewriteTask.value;
+  if (['pending', 'running'].includes(rewriteTask.value.status)) {
+    startRewritePolling();
+  } else {
+    stopRewritePolling();
+  }
+}
+
+function setRewriteSegmentStatus(segment, status) {
+  segment.status = status;
 }
 
 async function loadDraft() {

@@ -5,6 +5,7 @@ export const MAX_MSGS = 100;
 export const SAVE_DEBOUNCE = 250;
 export const QUICK_MODEL = 'deepseek-v4-flash';
 export const EXPERT_MODEL = 'deepseek-v4-pro';
+export const MAX_CHAT_MESSAGE_CHARS = 12000;
 
 export function generateId() {
   return 'sess-' + Math.random().toString(36).slice(2) + Date.now().toString(36);

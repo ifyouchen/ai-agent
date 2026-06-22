@@ -13,4 +13,5 @@ public interface ScriptDraftMapper {
     List<ScriptDraft> findByProjectId(@Param("projectId") Long projectId);
     void insert(ScriptDraft draft);
     void update(ScriptDraft draft);
+    void deleteById(@Param("id") Long id);
 }

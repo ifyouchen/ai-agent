@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
 
 @Slf4j
 @Service
@@ -184,6 +185,8 @@ public class StoryAiService {
                 短剧规则：
                 - 第1集前3秒必须有情绪、冲突或信息钩子。
                 - 每集至少2场，每场必须可拍。
+                - 每一集必须对应小说里不同事件推进，不能让多个场次使用相同对白、旁白、表演和钩子。
+                - 所有 scene 字段都要填充具体内容，不要留空，不要复用示例占位句。
                 - 心理活动必须外化为动作、对白、道具或人物反应。
                 - 对白要口语化，减少小说旁白式解释。
                 """.formatted(projectTitle, targetEpisodes, trim(sourceText, 12000));
@@ -289,9 +292,14 @@ public class StoryAiService {
         ChatLanguageModel model = chatModelProvider.getIfAvailable();
         if (model == null) return fallback;
         try {
+            ensureNotInterrupted();
             String result = model.generate(prompt);
+            ensureNotInterrupted();
             return result == null || result.isBlank() ? fallback : result.trim();
+        } catch (CancellationException e) {
+            throw e;
         } catch (Exception e) {
+            ensureNotInterrupted();
             log.warn("Story AI generation fallback used: {}", e.getMessage());
             return fallback;
         }
@@ -301,9 +309,17 @@ public class StoryAiService {
         String raw = complete(prompt, fallbackJson);
         try {
             return objectMapper.readValue(extractJsonObject(raw), new TypeReference<>() {});
+        } catch (CancellationException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("Story AI JSON parse fallback used: {}", e.getMessage());
             return fallback == null ? new LinkedHashMap<>() : fallback;
+        }
+    }
+
+    private void ensureNotInterrupted() {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new CancellationException("LLM 调用已取消");
         }
     }
 

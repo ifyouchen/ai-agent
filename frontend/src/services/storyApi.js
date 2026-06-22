@@ -97,12 +97,20 @@ export const storyApi = {
     const { data } = await http.post(`/api/v1/story/rewrite/${taskId}/retry`, payload || {});
     return data;
   },
+  async cancelRewrite(taskId) {
+    const { data } = await http.post(`/api/v1/story/rewrite/${taskId}/cancel`);
+    return data;
+  },
   async convertToScript(payload) {
     const { data } = await http.post('/api/v1/story/script/convert', payload);
     return data;
   },
   async getTask(taskId) {
     const { data } = await http.get(`/api/v1/story/tasks/${taskId}`);
+    return data;
+  },
+  async listTaskHistory(limit = 30) {
+    const { data } = await http.get('/api/v1/story/tasks/history', { params: { limit } });
     return data;
   },
   async cancelTask(taskId) {

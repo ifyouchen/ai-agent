@@ -23,6 +23,13 @@
         LIMIT 1
     </select>
 
+    <select id="findRecent" resultMap="GenerationTaskRM">
+        SELECT id, task_type, project_id, status, progress, current_step, error_message, token_usage, created_at, updated_at
+        FROM story_generation_task
+        ORDER BY updated_at DESC, id DESC
+        LIMIT #{limit}
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO story_generation_task
             (task_type, project_id, status, progress, current_step, error_message, token_usage, created_at, updated_at)

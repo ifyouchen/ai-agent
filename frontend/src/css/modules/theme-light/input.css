@@ -250,3 +250,8 @@
     color: #bcc3ce;
 }
 
+.hint-text.over {
+    color: #dc2626;
+    font-weight: 650;
+}
+

@@ -14,6 +14,7 @@ import { useUiStore } from './ui.js';
 import { useOrgStore } from './org.js';
 import {
   EXPERT_MODEL,
+  MAX_CHAT_MESSAGE_CHARS,
   MAX_MSGS,
   MAX_SESSIONS,
   QUICK_MODEL,
@@ -445,12 +446,37 @@ export const useSessionStore = defineStore('sessions', () => {
     return source.includes('{') ? fallback : message;
   }
 
+  function mapStreamErrorMessage(raw, fallback = '流式连接失败，请重试') {
+    const data = parseReactPayload(raw);
+    const code = String(data.code || '').toLowerCase();
+    const message = String(data.message || raw || fallback);
+    const source = `${code} ${message}`.toLowerCase();
+
+    if (source.includes('account_overdue')) {
+      return '模型服务账号欠费或不可用，请检查 API Key 或账户余额';
+    }
+    if (source.includes('context') || source.includes('token') || source.includes('length') || source.includes('maximum')) {
+      return '内容或会话上下文过长，请缩短文本、开启新会话，或导入作品后分章节处理';
+    }
+    if (['busy', 'rate_limited', 'prompt_blocked', 'kb_forbidden', 'timeout'].includes(code)) {
+      return message;
+    }
+    if (code === 'internal_error') {
+      return fallback;
+    }
+    return source.includes('{') ? fallback : message;
+  }
+
   // ── 聊天发送 ──────────────────────────────────────────────────────────
   async function sendMessage(text, kbId = null, requestText = text) {
     const reqId = sessionId.value;
     const rt    = ensureRuntime(reqId);
     if (!text?.trim() || rt.sending) return;
     const outboundText = requestText?.trim() || text;
+    if (outboundText.length > MAX_CHAT_MESSAGE_CHARS) {
+      ui.showToast('warning', `内容过长（${outboundText.length} 字），请控制在 ${MAX_CHAT_MESSAGE_CHARS} 字以内，或导入作品后分章节处理`);
+      return;
+    }
     const effectiveKbId = kbId ?? currentKbId.value ?? null;
 
     pushMessage(reqId, 'user', formatMarkdown(text));
@@ -472,6 +498,10 @@ export const useSessionStore = defineStore('sessions', () => {
     messages.value = [...msgs];
     sessionMessages[sessionId.value] = messages.value;
     const text = stripHtml(userMsg.html);
+    if (text.length > MAX_CHAT_MESSAGE_CHARS) {
+      ui.showToast('warning', `原消息过长（${text.length} 字），请控制在 ${MAX_CHAT_MESSAGE_CHARS} 字以内后再重新生成`);
+      return;
+    }
     const effectiveKbId = kbId ?? currentKbId.value ?? null;
     if (reactEnabled.value)   await doReactChat(sessionId.value, text, effectiveKbId);
     else if (streamEnabled.value) await doStreamChat(sessionId.value, text, effectiveKbId);
@@ -533,8 +563,25 @@ async function doStreamChat(reqId, text, kbId) {
       : '<span class="typing-dots">●●●</span>';
     const bubble = pushMessage(reqId, 'ai', initHtml);
     rt.bubble = bubble; rt.text = ''; rt.suppressSave = true;
-    let fullText = '', firstToken = true;
-    const es = api.chatStream(reqId, text, kbId, activeModel.value, org.currentOrgId);
+    let fullText = '', firstToken = true, serverErrorHandled = false;
+    let es;
+    try {
+      es = await api.chatStream(reqId, text, kbId, activeModel.value, org.currentOrgId);
+    } catch (err) {
+      if (rt.requestId === rid && !rt.cancelled) {
+        bubble.html = `<span class="error-msg">连接失败：${escapeHtml(err.message || '流式连接失败')}</span>`;
+        bubble.durationMs = Date.now() - startMs;
+        rt.suppressSave = false;
+        rt.sending = false; rt.eventSource = null; rt.bubble = null; rt.text = '';
+        scheduleSave();
+      }
+      ui.showToast('error', err.message || '流式连接失败');
+      return;
+    }
+    if (rt.requestId !== rid || rt.cancelled) {
+      es.close();
+      return;
+    }
     rt.eventSource = es;
 
     let rafPending = false, rafId = null;
@@ -569,6 +616,22 @@ async function doStreamChat(reqId, text, kbId) {
       if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
       fullText = ev.data; rt.text = fullText; schedRender();
     });
+    es.addEventListener('error', ev => {
+      if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled || serverErrorHandled) return;
+      if (!ev?.data) return;
+      serverErrorHandled = true;
+      es.close(); cancelAnimationFrame(rafId); rafPending = false;
+      const message = mapStreamErrorMessage(ev.data);
+      if (!fullText) {
+        bubble.html = `<span class="error-msg">${escapeHtml(message)}</span>`;
+        bubble.durationMs = Date.now() - startMs;
+        ui.showToast('error', message);
+      } else {
+        bubble.html = `${formatMarkdown(fullText)}<div class="stopped-msg">${escapeHtml(message)}</div>`;
+        bubble.durationMs = Date.now() - startMs;
+      }
+      finishStream();
+    });
     es.addEventListener('done', () => {
       if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
       es.close(); cancelAnimationFrame(rafId); rafPending = false;
@@ -577,7 +640,7 @@ async function doStreamChat(reqId, text, kbId) {
       finishStream();
     });
     es.onerror = () => {
-      if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
+      if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled || serverErrorHandled) return;
       es.close(); cancelAnimationFrame(rafId); rafPending = false;
       if (!fullText) {
         bubble.html = '<span class="error-msg">连接失败，请重试</span>';
@@ -607,7 +670,27 @@ async function doStreamChat(reqId, text, kbId) {
     let currentStatus = '思考中…';
     const bubble = pushMessage(reqId, 'ai', renderReactThinking(currentStatus, startMs));
     rt.bubble = bubble; rt.reactSteps = []; rt.reactAnswer = null; rt.reactStartMs = startMs; rt.suppressSave = true;
-    const es = api.chatReactStream(reqId, text, kbId, activeModel.value, org.currentOrgId);
+    let es;
+    try {
+      es = await api.chatReactStream(reqId, text, kbId, activeModel.value, org.currentOrgId);
+    } catch (err) {
+      if (rt.requestId === rid && !rt.cancelled) {
+        bubble.html = `<span class="error-msg">${escapeHtml(err.message || '深度推理连接失败，请重试')}</span>`;
+        bubble.durationMs = Date.now() - startMs;
+        rt.suppressSave = false;
+        rt.sending = false;
+        rt.bubble = null;
+        rt.reactSteps = null;
+        rt.reactAnswer = null;
+        scheduleSave();
+      }
+      ui.showToast('error', err.message || '深度推理连接失败');
+      return;
+    }
+    if (rt.requestId !== rid || rt.cancelled) {
+      es.close();
+      return;
+    }
     rt.eventSource = es;
     let lastEventAt = Date.now();
     let receivedAnswer = false;
