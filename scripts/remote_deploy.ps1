@@ -4,7 +4,7 @@ param(
     [string]$User,
     [int]$Port = 22,
     [string]$RepoUrl = "https://github.com/ifyouchen/ai-agent.git",
-    [string]$Branch = "main",
+    [string]$Branch = "feat/novel",
     [string]$RemoteDir = "/opt/aiagent",
     [string]$ComposeFile = "docker-compose.yml",
     [switch]$ForceReset,
@@ -18,27 +18,60 @@ function Quote-Bash {
     return "'" + ($Value -replace "'", "'\''") + "'"
 }
 
+# 兼容PS7找不到系统OpenSSH的工具函数
+function Get-SshBinaries {
+    $systemOpenSshDir = "C:\Windows\System32\OpenSSH"
+    $sshPath = Join-Path $systemOpenSshDir "ssh.exe"
+    $scpPath = Join-Path $systemOpenSshDir "scp.exe"
+
+    # 优先使用系统自带OpenSSH
+    if (Test-Path $sshPath -PathType Leaf -ErrorAction SilentlyContinue) {
+        return [PSCustomObject]@{
+            Ssh = $sshPath
+            Scp = $scpPath
+        }
+    }
+
+    # 兜底从PATH查找
+    $sshCmd = Get-Command ssh -ErrorAction SilentlyContinue
+    $scpCmd = Get-Command scp -ErrorAction SilentlyContinue
+    if ($sshCmd -and $scpCmd) {
+        return [PSCustomObject]@{
+            Ssh = $sshCmd.Source
+            Scp = $scpCmd.Source
+        }
+    }
+
+    return $null
+}
+
+# 校验必填主机
 if (-not $HostName -or $HostName.Trim().Length -eq 0) {
     throw "HostName is required. Example: .\scripts\remote_deploy.ps1 -HostName 1.2.3.4 -User root"
 }
 
+# 交互输入用户名
 if (-not $User -or $User.Trim().Length -eq 0) {
     $inputUser = Read-Host "Server username [root]"
     if ($inputUser -and $inputUser.Trim().Length -gt 0) {
         $User = $inputUser.Trim()
-    } else {
+    }
+    else {
         $User = "root"
     }
 }
 
-$ssh = Get-Command ssh -ErrorAction SilentlyContinue
-if (-not $ssh) {
-    throw "ssh command not found. Install OpenSSH Client first."
+# 检测ssh/scp
+$sshBin = Get-SshBinaries
+if (-not $sshBin) {
+    throw @"
+ssh / scp 未找到，请安装 Windows OpenSSH 客户端：
+设置 → 应用 → 可选功能 → 添加功能 → 搜索 OpenSSH 客户端并安装
+安装完成后重启终端再执行脚本
+"@
 }
-$scp = Get-Command scp -ErrorAction SilentlyContinue
-if (-not $scp) {
-    throw "scp command not found. Install OpenSSH Client first."
-}
+$ssh = $sshBin.Ssh
+$scp = $sshBin.Scp
 
 $forceResetValue = if ($ForceReset) { "true" } else { "false" }
 $followLogsValue = if ($FollowLogs) { "true" } else { "false" }
@@ -224,14 +257,16 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 try {
     Write-Host "[INFO] Uploading deploy script to $remoteTempScript ..."
-    & $scp.Source -P $Port $localTempScript "${target}:$remoteTempScript"
+    # 修复：直接使用完整exe路径，不再调用.Source
+    & $scp -P $Port $localTempScript "${target}:$remoteTempScript"
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to upload remote deploy script. SCP exit code: $LASTEXITCODE"
     }
 
     $remoteRunCommand = "chmod +x $(Quote-Bash $remoteTempScript) && $remoteEnv bash $(Quote-Bash $remoteTempScript); code=`$?; rm -f $(Quote-Bash $remoteTempScript); exit `$code"
-    & $ssh.Source -p $Port $target $remoteRunCommand
-} finally {
+    & $ssh -p $Port $target $remoteRunCommand
+}
+finally {
     Remove-Item -LiteralPath $localTempScript -Force -ErrorAction SilentlyContinue
 }
 
