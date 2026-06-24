@@ -222,7 +222,7 @@ public class ReActAgent {
         long durationMs = System.currentTimeMillis() - startMs;
         log.info("[ReAct] 推理完成 iterations={} durationMs={}", iteration, durationMs);
 
-        return new ReActResult(finalAnswer, steps, iteration, durationMs);
+        return new ReActResult(finalAnswer, steps, iteration, durationMs, 0, 0);
     }
 
     // ── 工具调用分派 ──────────────────────────────────────────────
@@ -254,6 +254,16 @@ public class ReActAgent {
                 }
                 case "getSystemCapabilities" -> businessTools.getSystemCapabilities();
                 case "getDeploymentGuide"    -> businessTools.getDeploymentGuide();
+                case "getMyTokenUsage"      -> {
+                    String daysStr = getString(params, "days");
+                    int days;
+                    try {
+                        days = daysStr.isBlank() ? 7 : Integer.parseInt(daysStr);
+                    } catch (NumberFormatException e) {
+                        days = 7;
+                    }
+                    yield businessTools.getMyTokenUsage(days);
+                }
                 default -> "未知工具：" + toolName;
             };
         } catch (Exception e) {
@@ -384,7 +394,7 @@ public class ReActAgent {
 
         long durationMs = System.currentTimeMillis() - startMs;
         log.info("[ReAct-Stream] 推理完成 iterations={} durationMs={}", iteration, durationMs);
-        return new ReActResult(finalAnswer, steps, iteration, durationMs);
+        return new ReActResult(finalAnswer, steps, iteration, durationMs, 0, 0);
     }
 
     /**
@@ -407,6 +417,10 @@ public class ReActAgent {
         List<ToolSpecification> toolSpecs = getToolSpecs();
         List<ReActStep> steps = new ArrayList<>();
 
+        // 累计各轮 LLM 调用的 token 用量（流式不走 AOP，由 Controller 统一落库）
+        int totalInputTokens = 0;
+        int totalOutputTokens = 0;
+
         int iteration = 0;
         boolean usedTools = false;
         String finalAnswer = null;
@@ -421,6 +435,8 @@ public class ReActAgent {
                 reasoningBuffer.append(token);
                 callback.onReasoningToken(currentIteration, token);
             });
+            totalInputTokens  += tokenCount(response, true);
+            totalOutputTokens += tokenCount(response, false);
 
             AiMessage aiMessage = response != null && response.content() != null
                     ? response.content()
@@ -488,6 +504,8 @@ public class ReActAgent {
                 answerBuffer.append(token);
                 callback.onAnswerToken(token);
             });
+            totalInputTokens  += tokenCount(finalResponse, true);
+            totalOutputTokens += tokenCount(finalResponse, false);
 
             String streamedAnswer = answerBuffer.toString();
             AiMessage finalMessage = finalResponse != null ? finalResponse.content() : null;
@@ -497,8 +515,23 @@ public class ReActAgent {
         }
 
         long durationMs = System.currentTimeMillis() - startMs;
-        log.info("[ReAct-TokenStream] 推理完成 iterations={} durationMs={}", iteration, durationMs);
-        return new ReActResult(finalAnswer, steps, iteration, durationMs);
+        log.info("[ReAct-TokenStream] 推理完成 iterations={} durationMs={} tokens={}/{}",
+                iteration, durationMs, totalInputTokens, totalOutputTokens);
+        return new ReActResult(finalAnswer, steps, iteration, durationMs, totalInputTokens, totalOutputTokens);
+    }
+
+    /**
+     * 从 LangChain4j Response 中安全提取 token 用量。
+     *
+     * @param response LLM 返回
+     * @param input    true=输入 token，false=输出 token
+     */
+    private int tokenCount(Response<AiMessage> response, boolean input) {
+        if (response == null || response.tokenUsage() == null) return 0;
+        Integer v = input
+                ? response.tokenUsage().inputTokenCount()
+                : response.tokenUsage().outputTokenCount();
+        return v != null ? v : 0;
     }
 
     private boolean isDirectAnswerCandidate(String text) {
@@ -777,7 +810,9 @@ public class ReActAgent {
             String answer,
             List<ReActStep> steps,
             int iterations,
-            long durationMs
+            long durationMs,
+            int inputTokens,
+            int outputTokens
     ) {}
 
     /**

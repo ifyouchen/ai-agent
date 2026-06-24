@@ -6,6 +6,7 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -96,7 +97,15 @@ public class MemoryCompactionService {
         }
         sb.append("\n请直接输出更新后的完整摘要。");
         try {
-            return chatLanguageModel.generate(sb.toString());
+            // 标记本次 LLM 调用为「记忆压缩」，供 AOP 切面区分 scenario
+            String prevScenario = MDC.get("scenario");
+            MDC.put("scenario", "memory_compaction");
+            try {
+                return chatLanguageModel.generate(sb.toString());
+            } finally {
+                if (prevScenario == null) MDC.remove("scenario");
+                else MDC.put("scenario", prevScenario);
+            }
         } catch (Exception e) {
             log.warn("摘要生成失败，保留旧摘要: {}", e.getMessage());
             return existingSummary;

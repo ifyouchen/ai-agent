@@ -12,6 +12,7 @@
 - 当用户询问某个组织的成员时，使用 listOrgMembers 工具
 - 当用户询问「我的知识库」时，使用 listMyKnowledgeBases 工具
 - 当用户询问知识库中有哪些文档时，使用 listKbDocuments 工具
+- 当用户询问 token 消耗、用量、费用、成本、花了多少钱时，使用 getMyTokenUsage 工具，按用户表述传入天数：今天传 1，最近 7 天传 7，最近一个月传 30
 
 回答要求：
 - 语言简洁清晰，避免冗余

@@ -3,8 +3,9 @@ package com.example.aiagent.tool;
 import com.example.aiagent.kb.entity.Document;
 import com.example.aiagent.kb.entity.KnowledgeBase;
 import com.example.aiagent.kb.mapper.DocumentMapper;
-import com.example.aiagent.kb.service.KnowledgeBaseService;
 import com.example.aiagent.kb.service.KbMemberService;
+import com.example.aiagent.kb.service.KnowledgeBaseService;
+import com.example.aiagent.observability.service.TokenUsageService;
 import com.example.aiagent.security.service.OrganizationService;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
@@ -15,6 +16,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -34,6 +36,7 @@ public class BusinessTools {
     private final KnowledgeBaseService kbService;
     private final KbMemberService kbMemberService;
     private final DocumentMapper documentMapper;
+    private final TokenUsageService tokenUsageService;
 
     // ── 1. 组织查询 ──────────────────────────────────────────
 
@@ -309,7 +312,82 @@ public class BusinessTools {
         }
     }
 
-    // ── 3. 系统能力与部署 ──────────────────────────────────────────
+    // ── 3. Token 消耗查询 ──────────────────────────────────────────
+
+    /**
+     * 查询当前用户最近 N 天的 Token 消耗统计。
+     *
+     * <p>用户询问"token 消耗/用量/费用/成本/花了多少"时调用。
+     * 返回区间汇总（总 Token、总费用）+ 每日明细。
+     *
+     * @param days 查询天数，范围 1-30：1=今天，7=最近7天，30=最近一个月
+     */
+    @Tool("查询当前用户最近 N 天的 Token 消耗统计，包括区间总 Token 数、总费用（USD）和每日明细。"
+            + "N 范围 1-30：1 表示今天，7 表示最近 7 天，30 表示最近一个月。"
+            + "当用户询问 token 消耗、用量、费用、成本、花了多少钱等问题时调用此工具。")
+    public String getMyTokenUsage(@P("查询天数，1-30：1=今天，7=最近7天，30=最近一个月") int days) {
+        log.info("[Tool] 查询我的 Token 消耗 days={}", days);
+        try {
+            String userId = getCurrentUserId();
+            if (userId == null) {
+                return "无法识别当前用户身份，请先登录。";
+            }
+            // 参数范围校验：clamp 到 1-30
+            int safeDays = Math.max(1, Math.min(30, days));
+
+            List<Map<String, Object>> dailyRows = tokenUsageService.getUserDailyCostReport(userId, safeDays);
+            if (dailyRows == null || dailyRows.isEmpty()) {
+                return String.format("您最近 %d 天暂无 Token 消耗记录。", safeDays);
+            }
+
+            // 累加汇总
+            long totalTokens = 0;
+            double totalCostUsd = 0.0;
+            for (Map<String, Object> row : dailyRows) {
+                totalTokens += toLong(row.get("totalTokens"));
+                totalCostUsd += toDouble(row.get("costUsd"));
+            }
+
+            StringBuilder sb = new StringBuilder();
+            sb.append(String.format("您最近 %d 天的 Token 消耗统计（截至 %s）：\n\n",
+                    safeDays, LocalDate.now(ZoneId.of("Asia/Shanghai"))));
+
+            sb.append("【区间汇总】\n");
+            sb.append(String.format("- 总 Token 消耗：%d\n", totalTokens));
+            sb.append(String.format("- 总费用：$%.6f\n\n", totalCostUsd));
+
+            sb.append("【每日明细】\n");
+            for (Map<String, Object> row : dailyRows) {
+                String day = String.valueOf(row.get("day"));
+                long dayTokens = toLong(row.get("totalTokens"));
+                double dayCost = toDouble(row.get("costUsd"));
+                sb.append(String.format("- %s：%d token，$%.6f\n", day, dayTokens, dayCost));
+            }
+
+            sb.append("\n说明：以上数据基于每次对话的 LLM 调用统计，含输入与输出 Token。");
+            sb.append("如需查看其他时间范围，最多支持查询最近 30 天。");
+            return sb.toString().stripTrailing();
+        } catch (Exception e) {
+            log.error("[Tool] 查询 Token 消耗异常 days={}", days, e);
+            return "查询 Token 消耗时发生错误，请稍后重试。";
+        }
+    }
+
+    /** 安全地将聚合查询返回的数值字段转为 long（兼容 Number / String） */
+    private long toLong(Object v) {
+        if (v == null) return 0L;
+        if (v instanceof Number n) return n.longValue();
+        try { return Long.parseLong(String.valueOf(v)); } catch (Exception e) { return 0L; }
+    }
+
+    /** 安全地将聚合查询返回的费用字段转为 double（兼容 BigDecimal / Number / String） */
+    private double toDouble(Object v) {
+        if (v == null) return 0.0;
+        if (v instanceof Number n) return n.doubleValue();
+        try { return Double.parseDouble(String.valueOf(v)); } catch (Exception e) { return 0.0; }
+    }
+
+    // ── 4. 系统能力与部署 ──────────────────────────────────────────
 
     @Tool("获取当前AI助手系统支持的所有功能与能力说明")
     public String getSystemCapabilities() {

@@ -7,6 +7,10 @@ import com.example.aiagent.kb.service.ChatRagContextService;
 import com.example.aiagent.memory.ConversationMemoryService;
 import com.example.aiagent.memory.RedisChatMemoryStore;
 import com.example.aiagent.memory.UserMemoryService;
+import com.example.aiagent.observability.metrics.LlmMetricsRecorder;
+import com.example.aiagent.observability.model.LlmCallContext;
+import com.example.aiagent.observability.model.TokenPricing;
+import com.example.aiagent.observability.service.TokenUsageService;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
 import com.example.aiagent.security.filter.PromptInjectionFilter;
@@ -64,6 +68,8 @@ public class StreamingChatController {
     private final RedisChatMemoryStore redisChatMemoryStore;
     private final ConversationMemoryService conversationMemoryService;
     private final UserMemoryService userMemoryService;
+    private final TokenUsageService tokenUsageService;
+    private final LlmMetricsRecorder llmMetricsRecorder;
     private final Map<String, PendingStreamChat> pendingStreamChats = new ConcurrentHashMap<>();
     private static final long STREAM_CHAT_TASK_TTL_MS = 120_000L;
 
@@ -167,6 +173,7 @@ public class StreamingChatController {
         emitter.onError(error -> completed.set(true));
         String clientIp = getClientIp(httpRequest);
         MDC.put("scenario", "stream_chat");
+        final String traceId = MDC.get("traceId");
         String sanitizedMessage;
 
         try {
@@ -311,6 +318,9 @@ public class StreamingChatController {
                                     ? response.tokenUsage().outputTokenCount() : 0;
                         }
                         auditLogService.logAiChat(userId, sessionId, clientIp, inputTokens, outputTokens);
+                        // ── Step 8：流式 token 用量落库（流式不走 AOP，手动记录）──
+                        recordStreamTokenUsage(traceId, sessionId, userId, model,
+                                inputTokens, outputTokens, duration);
                         log.info("流式对话完成 userId={} sessionId={} tokens={}/{} 耗时={}ms",
                                 userId, sessionId, inputTokens, outputTokens, duration);
                     } catch (Exception e) {
@@ -393,6 +403,50 @@ public class StreamingChatController {
             return forwarded.split(",")[0].trim();
         }
         return request.getRemoteAddr();
+    }
+
+    /**
+     * 流式对话 token 用量落库（流式不走 AOP 切面，手动记录到 llm_token_usage + Prometheus）
+     *
+     * @param traceId      链路追踪 ID（请求线程捕获）
+     * @param sessionId    会话 ID
+     * @param userId       用户 ID
+     * @param model        前端传入的模型名（用于推断 modelName 标签）
+     * @param inputTokens  输入 token 数
+     * @param outputTokens 输出 token 数
+     * @param durationMs   耗时（毫秒）
+     */
+    private void recordStreamTokenUsage(String traceId, String sessionId, String userId, String model,
+                                        int inputTokens, int outputTokens, long durationMs) {
+        try {
+            String modelName = inferModelName(model);
+            double costUsd = TokenPricing.of(modelName).calculateCost(inputTokens, outputTokens);
+            LlmCallContext ctx = LlmCallContext.builder()
+                    .traceId(traceId)
+                    .sessionId(sessionId)
+                    .userId(userId)
+                    .modelName(modelName)
+                    .scenario("stream_chat")
+                    .inputTokens(inputTokens)
+                    .outputTokens(outputTokens)
+                    .durationMs(durationMs)
+                    .success(true)
+                    .costUsd(costUsd)
+                    .build();
+            llmMetricsRecorder.recordCallComplete(ctx);
+            tokenUsageService.saveAsync(ctx);
+        } catch (Exception e) {
+            log.debug("流式 token 落库失败 sessionId={}: {}", sessionId, e.getMessage());
+        }
+    }
+
+    /** 从模型名推断modelName 标签，与 AOP 切面推断逻辑保持一致 */
+    private static String inferModelName(String model) {
+        if (model == null) return "deepseek";
+        String lower = model.toLowerCase();
+        if (lower.contains("claude")) return "anthropic";
+        if (lower.contains("deepseek")) return "deepseek";
+        return "deepseek";
     }
 
     private boolean sendSseEvent(SseEmitter emitter, AtomicBoolean completed, String eventName, String data) {

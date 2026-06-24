@@ -3,6 +3,7 @@ package com.example.aiagent.memory;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Async;
@@ -113,7 +114,15 @@ public class UserMemoryService {
                 .append("助手：").append(truncate(aiMsg)).append("\n\n");
         sb.append("请输出更新后的完整事实列表（每条一行，不超过 10 条）。如果没有新事实，原样输出已有事实。");
         try {
-            return chatLanguageModel.generate(sb.toString());
+            // 标记本次 LLM 调用为「记忆抽取」，供 AOP 切面区分 scenario
+            String prevScenario = MDC.get("scenario");
+            MDC.put("scenario", "memory_extraction");
+            try {
+                return chatLanguageModel.generate(sb.toString());
+            } finally {
+                if (prevScenario == null) MDC.remove("scenario");
+                else MDC.put("scenario", prevScenario);
+            }
         } catch (Exception e) {
             log.warn("用户记忆提取 LLM 调用失败: {}", e.getMessage());
             return existingFacts;
