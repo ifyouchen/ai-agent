@@ -95,7 +95,7 @@ export const useSessionStore = defineStore('sessions', () => {
       ...s,
       messages: (sessionMessages[s.id] || []).slice(-MAX_MSGS).map(m => ({
         id: m.id, role: m.role,
-        html: m.html, timestamp: m.timestamp, durationMs: m.durationMs,
+        html: m.html, text: m.text || '', timestamp: m.timestamp, durationMs: m.durationMs,
         feedback: m.feedback,
       })),
     }));
@@ -166,6 +166,7 @@ export const useSessionStore = defineStore('sessions', () => {
           id: m.id || generateId(),
           role: m.role,
           html: formatMarkdown(m.content || ''),
+          text: m.content || '',
           timestamp: m.createdAt ? new Date(m.createdAt).getTime() : Date.now(),
           durationMs: 0,
           feedback: m.feedback || null,
@@ -299,7 +300,7 @@ export const useSessionStore = defineStore('sessions', () => {
   function serializeMessagesForServer(msgs) {
     return (msgs || []).slice(-MAX_MSGS).map(m => ({
       role: m.role === 'ai' ? 'ai' : 'user',
-      content: stripHtml(m.html || '').trim(),
+      content: (m.text || '').trim() || stripHtml(m.html || '').trim(),
       timestamp: m.timestamp || Date.now(),
     })).filter(m => m.content);
   }
@@ -352,7 +353,7 @@ export const useSessionStore = defineStore('sessions', () => {
 
   // ── 消息 ──────────────────────────────────────────────────────────────
   function pushMessage(targetId, role, html, extra = {}) {
-    const item = { id: generateId(), role, html, timestamp: Date.now(), feedback: null, ...extra };
+    const item = { id: generateId(), role, html, text: '', timestamp: Date.now(), feedback: null, ...extra };
     if (!sessionMessages[targetId]) sessionMessages[targetId] = [];
     sessionMessages[targetId].push(item);
     if (targetId === sessionId.value) messages.value = sessionMessages[targetId];
@@ -479,7 +480,7 @@ export const useSessionStore = defineStore('sessions', () => {
     }
     const effectiveKbId = kbId ?? currentKbId.value ?? null;
 
-    pushMessage(reqId, 'user', formatMarkdown(text));
+    pushMessage(reqId, 'user', formatMarkdown(text), { text });
     updateSessionTitle(text, reqId);
 
     if (reactEnabled.value)   await doReactChat(reqId, outboundText, effectiveKbId);
@@ -543,6 +544,7 @@ export const useSessionStore = defineStore('sessions', () => {
       const data = await api.chatSync(reqId, text, kbId, activeModel.value, org.currentOrgId);
       if (rt.requestId !== rid || rt.cancelled) return;
       bubble.html = formatMarkdown(data.reply);
+      bubble.text = data.reply || '';
       bubble.durationMs = Date.now() - startMs;
     } catch (err) {
       if (rt.requestId !== rid || rt.cancelled) return;
@@ -636,6 +638,7 @@ async function doStreamChat(reqId, text, kbId) {
       if (rt.eventSource !== es || rt.requestId !== rid || rt.cancelled) return;
       es.close(); cancelAnimationFrame(rafId); rafPending = false;
       bubble.html = formatMarkdown(fullText);
+      bubble.text = fullText;
       bubble.durationMs = Date.now() - startMs;
       finishStream();
     });
@@ -647,6 +650,7 @@ async function doStreamChat(reqId, text, kbId) {
         ui.showToast('error', '流式连接失败');
       } else {
         bubble.html = formatMarkdown(fullText);
+        bubble.text = fullText;
         bubble.durationMs = Date.now() - startMs;
       }
       finishStream();
@@ -916,6 +920,7 @@ async function doStreamChat(reqId, text, kbId) {
         answerStreaming = false;
         answerText = answer;
         rt.reactAnswer = answerText;
+        bubble.text = answerText;
         cancelPendingRender();
         renderProgress(data.durationMs, true);
         bubble.durationMs = data.durationMs;
@@ -931,6 +936,7 @@ async function doStreamChat(reqId, text, kbId) {
         answerStreaming = false;
         answerText = answer;
         rt.reactAnswer = answerText;
+        bubble.text = answerText;
         cancelPendingRender();
         renderProgress(Date.now() - startMs, true);
       } catch {}
