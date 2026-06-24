@@ -166,6 +166,8 @@ public class ReActChatController {
         String clientIp  = getClientIp(httpRequest);
 
         MDC.put("scenario", "react_chat");
+        MDC.put("userId", userId != null ? userId : "anonymous");
+        MDC.put("sessionId", sessionId != null ? sessionId : "unknown");
 
         try {
             // ── Step 1：Prompt 注入检测 ────────────────────
@@ -239,6 +241,11 @@ public class ReActChatController {
             // ── Step 6：审计日志（完成）──────────────────
             auditLogService.logAiChat(userId, sessionId, clientIp,
                     result.inputTokens(), result.outputTokens());
+            if (model != null && !model.isBlank()) {
+                recordReactTokenUsage(MDC.get("traceId"), sessionId, userId, model,
+                        result.inputTokens(), result.outputTokens(), result.durationMs(),
+                        userText, aiText);
+            }
             log.info("[ReAct] 完成 userId={} iterations={} durationMs={} tokens={}/{}",
                     userId, result.iterations(), result.durationMs(),
                     result.inputTokens(), result.outputTokens());
@@ -269,6 +276,8 @@ public class ReActChatController {
                     .body(Map.of("error", e.getMessage()));
         } finally {
             MDC.remove("scenario");
+            MDC.remove("sessionId");
+            MDC.remove("userId");
         }
     }
 
@@ -383,6 +392,7 @@ public class ReActChatController {
                     "深度推理超时，请稍后重试", "timeout");
         });
         String clientIp = getClientIp(httpRequest);
+        final String traceId = MDC.get("traceId");
 
         sendReactStatus(emitter, completed, "请求已接收");
 
@@ -431,8 +441,12 @@ public class ReActChatController {
         }
         try {
         sseExecutor.execute(() -> {
+            if (traceId != null) {
+                MDC.put("traceId", traceId);
+            }
             MDC.put("scenario", "react_stream");
-            MDC.put("userId", userId);
+            MDC.put("userId", userId != null ? userId : "anonymous");
+            MDC.put("sessionId", sessionId != null ? sessionId : "unknown");
             long startMs = System.currentTimeMillis();
             // 异步线程中设置 RAG 上下文（ThreadLocal 是线程级别的）
             if (ragContext != null) {
@@ -595,7 +609,9 @@ public class ReActChatController {
             } finally {
                 HybridRagContentRetriever.clearContext();
                 MDC.remove("scenario");
+                MDC.remove("sessionId");
                 MDC.remove("userId");
+                MDC.remove("traceId");
             }
         });
         } catch (RejectedExecutionException ex) {
@@ -781,10 +797,8 @@ public class ReActChatController {
     }
 
     private static String inferReactModelName(String model) {
-        if (model == null) return "deepseek";
-        String lower = model.toLowerCase();
-        if (lower.contains("claude")) return "anthropic";
-        return "deepseek";
+        if (model == null || model.isBlank()) return "deepseek-v4-pro";
+        return model.trim();
     }
 
     /** 提取客户端真实 IP（兼容 Nginx 反向代理） */

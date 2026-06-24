@@ -177,6 +177,8 @@ public class StreamingChatController {
         emitter.onError(error -> completed.set(true));
         String clientIp = getClientIp(httpRequest);
         MDC.put("scenario", "stream_chat");
+        MDC.put("userId", userId != null ? userId : "anonymous");
+        MDC.put("sessionId", sessionId != null ? sessionId : "unknown");
         final String traceId = MDC.get("traceId");
         String sanitizedMessage;
 
@@ -223,6 +225,8 @@ public class StreamingChatController {
             return emitter;
         } finally {
             MDC.remove("scenario");
+            MDC.remove("sessionId");
+            MDC.remove("userId");
         }
 
         // ── Step 4：LLM 流式调用 ──────────────────────────
@@ -457,11 +461,8 @@ public class StreamingChatController {
 
     /** 从模型名推断modelName 标签，与 AOP 切面推断逻辑保持一致 */
     private static String inferModelName(String model) {
-        if (model == null) return "deepseek";
-        String lower = model.toLowerCase();
-        if (lower.contains("claude")) return "anthropic";
-        if (lower.contains("deepseek")) return "deepseek";
-        return "deepseek";
+        if (model == null || model.isBlank()) return "deepseek-v4-flash";
+        return model.trim();
     }
 
     private boolean sendSseEvent(SseEmitter emitter, AtomicBoolean completed, String eventName, String data) {

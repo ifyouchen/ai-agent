@@ -13,6 +13,8 @@ public enum TokenPricing {
 
     DEEPSEEK_CHAT("deepseek-chat", 0.14, 0.28),
     DEEPSEEK_REASONER("deepseek-reasoner", 0.55, 2.19),
+    DEEPSEEK_V4_FLASH("deepseek-v4-flash", 0.14, 0.28),
+    DEEPSEEK_V4_PRO("deepseek-v4-pro", 0.55, 2.19),
 
     CLAUDE_OPUS_4_8("claude-opus-4-8", 5.0, 25.0),
     CLAUDE_SONNET_4_6("claude-sonnet-4-6", 3.0, 15.0),

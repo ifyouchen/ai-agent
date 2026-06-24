@@ -70,25 +70,25 @@
     <!-- 按天聚合个人费用（用于个人趋势折线图） -->
     <select id="aggregateDailyByUserSince" resultType="java.util.Map">
         SELECT
-            DATE_TRUNC('day', called_at AT TIME ZONE 'UTC')::DATE AS day,
+            DATE_TRUNC('day', called_at AT TIME ZONE 'Asia/Shanghai')::DATE AS day,
             SUM(cost_usd)      AS costUsd,
             SUM(total_tokens)  AS totalTokens
         FROM llm_token_usage
         WHERE user_id = #{userId}
           AND called_at &gt;= #{since}
-        GROUP BY DATE_TRUNC('day', called_at AT TIME ZONE 'UTC')::DATE
+        GROUP BY DATE_TRUNC('day', called_at AT TIME ZONE 'Asia/Shanghai')::DATE
         ORDER BY day ASC
     </select>
 
     <!-- 按天聚合（PostgreSQL DATE_TRUNC），用于趋势折线图 -->
     <select id="aggregateDailySince" resultType="java.util.Map">
         SELECT
-            DATE_TRUNC('day', called_at AT TIME ZONE 'UTC')::DATE AS day,
+            DATE_TRUNC('day', called_at AT TIME ZONE 'Asia/Shanghai')::DATE AS day,
             SUM(cost_usd)      AS costUsd,
             SUM(total_tokens)  AS totalTokens
         FROM llm_token_usage
         WHERE called_at &gt;= #{since}
-        GROUP BY DATE_TRUNC('day', called_at AT TIME ZONE 'UTC')::DATE
+        GROUP BY DATE_TRUNC('day', called_at AT TIME ZONE 'Asia/Shanghai')::DATE
         ORDER BY day ASC
     </select>
 

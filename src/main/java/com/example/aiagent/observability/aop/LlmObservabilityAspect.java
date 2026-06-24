@@ -13,6 +13,8 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.slf4j.MDC;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -59,7 +61,7 @@ public class LlmObservabilityAspect {
         LlmCallContext.LlmCallContextBuilder ctxBuilder = LlmCallContext.builder()
                 .traceId(MDC.get("traceId"))
                 .sessionId(MDC.get("sessionId"))
-                .userId(MDC.get("userId"))
+                .userId(resolveUserId())
                 .modelName(modelName)
                 .scenario(scenario)
                 .startTime(startTime);
@@ -176,5 +178,23 @@ public class LlmObservabilityAspect {
 
     private int safeGet(Integer value) {
         return value != null ? value : 0;
+    }
+
+    private String resolveUserId() {
+        String userId = MDC.get("userId");
+        if (userId != null && !userId.isBlank() && !"anonymous".equalsIgnoreCase(userId)) {
+            return userId;
+        }
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication != null && authentication.isAuthenticated()) {
+                Object principal = authentication.getPrincipal();
+                if (principal instanceof String value && !value.isBlank()
+                        && !"anonymousUser".equalsIgnoreCase(value)) {
+                    return value;
+                }
+            }
+        } catch (Exception ignored) {}
+        return userId;
     }
 }

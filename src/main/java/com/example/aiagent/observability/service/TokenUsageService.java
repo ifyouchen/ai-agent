@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -24,6 +26,8 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class TokenUsageService {
+
+    private static final ZoneId REPORT_ZONE = ZoneId.of("Asia/Shanghai");
 
     private final TokenUsageMapper tokenUsageMapper;
 
@@ -64,7 +68,7 @@ public class TokenUsageService {
      * 查询今日全局总费用（用于预算告警）
      */
     public BigDecimal getTodayTotalCost() {
-        Instant todayStart = Instant.now().truncatedTo(ChronoUnit.DAYS);
+        Instant todayStart = shanghaiDayStart(0);
         // 汇总所有模型今日费用
         return tokenUsageMapper.aggregateByModelSince(todayStart).stream()
                 .map(row -> (BigDecimal) row.get("costUsd"))
@@ -75,7 +79,7 @@ public class TokenUsageService {
      * 查询用户今日费用（用于配额告警）
      */
     public BigDecimal getUserTodayCost(String userId) {
-        Instant todayStart = Instant.now().truncatedTo(ChronoUnit.DAYS);
+        Instant todayStart = shanghaiDayStart(0);
         return tokenUsageMapper.sumCostByUserSince(userId, todayStart);
     }
 
@@ -83,7 +87,7 @@ public class TokenUsageService {
      * 成本报表：按模型统计近 N 天用量
      */
     public List<Map<String, Object>> getModelCostReport(int days) {
-        Instant since = Instant.now().minus(days, ChronoUnit.DAYS);
+        Instant since = shanghaiNaturalDaysStart(days);
         List<Map<String, Object>> rows = tokenUsageMapper.aggregateByModelSince(since);
 
         List<Map<String, Object>> report = new ArrayList<>();
@@ -102,7 +106,7 @@ public class TokenUsageService {
      * 成本报表：按用户统计近 N 天用量（TopN 消费用户）
      */
     public List<Map<String, Object>> getUserCostReport(int days) {
-        Instant since = Instant.now().minus(days, ChronoUnit.DAYS);
+        Instant since = shanghaiNaturalDaysStart(days);
         List<Map<String, Object>> rows = tokenUsageMapper.aggregateByUserSince(since);
 
         List<Map<String, Object>> report = new ArrayList<>();
@@ -120,7 +124,7 @@ public class TokenUsageService {
      * 个人成本报表：按天统计近 N 天费用趋势（用于个人折线图）
      */
     public List<Map<String, Object>> getUserDailyCostReport(String userId, int days) {
-        Instant since = Instant.now().minus(days, ChronoUnit.DAYS);
+        Instant since = shanghaiNaturalDaysStart(days);
         List<Map<String, Object>> rows = tokenUsageMapper.aggregateDailyByUserSince(userId, since);
         List<Map<String, Object>> report = new ArrayList<>();
         for (Map<String, Object> row : rows) {
@@ -138,7 +142,7 @@ public class TokenUsageService {
      * 返回 [{day: "2026-06-01", costUsd: 0.123, totalTokens: 5000}, ...]
      */
     public List<Map<String, Object>> getDailyCostReport(int days) {
-        Instant since = Instant.now().minus(days, ChronoUnit.DAYS);
+        Instant since = shanghaiNaturalDaysStart(days);
         List<Map<String, Object>> rows = tokenUsageMapper.aggregateDailySince(since);
         List<Map<String, Object>> report = new ArrayList<>();
         for (Map<String, Object> row : rows) {
@@ -159,5 +163,17 @@ public class TokenUsageService {
         long errors = tokenUsageMapper.countErrorsSince(since);
         long total  = tokenUsageMapper.countTotalSince(since);
         return total == 0 ? 0.0 : (double) errors / total;
+    }
+
+    private Instant shanghaiNaturalDaysStart(int days) {
+        int safeDays = Math.max(1, days);
+        return shanghaiDayStart(safeDays - 1L);
+    }
+
+    private Instant shanghaiDayStart(long daysAgo) {
+        return LocalDate.now(REPORT_ZONE)
+                .minusDays(daysAgo)
+                .atStartOfDay(REPORT_ZONE)
+                .toInstant();
     }
 }

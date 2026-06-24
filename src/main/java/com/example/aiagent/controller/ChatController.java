@@ -8,11 +8,15 @@ import com.example.aiagent.kb.service.ChatRagContextService;
 import com.example.aiagent.memory.ConversationMemoryService;
 import com.example.aiagent.memory.RedisChatMemoryStore;
 import com.example.aiagent.memory.UserMemoryService;
+import com.example.aiagent.observability.model.LlmCallContext;
+import com.example.aiagent.observability.model.TokenPricing;
+import com.example.aiagent.observability.service.TokenUsageService;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
 import com.example.aiagent.security.filter.PromptInjectionFilter;
 import com.example.aiagent.security.service.AuditLogService;
 import com.example.aiagent.security.service.RateLimitService;
+import dev.langchain4j.model.openai.OpenAiTokenizer;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -56,6 +60,9 @@ public class ChatController {
     private final AuditLogService auditLogService;
     private final ChatHistoryService chatHistoryService;
     private final ChatRagContextService chatRagContextService;
+    private final TokenUsageService tokenUsageService;
+
+    private static final OpenAiTokenizer SYNC_TOKENIZER = new OpenAiTokenizer();
 
     /**
      * 发送消息（普通同步模式）
@@ -72,7 +79,10 @@ public class ChatController {
                                    HttpServletRequest httpRequest) {
 
         String clientIp = getClientIp(httpRequest);
+        String sessionId = request.getSessionId();
         MDC.put("scenario", "chat");
+        MDC.put("userId", userId != null ? userId : "anonymous");
+        MDC.put("sessionId", sessionId != null ? sessionId : "unknown");
 
         try {
             // ── Step 1：Prompt 注入检测 ────────────────────
@@ -103,7 +113,7 @@ public class ChatController {
 
             // ── Step 3：审计日志（请求开始）──────────────
             auditLogService.log(AuditLogService.EventType.AI_CHAT_REQUEST,
-                    userId, request.getSessionId(), clientIp, true,
+                    userId, sessionId, clientIp, true,
                     Map.of("messageLength", injectionCheck.sanitizedInput().length()));
 
             // ── Step 4：LLM 调用（请求指定 kbId 时设置 RAG 上下文）──────────
@@ -139,12 +149,19 @@ public class ChatController {
                         userId, clientIp, "输出内容包含敏感信息，已脱敏：" + outputCheck.detectedTypes());
             }
 
-            // ── Step 6：审计日志（对话完成）──────────────
-            auditLogService.logAiChat(userId, request.getSessionId(), clientIp, 0, 0);
-
-            // ── Step 7：异步持久化聊天记录 ──────────────
             String userText = injectionCheck.sanitizedInput();
             String aiText   = outputCheck.filteredContent();
+
+            int inputTokens = estimateInputTokens(userText, sessionSummary, userMemory);
+            int outputTokens = SYNC_TOKENIZER.estimateTokenCountInText(aiText != null ? aiText : "");
+
+            // ── Step 6：审计日志（对话完成）──────────────
+            auditLogService.logAiChat(userId, request.getSessionId(), clientIp, inputTokens, outputTokens);
+
+            // 动态创建的模型实例不一定经过 Spring AOP，前端传模型名时手动补充统计。
+            recordEstimatedSyncTokenUsage(request, userId, sessionId, inputTokens, outputTokens, duration);
+
+            // ── Step 7：异步持久化聊天记录 ──────────────
             chatHistoryService.saveExchange(request.getSessionId(), userId,
                     userText.substring(0, Math.min(userText.length(), 20)), request.getKbId(),
                     userText, aiText);
@@ -167,6 +184,8 @@ public class ChatController {
                     .body(Map.of("error", e.getMessage()));
         } finally {
             MDC.remove("scenario");
+            MDC.remove("sessionId");
+            MDC.remove("userId");
         }
     }
 
@@ -190,5 +209,38 @@ public class ChatController {
             return forwarded.split(",")[0].trim();
         }
         return request.getRemoteAddr();
+    }
+
+    private int estimateInputTokens(String userText, String sessionSummary, String userMemory) {
+        return SYNC_TOKENIZER.estimateTokenCountInText(userText != null ? userText : "")
+                + SYNC_TOKENIZER.estimateTokenCountInText(sessionSummary != null ? sessionSummary : "")
+                + SYNC_TOKENIZER.estimateTokenCountInText(userMemory != null ? userMemory : "")
+                + 600;
+    }
+
+    private void recordEstimatedSyncTokenUsage(ChatRequest request, String userId, String sessionId,
+                                               int inputTokens, int outputTokens, long durationMs) {
+        String modelName = request.getModel();
+        if (modelName == null || modelName.isBlank()) {
+            return;
+        }
+        try {
+            double costUsd = TokenPricing.of(modelName).calculateCost(inputTokens, outputTokens);
+            LlmCallContext ctx = LlmCallContext.builder()
+                    .traceId(MDC.get("traceId"))
+                    .sessionId(sessionId)
+                    .userId(userId)
+                    .modelName(modelName)
+                    .scenario("chat")
+                    .inputTokens(inputTokens)
+                    .outputTokens(outputTokens)
+                    .durationMs(durationMs)
+                    .success(true)
+                    .costUsd(costUsd)
+                    .build();
+            tokenUsageService.saveAsync(ctx);
+        } catch (Exception e) {
+            log.debug("同步对话 token 估算落库失败 sessionId={}: {}", sessionId, e.getMessage());
+        }
     }
 }
