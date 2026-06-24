@@ -4,6 +4,7 @@ import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
+import dev.langchain4j.model.openai.OpenAiTokenizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
@@ -69,6 +70,7 @@ public class DeepSeekModelFactory {
                 .apiKey(props.getApiKey())
                 .modelName(modelName)
                 .temperature(props.getTemperature())
+                .tokenizer(new OpenAiTokenizer())
                 .build();
     }
 }

@@ -6,6 +6,10 @@ import com.example.aiagent.controller.sse.SseDeltaBuffer;
 import com.example.aiagent.kb.service.ChatRagContextService;
 import com.example.aiagent.memory.ConversationMemoryService;
 import com.example.aiagent.memory.UserMemoryService;
+import com.example.aiagent.observability.metrics.LlmMetricsRecorder;
+import com.example.aiagent.observability.model.LlmCallContext;
+import com.example.aiagent.observability.model.TokenPricing;
+import com.example.aiagent.observability.service.TokenUsageService;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
 import com.example.aiagent.security.filter.PromptInjectionFilter;
@@ -67,6 +71,8 @@ public class ReActChatController {
     private final ChatHistoryService chatHistoryService;
     private final ConversationMemoryService conversationMemoryService;
     private final UserMemoryService userMemoryService;
+    private final TokenUsageService tokenUsageService;
+    private final LlmMetricsRecorder llmMetricsRecorder;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final long REACT_STREAM_TASK_TTL_MS = 120_000L;
@@ -106,6 +112,8 @@ public class ReActChatController {
             ChatHistoryService chatHistoryService,
             ConversationMemoryService conversationMemoryService,
             UserMemoryService userMemoryService,
+            TokenUsageService tokenUsageService,
+            LlmMetricsRecorder llmMetricsRecorder,
             @Qualifier("sseTaskExecutor") Executor sseExecutor) {
         this.reActAgent = reActAgent;
         this.promptInjectionFilter = promptInjectionFilter;
@@ -116,6 +124,8 @@ public class ReActChatController {
         this.chatHistoryService = chatHistoryService;
         this.conversationMemoryService = conversationMemoryService;
         this.userMemoryService = userMemoryService;
+        this.tokenUsageService = tokenUsageService;
+        this.llmMetricsRecorder = llmMetricsRecorder;
         this.sseExecutor = sseExecutor;
     }
 
@@ -224,9 +234,11 @@ public class ReActChatController {
             userMemoryService.extractAsync(userId, userText, aiText);
 
             // ── Step 6：审计日志（完成）──────────────────
-            auditLogService.logAiChat(userId, sessionId, clientIp, 0, 0);
-            log.info("[ReAct] 完成 userId={} iterations={} durationMs={}",
-                    userId, result.iterations(), result.durationMs());
+            auditLogService.logAiChat(userId, sessionId, clientIp,
+                    result.inputTokens(), result.outputTokens());
+            log.info("[ReAct] 完成 userId={} iterations={} durationMs={} tokens={}/{}",
+                    userId, result.iterations(), result.durationMs(),
+                    result.inputTokens(), result.outputTokens());
 
             // 构建响应（包含推理步骤，便于前端展示思考过程）
             List<Map<String, Object>> stepList = result.steps().stream()
@@ -559,9 +571,13 @@ public class ReActChatController {
 
                 // ── Step 6：审计日志 ──────────────────
                 long duration = System.currentTimeMillis() - startMs;
-                auditLogService.logAiChat(userId, sessionId, clientIp, 0, 0);
-                log.info("[ReAct-Stream] 完成 userId={} iterations={} durationMs={}",
-                        userId, result.iterations(), duration);
+                auditLogService.logAiChat(userId, sessionId, clientIp,
+                        result.inputTokens(), result.outputTokens());
+                recordReactTokenUsage(MDC.get("traceId"), sessionId, userId, model,
+                        result.inputTokens(), result.outputTokens(), duration);
+                log.info("[ReAct-Stream] 完成 userId={} iterations={} durationMs={} tokens={}/{}",
+                        userId, result.iterations(), duration,
+                        result.inputTokens(), result.outputTokens());
 
             } catch (Exception e) {
                 reactCallback.flushDeltas();
@@ -726,6 +742,40 @@ public class ReActChatController {
             String model,
             long createdAtMs
     ) {}
+
+    /**
+     * ReAct 流式 token 用量落库（流式不走 AOP 切面，手动记录到 llm_token_usage + Prometheus）
+     */
+    private void recordReactTokenUsage(String traceId, String sessionId, String userId, String model,
+                                       int inputTokens, int outputTokens, long durationMs) {
+        try {
+            String modelName = inferReactModelName(model);
+            double costUsd = TokenPricing.of(modelName).calculateCost(inputTokens, outputTokens);
+            LlmCallContext ctx = LlmCallContext.builder()
+                    .traceId(traceId)
+                    .sessionId(sessionId)
+                    .userId(userId)
+                    .modelName(modelName)
+                    .scenario("react_stream")
+                    .inputTokens(inputTokens)
+                    .outputTokens(outputTokens)
+                    .durationMs(durationMs)
+                    .success(true)
+                    .costUsd(costUsd)
+                    .build();
+            llmMetricsRecorder.recordCallComplete(ctx);
+            tokenUsageService.saveAsync(ctx);
+        } catch (Exception e) {
+            log.debug("[ReAct] token 落库失败 sessionId={}: {}", sessionId, e.getMessage());
+        }
+    }
+
+    private static String inferReactModelName(String model) {
+        if (model == null) return "deepseek";
+        String lower = model.toLowerCase();
+        if (lower.contains("claude")) return "anthropic";
+        return "deepseek";
+    }
 
     /** 提取客户端真实 IP（兼容 Nginx 反向代理） */
     private String getClientIp(HttpServletRequest request) {
