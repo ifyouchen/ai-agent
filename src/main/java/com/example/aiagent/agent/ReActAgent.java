@@ -30,6 +30,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -132,6 +133,15 @@ public class ReActAgent {
             - 最终答案由后续 answer 阶段单独生成。
             """;
 
+    private static final String DIRECT_GENERATION_PROMPT = """
+            当前请求是直接生成内容/代码的任务。
+            要求：
+            - 直接输出面向用户的最终答案，不要调用工具。
+            - 不要输出 Thought/Action/Observation 标签。
+            - 如果输出代码，请给出完整、可运行/可直接保存的版本，保留清晰缩进和换行。
+            - 不要先解释很久；先给成品，再补充必要说明。
+            """;
+
     /**
      * 执行 ReAct 多步推理
      *
@@ -155,6 +165,9 @@ public class ReActAgent {
         long startMs = System.currentTimeMillis();
 
         List<ChatMessage> messages = buildInitialMessages(sessionId, userQuery, tenantId, kbId);
+        if (shouldBypassReActForDirectGeneration(userQuery)) {
+            return executeDirectGeneration(activeModel, messages, startMs);
+        }
 
         List<ToolSpecification> toolSpecs = getToolSpecs();
         List<ReActStep> steps = new ArrayList<>();
@@ -413,6 +426,9 @@ public class ReActAgent {
         long startMs = System.currentTimeMillis();
 
         List<ChatMessage> messages = buildInitialMessages(sessionId, userQuery, tenantId, kbId);
+        if (shouldBypassReActForDirectGeneration(userQuery)) {
+            return executeStreamingDirectGeneration(activeModel, messages, callback, startMs);
+        }
         messages.add(1, SystemMessage.from(STREAMING_REACT_PROTOCOL_PROMPT));
         List<ToolSpecification> toolSpecs = getToolSpecs();
         List<ReActStep> steps = new ArrayList<>();
@@ -550,6 +566,67 @@ public class ReActAgent {
                 && !normalized.contains("最终答案")
                 && !normalized.contains("生成最终")
                 && !normalized.contains("可以生成");
+    }
+
+    private boolean shouldBypassReActForDirectGeneration(String userQuery) {
+        if (userQuery == null || userQuery.isBlank()) {
+            return false;
+        }
+        String lower = userQuery.toLowerCase(Locale.ROOT);
+        boolean createIntent = containsAny(lower,
+                "写", "生成", "做", "创建", "实现", "开发", "输出", "帮我弄", "帮我做");
+        boolean codeOrPageTarget = containsAny(lower,
+                "html", "css", "javascript", "js", "java", "vue", "react", "页面", "网页",
+                "前端", "代码", "源码", "系统", "管理后台", "管理系统");
+        boolean queryOrToolIntent = containsAny(lower,
+                "token", "用量", "消耗", "费用", "成本", "统计", "查询", "知识库", "组织", "数据库记录");
+        return createIntent && codeOrPageTarget && !queryOrToolIntent;
+    }
+
+    private boolean containsAny(String text, String... needles) {
+        for (String needle : needles) {
+            if (text.contains(needle)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private ReActResult executeDirectGeneration(ChatLanguageModel activeModel,
+                                                List<ChatMessage> messages,
+                                                long startMs) {
+        log.info("[ReAct] 命中直接生成任务，跳过 ReAct 工具循环");
+        messages.add(1, SystemMessage.from(DIRECT_GENERATION_PROMPT));
+        Response<AiMessage> response = activeModel.generate(messages);
+        String answer = response != null && response.content() != null && response.content().text() != null
+                ? response.content().text()
+                : "";
+        long durationMs = System.currentTimeMillis() - startMs;
+        log.info("[ReAct] 直接生成完成 durationMs={}", durationMs);
+        return new ReActResult(answer, List.of(), 0, durationMs, tokenCount(response, true), tokenCount(response, false));
+    }
+
+    private ReActResult executeStreamingDirectGeneration(StreamingChatLanguageModel activeModel,
+                                                         List<ChatMessage> messages,
+                                                         ReActStreamCallback callback,
+                                                         long startMs) {
+        log.info("[ReAct-TokenStream] 命中直接生成任务，跳过 ReAct 工具循环");
+        messages.add(1, SystemMessage.from(DIRECT_GENERATION_PROMPT));
+        callback.onAnswerStart(0);
+        StringBuilder answerBuffer = new StringBuilder();
+        Response<AiMessage> response = streamGenerate(activeModel, messages, null, token -> {
+            answerBuffer.append(token);
+            callback.onAnswerToken(token);
+        });
+        String streamedAnswer = answerBuffer.toString();
+        AiMessage finalMessage = response != null ? response.content() : null;
+        String answer = !streamedAnswer.isBlank()
+                ? streamedAnswer
+                : finalMessage != null && finalMessage.text() != null ? finalMessage.text() : "";
+        long durationMs = System.currentTimeMillis() - startMs;
+        log.info("[ReAct-TokenStream] 直接生成完成 durationMs={} tokens={}/{}",
+                durationMs, tokenCount(response, true), tokenCount(response, false));
+        return new ReActResult(answer, List.of(), 0, durationMs, tokenCount(response, true), tokenCount(response, false));
     }
 
     private Response<AiMessage> streamGenerate(StreamingChatLanguageModel activeModel,

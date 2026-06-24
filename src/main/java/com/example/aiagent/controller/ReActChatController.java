@@ -9,6 +9,7 @@ import com.example.aiagent.memory.UserMemoryService;
 import com.example.aiagent.observability.metrics.LlmMetricsRecorder;
 import com.example.aiagent.observability.model.LlmCallContext;
 import com.example.aiagent.observability.model.TokenPricing;
+import com.example.aiagent.observability.service.TokenUsageIntentService;
 import com.example.aiagent.observability.service.TokenUsageService;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
@@ -73,6 +74,7 @@ public class ReActChatController {
     private final ConversationMemoryService conversationMemoryService;
     private final UserMemoryService userMemoryService;
     private final TokenUsageService tokenUsageService;
+    private final TokenUsageIntentService tokenUsageIntentService;
     private final LlmMetricsRecorder llmMetricsRecorder;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -116,6 +118,7 @@ public class ReActChatController {
             ConversationMemoryService conversationMemoryService,
             UserMemoryService userMemoryService,
             TokenUsageService tokenUsageService,
+            TokenUsageIntentService tokenUsageIntentService,
             LlmMetricsRecorder llmMetricsRecorder,
             @Qualifier("sseTaskExecutor") Executor sseExecutor) {
         this.reActAgent = reActAgent;
@@ -128,6 +131,7 @@ public class ReActChatController {
         this.conversationMemoryService = conversationMemoryService;
         this.userMemoryService = userMemoryService;
         this.tokenUsageService = tokenUsageService;
+        this.tokenUsageIntentService = tokenUsageIntentService;
         this.llmMetricsRecorder = llmMetricsRecorder;
         this.sseExecutor = sseExecutor;
     }
@@ -197,6 +201,24 @@ public class ReActChatController {
             auditLogService.log(AuditLogService.EventType.AI_CHAT_REQUEST,
                     userId, sessionId, clientIp, true,
                     Map.of("messageLength", injectionCheck.sanitizedInput().length(), "mode", "react"));
+
+            java.util.Optional<TokenUsageIntentService.Result> usageResult =
+                    tokenUsageIntentService.resolve(userId, injectionCheck.sanitizedInput());
+            if (usageResult.isPresent()) {
+                String userText = injectionCheck.sanitizedInput();
+                String aiText = usageResult.get().answer();
+                chatHistoryService.saveExchange(sessionId, userId,
+                        userText.substring(0, Math.min(userText.length(), 20)), parseLong(request.get("kbId")),
+                        userText, aiText);
+                auditLogService.logAiChat(userId, sessionId, clientIp, 0, 0);
+                return ResponseEntity.ok(Map.of(
+                        "sessionId", sessionId,
+                        "answer", aiText,
+                        "iterations", 0,
+                        "durationMs", 0,
+                        "steps", List.of()
+                ));
+            }
 
             // ── Step 4：ReAct 多步推理（设置 RAG 上下文后执行）──
             String kbIdStr = request.get("kbId");
@@ -424,6 +446,26 @@ public class ReActChatController {
         auditLogService.log(AuditLogService.EventType.AI_CHAT_REQUEST,
                 userId, sessionId, clientIp, true,
                 Map.of("messageLength", injectionCheck.sanitizedInput().length(), "mode", "react-stream"));
+
+        java.util.Optional<TokenUsageIntentService.Result> usageResult =
+                tokenUsageIntentService.resolve(userId, injectionCheck.sanitizedInput());
+        if (usageResult.isPresent()) {
+            String userText = injectionCheck.sanitizedInput();
+            String aiText = usageResult.get().answer();
+            chatHistoryService.saveExchange(sessionId, userId,
+                    userText.substring(0, Math.min(userText.length(), 20)), kbId,
+                    userText, aiText);
+            auditLogService.logAiChat(userId, sessionId, clientIp, 0, 0);
+            sendReactJsonEvent(emitter, completed, "answer-start", Map.of("iteration", 0));
+            sendReactJsonEvent(emitter, completed, "answer", Map.of(
+                    "answer", aiText,
+                    "iterations", 0,
+                    "durationMs", 0
+            ));
+            sendSseEvent(emitter, completed, "done", "[DONE]");
+            completeOnce(emitter, completed);
+            return emitter;
+        }
 
         // ── Step 4：异步线程执行 ReAct 推理 ──────────
         final String sanitizedMessage = injectionCheck.sanitizedInput();

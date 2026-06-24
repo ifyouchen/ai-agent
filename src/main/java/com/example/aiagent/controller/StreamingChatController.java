@@ -10,6 +10,7 @@ import com.example.aiagent.memory.UserMemoryService;
 import com.example.aiagent.observability.metrics.LlmMetricsRecorder;
 import com.example.aiagent.observability.model.LlmCallContext;
 import com.example.aiagent.observability.model.TokenPricing;
+import com.example.aiagent.observability.service.TokenUsageIntentService;
 import com.example.aiagent.observability.service.TokenUsageService;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
@@ -70,6 +71,7 @@ public class StreamingChatController {
     private final ConversationMemoryService conversationMemoryService;
     private final UserMemoryService userMemoryService;
     private final TokenUsageService tokenUsageService;
+    private final TokenUsageIntentService tokenUsageIntentService;
     private final LlmMetricsRecorder llmMetricsRecorder;
     private final Map<String, PendingStreamChat> pendingStreamChats = new ConcurrentHashMap<>();
     private static final long STREAM_CHAT_TASK_TTL_MS = 120_000L;
@@ -216,6 +218,20 @@ public class StreamingChatController {
             auditLogService.log(AuditLogService.EventType.AI_CHAT_REQUEST,
                     userId, sessionId, clientIp, true,
                     Map.of("messageLength", sanitizedMessage.length(), "mode", "stream"));
+
+            java.util.Optional<TokenUsageIntentService.Result> usageResult =
+                    tokenUsageIntentService.resolve(userId, sanitizedMessage);
+            if (usageResult.isPresent()) {
+                String finalText = usageResult.get().answer();
+                chatHistoryService.saveExchange(sessionId, userId,
+                        sanitizedMessage.substring(0, Math.min(sanitizedMessage.length(), 20)), kbId,
+                        sanitizedMessage, finalText);
+                auditLogService.logAiChat(userId, sessionId, clientIp, 0, 0);
+                sendSseEvent(emitter, completed, null, finalText);
+                sendSseEvent(emitter, completed, "done", "[DONE]");
+                completeOnce(emitter, completed);
+                return emitter;
+            }
 
         } catch (IOException e) {
             // SSE 响应可能已开始，不能用 completeWithError（会触发 Spring 错误页渲染）

@@ -37,7 +37,7 @@ public class TraceIdMdcFilter implements Filter {
         // 优先使用上游传入的 TraceId，没有则自己生成
         String traceId = httpReq.getHeader(TRACE_ID_HEADER);
         if (traceId == null || traceId.isBlank()) {
-            traceId = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+            traceId = UUID.randomUUID().toString().replace("-", "");
         }
 
         String userId = httpReq.getHeader(USER_ID_HEADER);

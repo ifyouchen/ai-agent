@@ -11,7 +11,9 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -28,6 +30,8 @@ import java.util.Map;
 public class TokenUsageService {
 
     private static final ZoneId REPORT_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final DateTimeFormatter DATE_TIME_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final TokenUsageMapper tokenUsageMapper;
 
@@ -156,6 +160,28 @@ public class TokenUsageService {
     }
 
     /**
+     * 当前用户近 N 个上海自然日的 Token 区间汇总。
+     */
+    public Map<String, Object> getUserUsageSummary(String userId, int days) {
+        int safeDays = Math.max(1, days);
+        Instant since = shanghaiNaturalDaysStart(safeDays);
+        Map<String, Object> row = tokenUsageMapper.aggregateUserSummarySince(userId, since);
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("userId", userId);
+        summary.put("days", safeDays);
+        summary.put("startAt", formatShanghai(since));
+        summary.put("endAt", formatShanghai(Instant.now()));
+        summary.put("timeZone", REPORT_ZONE.getId());
+        summary.put("callCount", toLong(row != null ? row.get("callCount") : null));
+        summary.put("inputTokens", toLong(row != null ? row.get("inputTokens") : null));
+        summary.put("outputTokens", toLong(row != null ? row.get("outputTokens") : null));
+        summary.put("totalTokens", toLong(row != null ? row.get("totalTokens") : null));
+        summary.put("costUsd", toBigDecimal(row != null ? row.get("costUsd") : null));
+        summary.put("lastCalledAt", formatNullableShanghai(row != null ? row.get("lastCalledAt") : null));
+        return summary;
+    }
+
+    /**
      * 查询近 N 分钟的错误率（用于告警判断）
      */
     public double getRecentErrorRate(int minutes) {
@@ -175,5 +201,50 @@ public class TokenUsageService {
                 .minusDays(daysAgo)
                 .atStartOfDay(REPORT_ZONE)
                 .toInstant();
+    }
+
+    private String formatShanghai(Instant instant) {
+        return DATE_TIME_FORMATTER.format(LocalDateTime.ofInstant(instant, REPORT_ZONE));
+    }
+
+    private String formatNullableShanghai(Object value) {
+        if (value == null) return null;
+        if (value instanceof Instant instant) {
+            return formatShanghai(instant);
+        }
+        if (value instanceof java.sql.Timestamp timestamp) {
+            return formatShanghai(timestamp.toInstant());
+        }
+        if (value instanceof java.time.OffsetDateTime offsetDateTime) {
+            return formatShanghai(offsetDateTime.toInstant());
+        }
+        return String.valueOf(value);
+    }
+
+    private long toLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value == null) return 0L;
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (NumberFormatException ignored) {
+            return 0L;
+        }
+    }
+
+    private BigDecimal toBigDecimal(Object value) {
+        if (value instanceof BigDecimal decimal) {
+            return decimal;
+        }
+        if (value instanceof Number number) {
+            return BigDecimal.valueOf(number.doubleValue());
+        }
+        if (value == null) return BigDecimal.ZERO;
+        try {
+            return new BigDecimal(String.valueOf(value));
+        } catch (NumberFormatException ignored) {
+            return BigDecimal.ZERO;
+        }
     }
 }

@@ -10,6 +10,7 @@ import com.example.aiagent.memory.RedisChatMemoryStore;
 import com.example.aiagent.memory.UserMemoryService;
 import com.example.aiagent.observability.model.LlmCallContext;
 import com.example.aiagent.observability.model.TokenPricing;
+import com.example.aiagent.observability.service.TokenUsageIntentService;
 import com.example.aiagent.observability.service.TokenUsageService;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
@@ -61,6 +62,7 @@ public class ChatController {
     private final ChatHistoryService chatHistoryService;
     private final ChatRagContextService chatRagContextService;
     private final TokenUsageService tokenUsageService;
+    private final TokenUsageIntentService tokenUsageIntentService;
 
     private static final OpenAiTokenizer SYNC_TOKENIZER = new OpenAiTokenizer();
 
@@ -115,6 +117,22 @@ public class ChatController {
             auditLogService.log(AuditLogService.EventType.AI_CHAT_REQUEST,
                     userId, sessionId, clientIp, true,
                     Map.of("messageLength", injectionCheck.sanitizedInput().length()));
+
+            java.util.Optional<TokenUsageIntentService.Result> usageResult =
+                    tokenUsageIntentService.resolve(userId, injectionCheck.sanitizedInput());
+            if (usageResult.isPresent()) {
+                String userText = injectionCheck.sanitizedInput();
+                String aiText = usageResult.get().answer();
+                chatHistoryService.saveExchange(sessionId, userId,
+                        userText.substring(0, Math.min(userText.length(), 20)), request.getKbId(),
+                        userText, aiText);
+                auditLogService.logAiChat(userId, sessionId, clientIp, 0, 0);
+                return ResponseEntity.ok(ChatResponse.builder()
+                        .sessionId(sessionId)
+                        .reply(aiText)
+                        .durationMs(0)
+                        .build());
+            }
 
             // ── Step 4：LLM 调用（请求指定 kbId 时设置 RAG 上下文）──────────
             // 只有显式选择知识库时才注入 ThreadLocal；未选择知识库则保持普通对话。

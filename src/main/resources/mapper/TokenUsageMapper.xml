@@ -34,10 +34,10 @@
 
     <select id="aggregateByModelSince" resultType="java.util.Map">
         SELECT
-            model_name    AS modelName,
-            SUM(input_tokens)  AS inputTokens,
-            SUM(output_tokens) AS outputTokens,
-            SUM(cost_usd)      AS costUsd
+            model_name    AS "modelName",
+            SUM(input_tokens)  AS "inputTokens",
+            SUM(output_tokens) AS "outputTokens",
+            SUM(cost_usd)      AS "costUsd"
         FROM llm_token_usage
         WHERE called_at &gt;= #{since}
         GROUP BY model_name
@@ -45,13 +45,26 @@
 
     <select id="aggregateByUserSince" resultType="java.util.Map">
         SELECT
-            user_id           AS userId,
-            SUM(total_tokens) AS totalTokens,
-            SUM(cost_usd)     AS costUsd
+            user_id           AS "userId",
+            SUM(total_tokens) AS "totalTokens",
+            SUM(cost_usd)     AS "costUsd"
         FROM llm_token_usage
         WHERE called_at &gt;= #{since}
         GROUP BY user_id
         ORDER BY SUM(cost_usd) DESC
+    </select>
+
+    <select id="aggregateUserSummarySince" resultType="java.util.Map">
+        SELECT
+            COUNT(*)                    AS "callCount",
+            COALESCE(SUM(input_tokens), 0)  AS "inputTokens",
+            COALESCE(SUM(output_tokens), 0) AS "outputTokens",
+            COALESCE(SUM(total_tokens), 0)  AS "totalTokens",
+            COALESCE(SUM(cost_usd), 0)      AS "costUsd",
+            MAX(called_at)              AS "lastCalledAt"
+        FROM llm_token_usage
+        WHERE user_id = #{userId}
+          AND called_at &gt;= #{since}
     </select>
 
     <select id="countErrorsSince" resultType="long">
@@ -70,9 +83,9 @@
     <!-- 按天聚合个人费用（用于个人趋势折线图） -->
     <select id="aggregateDailyByUserSince" resultType="java.util.Map">
         SELECT
-            DATE_TRUNC('day', called_at AT TIME ZONE 'Asia/Shanghai')::DATE AS day,
-            SUM(cost_usd)      AS costUsd,
-            SUM(total_tokens)  AS totalTokens
+            DATE_TRUNC('day', called_at AT TIME ZONE 'Asia/Shanghai')::DATE AS "day",
+            SUM(cost_usd)      AS "costUsd",
+            SUM(total_tokens)  AS "totalTokens"
         FROM llm_token_usage
         WHERE user_id = #{userId}
           AND called_at &gt;= #{since}
@@ -83,9 +96,9 @@
     <!-- 按天聚合（PostgreSQL DATE_TRUNC），用于趋势折线图 -->
     <select id="aggregateDailySince" resultType="java.util.Map">
         SELECT
-            DATE_TRUNC('day', called_at AT TIME ZONE 'Asia/Shanghai')::DATE AS day,
-            SUM(cost_usd)      AS costUsd,
-            SUM(total_tokens)  AS totalTokens
+            DATE_TRUNC('day', called_at AT TIME ZONE 'Asia/Shanghai')::DATE AS "day",
+            SUM(cost_usd)      AS "costUsd",
+            SUM(total_tokens)  AS "totalTokens"
         FROM llm_token_usage
         WHERE called_at &gt;= #{since}
         GROUP BY DATE_TRUNC('day', called_at AT TIME ZONE 'Asia/Shanghai')::DATE

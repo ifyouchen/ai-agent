@@ -73,6 +73,8 @@ management:
 
 # 日志
 logging:
+  pattern:
+    correlation: "[%X{traceId:-}-%X{spanId:-}] "
   level:
     com.example.aiagent: INFO
     dev.langchain4j: INFO

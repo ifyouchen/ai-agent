@@ -5,7 +5,7 @@ import com.example.aiagent.kb.entity.KnowledgeBase;
 import com.example.aiagent.kb.mapper.DocumentMapper;
 import com.example.aiagent.kb.service.KbMemberService;
 import com.example.aiagent.kb.service.KnowledgeBaseService;
-import com.example.aiagent.observability.service.TokenUsageService;
+import com.example.aiagent.observability.service.TokenUsageIntentService;
 import com.example.aiagent.security.service.OrganizationService;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
@@ -16,7 +16,6 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -36,7 +35,7 @@ public class BusinessTools {
     private final KnowledgeBaseService kbService;
     private final KbMemberService kbMemberService;
     private final DocumentMapper documentMapper;
-    private final TokenUsageService tokenUsageService;
+    private final TokenUsageIntentService tokenUsageIntentService;
 
     // ── 1. 组织查询 ──────────────────────────────────────────
 
@@ -332,64 +331,11 @@ public class BusinessTools {
             if (userId == null) {
                 return "无法识别当前用户身份，请先登录。";
             }
-            // 参数范围校验：clamp 到 1-30
-            int safeDays = Math.max(1, Math.min(30, days));
-
-            List<Map<String, Object>> dailyRows = tokenUsageService.getUserDailyCostReport(userId, safeDays);
-            log.warn("[Tool-Diag] getMyTokenUsage userId={} days={} since={} 返回行数={}",
-                    userId, safeDays,
-                    java.time.Instant.now().minus(safeDays, java.time.temporal.ChronoUnit.DAYS),
-                    dailyRows == null ? 0 : dailyRows.size());
-            if (dailyRows == null || dailyRows.isEmpty()) {
-                return String.format("您最近 %d 天暂无 Token 消耗记录（已查询数据库，userId=%s，确认无数据）。",
-                        safeDays, userId);
-            }
-
-            // 累加汇总
-            long totalTokens = 0;
-            double totalCostUsd = 0.0;
-            for (Map<String, Object> row : dailyRows) {
-                totalTokens += toLong(row.get("totalTokens"));
-                totalCostUsd += toDouble(row.get("costUsd"));
-            }
-
-            StringBuilder sb = new StringBuilder();
-            sb.append(String.format("您最近 %d 天的 Token 消耗统计（截至 %s）：\n\n",
-                    safeDays, LocalDate.now(ZoneId.of("Asia/Shanghai"))));
-
-            sb.append("【区间汇总】\n");
-            sb.append(String.format("- 总 Token 消耗：%d\n", totalTokens));
-            sb.append(String.format("- 总费用：$%.6f\n\n", totalCostUsd));
-
-            sb.append("【每日明细】\n");
-            for (Map<String, Object> row : dailyRows) {
-                String day = String.valueOf(row.get("day"));
-                long dayTokens = toLong(row.get("totalTokens"));
-                double dayCost = toDouble(row.get("costUsd"));
-                sb.append(String.format("- %s：%d token，$%.6f\n", day, dayTokens, dayCost));
-            }
-
-            sb.append("\n说明：以上数据基于每次对话的 LLM 调用统计，含输入与输出 Token。");
-            sb.append("如需查看其他时间范围，最多支持查询最近 30 天。");
-            return sb.toString().stripTrailing();
+            return tokenUsageIntentService.query(userId, days).answer();
         } catch (Exception e) {
             log.error("[Tool] 查询 Token 消耗异常 days={}", days, e);
             return "查询 Token 消耗时发生错误，请稍后重试。";
         }
-    }
-
-    /** 安全地将聚合查询返回的数值字段转为 long（兼容 Number / String） */
-    private long toLong(Object v) {
-        if (v == null) return 0L;
-        if (v instanceof Number n) return n.longValue();
-        try { return Long.parseLong(String.valueOf(v)); } catch (Exception e) { return 0L; }
-    }
-
-    /** 安全地将聚合查询返回的费用字段转为 double（兼容 BigDecimal / Number / String） */
-    private double toDouble(Object v) {
-        if (v == null) return 0.0;
-        if (v instanceof Number n) return n.doubleValue();
-        try { return Double.parseDouble(String.valueOf(v)); } catch (Exception e) { return 0.0; }
     }
 
     // ── 4. 系统能力与部署 ──────────────────────────────────────────

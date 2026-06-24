@@ -22,6 +22,9 @@ public interface TokenUsageMapper {
 
     List<Map<String, Object>> aggregateByUserSince(@Param("since") Instant since);
 
+    Map<String, Object> aggregateUserSummarySince(@Param("userId") String userId,
+                                                   @Param("since") Instant since);
+
     long countErrorsSince(@Param("since") Instant since);
 
     long countTotalSince(@Param("since") Instant since);
