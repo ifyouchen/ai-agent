@@ -29,10 +29,10 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
-import { getChatShare } from '../services/chatApi.js';
-import { formatMarkdown, setupCopyCodeHandler } from '../js/utils.js';
+import {onMounted, ref} from 'vue';
+import {useRoute} from 'vue-router';
+import {getChatShare} from '../services/chatApi.js';
+import {formatMarkdown, setupCopyCodeHandler} from '../js/utils.js';
 
 const route = useRoute();
 const loading = ref(true);
