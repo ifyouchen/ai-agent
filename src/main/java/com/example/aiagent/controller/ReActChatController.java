@@ -16,6 +16,7 @@ import com.example.aiagent.security.filter.PromptInjectionFilter;
 import com.example.aiagent.security.service.AuditLogService;
 import com.example.aiagent.security.service.RateLimitService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.langchain4j.model.openai.OpenAiTokenizer;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -76,6 +77,8 @@ public class ReActChatController {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final long REACT_STREAM_TASK_TTL_MS = 120_000L;
+    /** 流式 ReAct 不返回 tokenUsage，用 tokenizer 兜底估算 */
+    private static final OpenAiTokenizer REACT_TOKENIZER = new OpenAiTokenizer();
     private final Map<String, PendingReactStream> pendingReactStreams = new ConcurrentHashMap<>();
 
     @Value("${chat.stream.flush-interval-ms:50}")
@@ -574,7 +577,8 @@ public class ReActChatController {
                 auditLogService.logAiChat(userId, sessionId, clientIp,
                         result.inputTokens(), result.outputTokens());
                 recordReactTokenUsage(MDC.get("traceId"), sessionId, userId, model,
-                        result.inputTokens(), result.outputTokens(), duration);
+                        result.inputTokens(), result.outputTokens(), duration,
+                        sanitizedMessage, aiText);
                 log.info("[ReAct-Stream] 完成 userId={} iterations={} durationMs={} tokens={}/{}",
                         userId, result.iterations(), duration,
                         result.inputTokens(), result.outputTokens());
@@ -747,8 +751,14 @@ public class ReActChatController {
      * ReAct 流式 token 用量落库（流式不走 AOP 切面，手动记录到 llm_token_usage + Prometheus）
      */
     private void recordReactTokenUsage(String traceId, String sessionId, String userId, String model,
-                                       int inputTokens, int outputTokens, long durationMs) {
+                                       int inputTokens, int outputTokens, long durationMs,
+                                       String userText, String aiText) {
         try {
+            // 流式 ReAct 的 tokenUsage 始终为 null，用 tokenizer 兜底估算
+            if (inputTokens == 0 && outputTokens == 0) {
+                outputTokens = REACT_TOKENIZER.estimateTokenCountInText(aiText == null ? "" : aiText);
+                inputTokens  = REACT_TOKENIZER.estimateTokenCountInText(userText == null ? "" : userText) + 800;
+            }
             String modelName = inferReactModelName(model);
             double costUsd = TokenPricing.of(modelName).calculateCost(inputTokens, outputTokens);
             LlmCallContext ctx = LlmCallContext.builder()

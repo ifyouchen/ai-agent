@@ -13,6 +13,7 @@ import com.example.aiagent.observability.model.TokenPricing;
 import com.example.aiagent.observability.service.TokenUsageService;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
+import dev.langchain4j.model.openai.OpenAiTokenizer;
 import com.example.aiagent.security.filter.PromptInjectionFilter;
 import com.example.aiagent.security.service.AuditLogService;
 import com.example.aiagent.security.service.RateLimitService;
@@ -81,6 +82,9 @@ public class StreamingChatController {
 
     @Value("${chat.stream.isolated-memory-threshold-chars:8000}")
     private int isolatedMemoryThresholdChars;
+
+    /** 流式模式下 API 不返回 tokenUsage，用 tokenizer 兜底估算 */
+    private static final OpenAiTokenizer STREAM_TOKENIZER = new OpenAiTokenizer();
 
     /**
      * 流式对话（SSE 推送，字符逐步出现）
@@ -316,6 +320,15 @@ public class StreamingChatController {
                                     ? response.tokenUsage().inputTokenCount()  : 0;
                             outputTokens = response.tokenUsage().outputTokenCount() != null
                                     ? response.tokenUsage().outputTokenCount() : 0;
+                        }
+                        // 流式 API 默认不返回 tokenUsage，用 tokenizer 兜底估算
+                        if (inputTokens == 0 && outputTokens == 0) {
+                            String fullTextForEst = fullTextRef.get().toString();
+                            outputTokens = STREAM_TOKENIZER.estimateTokenCountInText(fullTextForEst);
+                            inputTokens  = STREAM_TOKENIZER.estimateTokenCountInText(sanitizedMessage)
+                                    + STREAM_TOKENIZER.estimateTokenCountInText(sessionSummary == null ? "" : sessionSummary)
+                                    + STREAM_TOKENIZER.estimateTokenCountInText(userMemory == null ? "" : userMemory)
+                                    + 600; // system prompt 粗估
                         }
                         auditLogService.logAiChat(userId, sessionId, clientIp, inputTokens, outputTokens);
                         // ── Step 8：流式 token 用量落库（流式不走 AOP，手动记录）──

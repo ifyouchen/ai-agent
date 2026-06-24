@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(node *)",
+      "Bash(mvn compile *)",
+      "Bash(java -version)",
+      "Bash(/usr/libexec/java_home -V)",
+      "Bash(JAVA_HOME=/Users/chenzhixia/Library/Java/JavaVirtualMachines/corretto-21.0.11/Contents/Home mvn compile -q)",
+      "Bash(npm run *)",
+      "Bash(JAVA_HOME=/Users/chenzhixia/Library/Java/JavaVirtualMachines/corretto-21.0.11/Contents/Home mvn compile)",
+      "Bash(grep -v \"^$\")"
+    ]
+  }
+}
