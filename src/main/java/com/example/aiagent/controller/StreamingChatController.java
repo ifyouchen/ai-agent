@@ -299,10 +299,7 @@ public class StreamingChatController {
 
                         String finalText = outputCheck.filteredContent();
 
-                        sendSseEvent(emitter, completed, "done", "[DONE]");
-                        doneSent = true;
-                        completeOnce(emitter, completed);
-
+                        // ── 先落库再 complete，避免 emitter.complete() 后线程被中断导致落库丢失 ──
                         // ── Step 6：异步持久化聊天记录 ──────────
                         chatHistoryService.saveExchange(sessionId, userId,
                                 sanitizedMessage.substring(0, Math.min(sanitizedMessage.length(), 20)), kbId,
@@ -310,9 +307,8 @@ public class StreamingChatController {
                         // 异步提取用户长期记忆（跨会话事实/偏好）
                         userMemoryService.extractAsync(userId, sanitizedMessage, finalText);
 
-                        // ── Step 7：审计日志（对话完成）──────────
+                        // ── Step 7：审计日志 + token 落库（必须在 complete 之前）──────────
                         long duration = System.currentTimeMillis() - startMs;
-                        // 从 LangChain4j Response 中提取 Token 用量（streaming 模式下由 onComplete 返回）
                         int inputTokens  = 0;
                         int outputTokens = 0;
                         if (response != null && response.tokenUsage() != null) {
@@ -329,6 +325,7 @@ public class StreamingChatController {
                                     + STREAM_TOKENIZER.estimateTokenCountInText(sessionSummary == null ? "" : sessionSummary)
                                     + STREAM_TOKENIZER.estimateTokenCountInText(userMemory == null ? "" : userMemory)
                                     + 600; // system prompt 粗估
+                            log.info("流式 tokenUsage 为 null，兜底估算 input={} output={}", inputTokens, outputTokens);
                         }
                         auditLogService.logAiChat(userId, sessionId, clientIp, inputTokens, outputTokens);
                         // ── Step 8：流式 token 用量落库（流式不走 AOP，手动记录）──
@@ -336,6 +333,10 @@ public class StreamingChatController {
                                 inputTokens, outputTokens, duration);
                         log.info("流式对话完成 userId={} sessionId={} tokens={}/{} 耗时={}ms",
                                 userId, sessionId, inputTokens, outputTokens, duration);
+
+                        sendSseEvent(emitter, completed, "done", "[DONE]");
+                        doneSent = true;
+                        completeOnce(emitter, completed);
                     } catch (Exception e) {
                         log.debug("SSE 完成阶段失败，客户端可能已断开: {}", e.getMessage());
                         if (!doneSent) {
@@ -449,7 +450,8 @@ public class StreamingChatController {
             llmMetricsRecorder.recordCallComplete(ctx);
             tokenUsageService.saveAsync(ctx);
         } catch (Exception e) {
-            log.debug("流式 token 落库失败 sessionId={}: {}", sessionId, e.getMessage());
+            log.error("流式 token 落库失败 sessionId={} userId={} tokens={}/{}",
+                    sessionId, userId, inputTokens, outputTokens, e);
         }
     }
 

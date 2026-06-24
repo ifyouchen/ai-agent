@@ -53,8 +53,10 @@ public class TokenUsageService {
 
             tokenUsageMapper.insert(record);
         } catch (Exception e) {
-            // 写入失败不能影响主流程，只记录日志
-            log.error("Token 用量写入 PostgreSQL 失败: {}", e.getMessage());
+            // 写入失败不能影响主流程，但必须打完整堆栈定位根因
+            log.error("Token 用量写入 PostgreSQL 失败 userId={} scenario={} model={} tokens={}/{} reason={}",
+                    ctx.getUserId(), ctx.getScenario(), ctx.getModelName(),
+                    ctx.getInputTokens(), ctx.getOutputTokens(), e.getMessage(), e);
         }
     }
 

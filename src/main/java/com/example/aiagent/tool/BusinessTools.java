@@ -336,8 +336,13 @@ public class BusinessTools {
             int safeDays = Math.max(1, Math.min(30, days));
 
             List<Map<String, Object>> dailyRows = tokenUsageService.getUserDailyCostReport(userId, safeDays);
+            log.warn("[Tool-Diag] getMyTokenUsage userId={} days={} since={} 返回行数={}",
+                    userId, safeDays,
+                    java.time.Instant.now().minus(safeDays, java.time.temporal.ChronoUnit.DAYS),
+                    dailyRows == null ? 0 : dailyRows.size());
             if (dailyRows == null || dailyRows.isEmpty()) {
-                return String.format("您最近 %d 天暂无 Token 消耗记录。", safeDays);
+                return String.format("您最近 %d 天暂无 Token 消耗记录（已查询数据库，userId=%s，确认无数据）。",
+                        safeDays, userId);
             }
 
             // 累加汇总
