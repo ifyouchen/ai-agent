@@ -98,13 +98,20 @@ app:
 agent:
   memory:
     max-messages: 20          # 每个会话保留最近 N 条消息
-    ttl-hours: 24             # Redis 中的记忆过期时间（小时）
+    ttl-hours: 168            # Redis 中的记忆过期时间（小时），7 天；配合 DB 回灌避免隔天失忆
+    summarize:
+      enabled: true           # 长会话滚动摘要开关
+      trigger-messages: 18    # 会话消息超过此条数触发摘要压缩
+      keep-recent: 14         # 压缩后保留最近 N 条原文（需 < max-messages，留出窗口余量）
   rag:
     max-results: 3            # RAG 检索返回最相关 N 段
     min-score: 0.7            # 相似度阈值（低于此值不返回）
     chunk-size: 800           # 文档切片大小（字符数）
     chunk-overlap: 120        # 切片重叠（避免信息截断）
     embedding-batch-size: 16  # Embedding API 单次批量上限（百度千帆 bge-large-zh 最大 16；OpenAI 可设 256）
+  user-memory:
+    enabled: true             # 用户级长期记忆开关（跨会话提取事实/偏好）
+    extract-interval: 5       # 每 N 轮对话触发一次提取（控制 LLM 调用成本）
 
 # ==================== 混合 RAG 配置 ====================
 rag:

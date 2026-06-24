@@ -30,6 +30,7 @@ public class RedisChatMemoryStore implements ChatMemoryStore {
     private long ttlHours;
 
     private static final String KEY_PREFIX = "chat:memory:";
+    private static final String SUMMARY_KEY_PREFIX = "chat:memory:summary:";
 
     /**
      * 读取指定会话的消息历史
@@ -66,12 +67,37 @@ public class RedisChatMemoryStore implements ChatMemoryStore {
 
     /**
      * 清除会话记忆（用户主动清除或开启新话题时调用）
+     * 同时清除该会话的滚动摘要。
      */
     @Override
     public void deleteMessages(Object memoryId) {
         String key = buildKey(memoryId);
         redisTemplate.delete(key);
+        redisTemplate.delete(SUMMARY_KEY_PREFIX + memoryId);
         log.info("已清除会话记忆，sessionId={}", memoryId);
+    }
+
+    /**
+     * 读取会话的滚动摘要（与对话消息分开存储，避免被消息窗口驱逐）
+     */
+    public String getSummary(Object memoryId) {
+        try {
+            return redisTemplate.opsForValue().get(SUMMARY_KEY_PREFIX + memoryId);
+        } catch (Exception e) {
+            log.warn("读取会话摘要失败 sessionId={}: {}", memoryId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 保存会话滚动摘要，刷新 TTL（与对话记忆同步过期）
+     */
+    public void setSummary(Object memoryId, String summary) {
+        try {
+            redisTemplate.opsForValue().set(SUMMARY_KEY_PREFIX + memoryId, summary, Duration.ofHours(ttlHours));
+        } catch (Exception e) {
+            log.error("保存会话摘要失败 sessionId={}: {}", memoryId, e.getMessage());
+        }
     }
 
     private String buildKey(Object memoryId) {

@@ -5,7 +5,9 @@ import com.example.aiagent.chat.service.ChatHistoryService;
 import com.example.aiagent.dto.ChatRequest;
 import com.example.aiagent.dto.ChatResponse;
 import com.example.aiagent.kb.service.ChatRagContextService;
+import com.example.aiagent.memory.ConversationMemoryService;
 import com.example.aiagent.memory.RedisChatMemoryStore;
+import com.example.aiagent.memory.UserMemoryService;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
 import com.example.aiagent.security.filter.PromptInjectionFilter;
@@ -46,6 +48,8 @@ public class ChatController {
 
     private final AgentFactory agentFactory;
     private final RedisChatMemoryStore memoryStore;
+    private final ConversationMemoryService conversationMemoryService;
+    private final UserMemoryService userMemoryService;
     private final PromptInjectionFilter promptInjectionFilter;
     private final RateLimitService rateLimitService;
     private final OutputContentFilter outputContentFilter;
@@ -109,11 +113,18 @@ public class ChatController {
             if (ragContext != null) {
                 HybridRagContentRetriever.setContext(ragContext);
             }
+            // 记忆回灌：Redis 记忆为空时从 DB 历史恢复，避免隔天/重开旧会话失忆
+            String memoryKey = ConversationMemoryService.buildMemoryKey(userId, request.getSessionId());
+            conversationMemoryService.warmup(memoryKey, request.getSessionId(), userId);
+            // 取滚动摘要注入 system prompt（长会话压缩后的历史上下文）
+            String sessionSummary = conversationMemoryService.getSummaryForPrompt(memoryKey);
+            // 取用户长期记忆注入 system prompt（跨会话个性化）
+            String userMemory = userMemoryService.getMemoryText(userId);
             long start = System.currentTimeMillis();
             String rawReply;
             try {
                 rawReply = agentFactory.chatAssistantForModel(request.getModel()).chat(
-                        request.getSessionId(), injectionCheck.sanitizedInput());
+                        memoryKey, injectionCheck.sanitizedInput(), sessionSummary, userMemory);
             } finally {
                 // 无论成功或异常，必须清除 ThreadLocal 防止内存泄漏
                 HybridRagContentRetriever.clearContext();
@@ -137,6 +148,8 @@ public class ChatController {
             chatHistoryService.saveExchange(request.getSessionId(), userId,
                     userText.substring(0, Math.min(userText.length(), 20)), request.getKbId(),
                     userText, aiText);
+            // 异步提取用户长期记忆（跨会话事实/偏好）
+            userMemoryService.extractAsync(userId, userText, aiText);
 
             log.info("对话完成 userId={} sessionId={} 耗时={}ms",
                     userId, request.getSessionId(), duration);
@@ -165,7 +178,7 @@ public class ChatController {
     @DeleteMapping("/memory/{sessionId}")
     public ResponseEntity<String> clearMemory(@PathVariable String sessionId,
                                                @AuthenticationPrincipal String userId) {
-        memoryStore.deleteMessages(sessionId);
+        memoryStore.deleteMessages(ConversationMemoryService.buildMemoryKey(userId, sessionId));
         log.info("清除会话记忆 userId={} sessionId={}", userId, sessionId);
         return ResponseEntity.ok("会话 " + sessionId + " 的记忆已清除");
     }

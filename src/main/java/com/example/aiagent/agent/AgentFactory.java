@@ -12,10 +12,11 @@ import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.service.UserMessage;
+import dev.langchain4j.service.V;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -142,7 +143,9 @@ public class AgentFactory {
      */
     public interface ChatAssistant {
         @SystemMessage(fromResource = "prompts/system-assistant.st")
-        String chat(@MemoryId String sessionId, @UserMessage String message);
+        String chat(@MemoryId String sessionId, @UserMessage String message,
+                    @V("sessionSummary") String sessionSummary,
+                    @V("userMemory") String userMemory);
     }
 
     /**
@@ -152,6 +155,8 @@ public class AgentFactory {
      */
     public interface StreamingChatAssistant {
         @SystemMessage(fromResource = "prompts/system-assistant.st")
-        TokenStream streamChat(@MemoryId String sessionId, @UserMessage String message);
+        TokenStream streamChat(@MemoryId String sessionId, @UserMessage String message,
+                               @V("sessionSummary") String sessionSummary,
+                               @V("userMemory") String userMemory);
     }
 }

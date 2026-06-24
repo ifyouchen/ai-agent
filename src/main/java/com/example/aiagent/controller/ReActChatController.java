@@ -4,6 +4,8 @@ import com.example.aiagent.agent.ReActAgent;
 import com.example.aiagent.chat.service.ChatHistoryService;
 import com.example.aiagent.controller.sse.SseDeltaBuffer;
 import com.example.aiagent.kb.service.ChatRagContextService;
+import com.example.aiagent.memory.ConversationMemoryService;
+import com.example.aiagent.memory.UserMemoryService;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
 import com.example.aiagent.security.filter.PromptInjectionFilter;
@@ -63,6 +65,8 @@ public class ReActChatController {
     private final AuditLogService auditLogService;
     private final ChatRagContextService chatRagContextService;
     private final ChatHistoryService chatHistoryService;
+    private final ConversationMemoryService conversationMemoryService;
+    private final UserMemoryService userMemoryService;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final long REACT_STREAM_TASK_TTL_MS = 120_000L;
@@ -100,6 +104,8 @@ public class ReActChatController {
             AuditLogService auditLogService,
             ChatRagContextService chatRagContextService,
             ChatHistoryService chatHistoryService,
+            ConversationMemoryService conversationMemoryService,
+            UserMemoryService userMemoryService,
             @Qualifier("sseTaskExecutor") Executor sseExecutor) {
         this.reActAgent = reActAgent;
         this.promptInjectionFilter = promptInjectionFilter;
@@ -108,6 +114,8 @@ public class ReActChatController {
         this.auditLogService = auditLogService;
         this.chatRagContextService = chatRagContextService;
         this.chatHistoryService = chatHistoryService;
+        this.conversationMemoryService = conversationMemoryService;
+        this.userMemoryService = userMemoryService;
         this.sseExecutor = sseExecutor;
     }
 
@@ -188,7 +196,9 @@ public class ReActChatController {
             }
             ReActAgent.ReActResult result;
             try {
-                result = reActAgent.execute(injectionCheck.sanitizedInput(), sessionId, model,
+                String memoryKey = ConversationMemoryService.buildMemoryKey(userId, sessionId);
+                conversationMemoryService.warmup(memoryKey, sessionId, userId);
+                result = reActAgent.execute(injectionCheck.sanitizedInput(), memoryKey, model,
                         ragContext != null ? ragContext.tenantId() : null,
                         ragContext != null ? ragContext.kbId() : null);
             } finally {
@@ -205,10 +215,13 @@ public class ReActChatController {
             }
             String userText = injectionCheck.sanitizedInput();
             String aiText = outputCheck.filteredContent();
-            reActAgent.rememberExchangeAsync(sessionId, userText, aiText);
+            reActAgent.rememberExchangeAsync(
+                    ConversationMemoryService.buildMemoryKey(userId, sessionId), userText, aiText);
             chatHistoryService.saveExchange(sessionId, userId,
                     userText.substring(0, Math.min(userText.length(), 20)), kbId,
                     userText, aiText);
+            // 异步提取用户长期记忆（跨会话事实/偏好）
+            userMemoryService.extractAsync(userId, userText, aiText);
 
             // ── Step 6：审计日志（完成）──────────────────
             auditLogService.logAiChat(userId, sessionId, clientIp, 0, 0);
@@ -389,6 +402,7 @@ public class ReActChatController {
 
         // ── Step 4：异步线程执行 ReAct 推理 ──────────
         final String sanitizedMessage = injectionCheck.sanitizedInput();
+        final String memoryKey = ConversationMemoryService.buildMemoryKey(userId, sessionId);
         final HybridRagContentRetriever.RetrievalContext ragContext;
         try {
             sendReactStatus(emitter, completed, "知识库校验中");
@@ -506,8 +520,9 @@ public class ReActChatController {
             ReactSseCallback reactCallback = new ReactSseCallback();
             try {
                 sendReactStatus(emitter, completed, "模型推理中");
+                conversationMemoryService.warmup(memoryKey, sessionId, userId);
                 ReActAgent.ReActResult result = reActAgent.executeStreamingWithCallback(
-                        sanitizedMessage, sessionId, model,
+                        sanitizedMessage, memoryKey, model,
                         ragContext != null ? ragContext.tenantId() : null,
                         ragContext != null ? ragContext.kbId() : null,
                         reactCallback);
@@ -535,10 +550,12 @@ public class ReActChatController {
                 sendSseEvent(emitter, completed, "done", "[DONE]");
                 completeOnce(emitter, completed);
 
-                reActAgent.rememberExchangeAsync(sessionId, sanitizedMessage, aiText);
+                reActAgent.rememberExchangeAsync(memoryKey, sanitizedMessage, aiText);
                 chatHistoryService.saveExchange(sessionId, userId,
                         sanitizedMessage.substring(0, Math.min(sanitizedMessage.length(), 20)), kbId,
                         sanitizedMessage, aiText);
+                // 异步提取用户长期记忆（跨会话事实/偏好）
+                userMemoryService.extractAsync(userId, sanitizedMessage, aiText);
 
                 // ── Step 6：审计日志 ──────────────────
                 long duration = System.currentTimeMillis() - startMs;

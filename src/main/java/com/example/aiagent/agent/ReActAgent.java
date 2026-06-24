@@ -1,7 +1,9 @@
 package com.example.aiagent.agent;
 
 import com.example.aiagent.config.DeepSeekModelFactory;
+import com.example.aiagent.memory.ConversationMemoryService;
 import com.example.aiagent.memory.RedisChatMemoryStore;
+import com.example.aiagent.memory.UserMemoryService;
 import com.example.aiagent.rag.model.RetrievedChunk;
 import com.example.aiagent.rag.pipeline.HybridRagPipeline;
 import com.example.aiagent.tool.BusinessTools;
@@ -72,6 +74,7 @@ public class ReActAgent {
     private final HybridRagPipeline hybridRagPipeline;
     private final ObjectProvider<DeepSeekModelFactory> deepSeekModelFactory;
     private final RedisChatMemoryStore redisChatMemoryStore;
+    private final UserMemoryService userMemoryService;
 
     /** 最大推理迭代次数（防止工具调用死循环） */
     private static final int MAX_ITERATIONS = 8;
@@ -577,10 +580,38 @@ public class ReActAgent {
     private List<ChatMessage> buildInitialMessages(String sessionId, String userQuery,
                                                    String tenantId, Long kbId) {
         List<ChatMessage> messages = new ArrayList<>();
-        messages.add(SystemMessage.from(SYSTEM_PROMPT));
+        messages.add(SystemMessage.from(buildSystemPromptWithSummary(sessionId)));
         messages.addAll(loadConversationMemory(sessionId));
         messages.add(UserMessage.from(buildKnowledgeAwareUserMessage(userQuery, tenantId, kbId)));
         return messages;
+    }
+
+    /**
+     * 构造系统提示词，拼接会话滚动摘要（由 MemoryCompactionService 在 warmup 阶段生成）
+     * 与用户长期记忆（由 UserMemoryService 跨会话提取）。
+     */
+    private String buildSystemPromptWithSummary(String sessionId) {
+        String prompt = SYSTEM_PROMPT;
+        try {
+            String summary = redisChatMemoryStore.getSummary(sessionId);
+            if (summary != null && !summary.isBlank()) {
+                prompt += "\n\n## 历史对话摘要\n" + summary;
+            }
+        } catch (Exception e) {
+            log.warn("[ReAct] 读取会话摘要失败 sessionId={}: {}", sessionId, e.getMessage());
+        }
+        try {
+            String userId = ConversationMemoryService.extractUserId(sessionId);
+            if (userId != null) {
+                String userMemory = userMemoryService.getMemoryText(userId);
+                if (userMemory != null && !userMemory.isBlank()) {
+                    prompt += userMemory;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[ReAct] 读取用户长期记忆失败 sessionId={}: {}", sessionId, e.getMessage());
+        }
+        return prompt;
     }
 
     private List<ChatMessage> loadConversationMemory(String sessionId) {

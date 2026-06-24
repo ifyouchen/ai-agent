@@ -476,3 +476,14 @@ CREATE TABLE IF NOT EXISTS chat_share (
 CREATE INDEX IF NOT EXISTS idx_chat_share_share_id   ON chat_share(share_id);
 CREATE INDEX IF NOT EXISTS idx_chat_share_owner      ON chat_share(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_share_session_id ON chat_share(session_id);
+
+-- ============================================================
+-- 15. 用户长期记忆表（跨会话提取的事实/偏好，注入 system prompt 个性化）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_memory (
+    id          BIGSERIAL    PRIMARY KEY,
+    user_id     VARCHAR(64)  NOT NULL UNIQUE,
+    facts_text  TEXT         NOT NULL DEFAULT '',
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_user_memory_user_id ON user_memory(user_id);

@@ -4,7 +4,9 @@ import com.example.aiagent.agent.AgentFactory;
 import com.example.aiagent.chat.service.ChatHistoryService;
 import com.example.aiagent.controller.sse.SseDeltaBuffer;
 import com.example.aiagent.kb.service.ChatRagContextService;
+import com.example.aiagent.memory.ConversationMemoryService;
 import com.example.aiagent.memory.RedisChatMemoryStore;
+import com.example.aiagent.memory.UserMemoryService;
 import com.example.aiagent.rag.retrieval.HybridRagContentRetriever;
 import com.example.aiagent.security.filter.OutputContentFilter;
 import com.example.aiagent.security.filter.PromptInjectionFilter;
@@ -60,6 +62,8 @@ public class StreamingChatController {
     private final ChatHistoryService chatHistoryService;
     private final ChatRagContextService chatRagContextService;
     private final RedisChatMemoryStore redisChatMemoryStore;
+    private final ConversationMemoryService conversationMemoryService;
+    private final UserMemoryService userMemoryService;
     private final Map<String, PendingStreamChat> pendingStreamChats = new ConcurrentHashMap<>();
     private static final long STREAM_CHAT_TASK_TTL_MS = 120_000L;
 
@@ -214,8 +218,15 @@ public class StreamingChatController {
         log.info("开始流式对话 userId={} sessionId={} orgId={} kbId={} model={}",
                 userId, sessionId, orgId, kbId, model);
 
-        String memorySessionId = isolatedMemorySessionId(sessionId, sanitizedMessage);
-        boolean isolatedMemory = !memorySessionId.equals(sessionId);
+        // 记忆回灌：Redis 记忆为空时从 DB 历史恢复，避免隔天/重开旧会话失忆
+        String memoryKey = ConversationMemoryService.buildMemoryKey(userId, sessionId);
+        conversationMemoryService.warmup(memoryKey, sessionId, userId);
+        // 取滚动摘要注入 system prompt（长会话压缩后的历史上下文）
+        String sessionSummary = conversationMemoryService.getSummaryForPrompt(memoryKey);
+        // 取用户长期记忆注入 system prompt（跨会话个性化）
+        String userMemory = userMemoryService.getMemoryText(userId);
+        String memorySessionId = isolatedMemorySessionId(memoryKey, sanitizedMessage);
+        boolean isolatedMemory = !memorySessionId.equals(memoryKey);
         if (isolatedMemory) {
             log.info("长文本流式对话使用隔离记忆 userId={} sessionId={} memorySessionId={} messageLength={}",
                     userId, sessionId, memorySessionId, sanitizedMessage.length());
@@ -250,7 +261,7 @@ public class StreamingChatController {
                 (eventName, data) -> sendSseEvent(emitter, completed, eventName, data));
         long startMs = System.currentTimeMillis();
 
-        agentFactory.streamingChatAssistantForModel(model).streamChat(memorySessionId, sanitizedMessage)
+        agentFactory.streamingChatAssistantForModel(model).streamChat(memorySessionId, sanitizedMessage, sessionSummary, userMemory)
                 .onNext(token -> {
                     // 累积 token 用于后续脱敏
                     fullTextRef.get().append(token);
@@ -285,6 +296,8 @@ public class StreamingChatController {
                         chatHistoryService.saveExchange(sessionId, userId,
                                 sanitizedMessage.substring(0, Math.min(sanitizedMessage.length(), 20)), kbId,
                                 sanitizedMessage, finalText);
+                        // 异步提取用户长期记忆（跨会话事实/偏好）
+                        userMemoryService.extractAsync(userId, sanitizedMessage, finalText);
 
                         // ── Step 7：审计日志（对话完成）──────────
                         long duration = System.currentTimeMillis() - startMs;

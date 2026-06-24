@@ -1,11 +1,12 @@
 package com.example.aiagent.chat.service;
 
 import com.example.aiagent.chat.entity.ChatMessage;
-import com.example.aiagent.chat.entity.ChatShare;
 import com.example.aiagent.chat.entity.ChatSession;
+import com.example.aiagent.chat.entity.ChatShare;
 import com.example.aiagent.chat.mapper.ChatMessageMapper;
-import com.example.aiagent.chat.mapper.ChatShareMapper;
 import com.example.aiagent.chat.mapper.ChatSessionMapper;
+import com.example.aiagent.chat.mapper.ChatShareMapper;
+import com.example.aiagent.memory.ConversationMemoryService;
 import com.example.aiagent.memory.RedisChatMemoryStore;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -165,7 +166,7 @@ public class ChatHistoryService {
                     .forEach(chatMessageMapper::insert);
         }
         chatSessionMapper.updateTitle(sessionId, null);
-        redisChatMemoryStore.deleteMessages(sessionId);
+        redisChatMemoryStore.deleteMessages(ConversationMemoryService.buildMemoryKey(userId, sessionId));
     }
 
     /**
