@@ -42,6 +42,7 @@ export const useSessionStore = defineStore('sessions', () => {
   const enterToSend    = ref(true);
   const model          = ref(QUICK_MODEL);
   const currentKbId    = ref(null);
+  const currentKbOrgId = ref(null);
   const messageInput   = ref('');
   const editingMessageId = ref(null);
   const editingOriginalText = ref('');
@@ -100,6 +101,81 @@ export const useSessionStore = defineStore('sessions', () => {
       })),
     }));
     try { localStorage.setItem(storageKey(userId), JSON.stringify(payload)); } catch {}
+  }
+
+  function ragContextKey() {
+    const userId = api.getUser()?.userId;
+    return userId ? `ai_agent_active_rag_${userId}` : null;
+  }
+
+  function readStoredRagContext() {
+    const key = ragContextKey();
+    if (!key) return null;
+    try {
+      const data = JSON.parse(localStorage.getItem(key) || 'null');
+      const kbId = Number(data?.kbId);
+      const orgId = data?.orgId ? String(data.orgId) : '';
+      if (!orgId || !Number.isFinite(kbId)) return null;
+      return { orgId, kbId };
+    } catch {
+      return null;
+    }
+  }
+
+  function persistRagContext(kbId, orgId) {
+    const key = ragContextKey();
+    if (!key || !kbId || !orgId) return;
+    try {
+      localStorage.setItem(key, JSON.stringify({ orgId, kbId: Number(kbId) }));
+    } catch {}
+  }
+
+  function clearStoredRagContext() {
+    const key = ragContextKey();
+    if (!key) return;
+    try {
+      localStorage.removeItem(key);
+    } catch {}
+  }
+
+  function setCurrentKb(kbId, orgId = org.currentOrgId) {
+    if (!kbId || !orgId) {
+      clearCurrentKb();
+      return;
+    }
+    currentKbId.value = Number(kbId);
+    currentKbOrgId.value = orgId;
+    persistRagContext(currentKbId.value, orgId);
+  }
+
+  function clearCurrentKb() {
+    currentKbId.value = null;
+    currentKbOrgId.value = null;
+    clearStoredRagContext();
+  }
+
+  function restoreRagContext() {
+    const saved = readStoredRagContext();
+    if (!saved) {
+      clearCurrentKb();
+      return null;
+    }
+
+    const hasOrgAccess = org.organizations.some(item => item.orgId === saved.orgId);
+    if (!hasOrgAccess) {
+      clearCurrentKb();
+      return null;
+    }
+
+    if (org.currentOrgId !== saved.orgId) {
+      org.selectOrg(saved.orgId);
+    }
+    setCurrentKb(saved.kbId, saved.orgId);
+    return saved;
+  }
+
+  function activeKbIdForCurrentOrg() {
+    return currentKbOrgId.value === org.currentOrgId ? currentKbId.value : null;
   }
 
   function loadSessions() {
@@ -177,6 +253,7 @@ export const useSessionStore = defineStore('sessions', () => {
 
   // ── 初始化 ────────────────────────────────────────────────────────────
   async function init() {
+    restoreRagContext();
     loadSessions();
     await loadSessionsFromServer();
     syncLocalToServer();
@@ -478,7 +555,7 @@ export const useSessionStore = defineStore('sessions', () => {
       ui.showToast('warning', `内容过长（${outboundText.length} 字），请控制在 ${MAX_CHAT_MESSAGE_CHARS} 字以内，或导入作品后分章节处理`);
       return;
     }
-    const effectiveKbId = kbId ?? currentKbId.value ?? null;
+    const effectiveKbId = kbId ?? activeKbIdForCurrentOrg() ?? null;
 
     pushMessage(reqId, 'user', formatMarkdown(text), { text });
     updateSessionTitle(text, reqId);
@@ -503,7 +580,7 @@ export const useSessionStore = defineStore('sessions', () => {
       ui.showToast('warning', `原消息过长（${text.length} 字），请控制在 ${MAX_CHAT_MESSAGE_CHARS} 字以内后再重新生成`);
       return;
     }
-    const effectiveKbId = kbId ?? currentKbId.value ?? null;
+    const effectiveKbId = kbId ?? activeKbIdForCurrentOrg() ?? null;
     if (reactEnabled.value)   await doReactChat(sessionId.value, text, effectiveKbId);
     else if (streamEnabled.value) await doStreamChat(sessionId.value, text, effectiveKbId);
     else                       await doSyncChat(sessionId.value, text, effectiveKbId);
@@ -1008,12 +1085,13 @@ async function doStreamChat(reqId, text, kbId) {
 
   return {
     sessions, sessionId, messages, sessionMessages, sessionRuntime,
-    reactEnabled, streamEnabled, enterToSend, model, activeModel, currentKbId, messageInput,
+    reactEnabled, streamEnabled, enterToSend, model, activeModel, currentKbId, currentKbOrgId, messageInput,
     editingMessageId, editingOriginalText,
     currentSessionSending, currentSessionTitle,
     QUICK_MODEL, EXPERT_MODEL, setQuickMode, setExpertMode, toggleExpertMode,
     init, newSession, switchSession, removeSession, removeSessions, removeAllSessions, renameSession, updateSessionTitle,
     sendMessage, regenerateMessage, setFeedback,
+    setCurrentKb, clearCurrentKb, restoreRagContext,
     startEditingMessage, cancelEditingMessage, submitEditedMessage, createShareLink, revokeShare,
     stopGeneration: id => stopSessionGeneration(id ?? sessionId.value, true),
     stopSessionGeneration, ensureRuntime,

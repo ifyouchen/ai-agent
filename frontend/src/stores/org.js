@@ -26,15 +26,52 @@ export const useOrgStore = defineStore('org', () => {
     return org.orgType === 'PERSONAL' ? '个人空间' : (org.name || org.orgId);
   });
 
+  function orgPreferenceKey() {
+    const userId = api.getUser()?.userId;
+    return userId ? `ai_agent_current_org_${userId}` : null;
+  }
+
+  function readStoredOrgId() {
+    const key = orgPreferenceKey();
+    if (!key) return null;
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  }
+
+  function persistOrgId(orgId) {
+    const key = orgPreferenceKey();
+    if (!key || !orgId) return;
+    try {
+      localStorage.setItem(key, orgId);
+    } catch {}
+  }
+
+  function resolvePreferredOrgId(list) {
+    if (!list.length) return null;
+
+    const currentValid = currentOrgId.value && list.find(o => o.orgId === currentOrgId.value);
+    if (currentValid) return currentOrgId.value;
+
+    const storedOrgId = readStoredOrgId();
+    const storedValid = storedOrgId && list.find(o => o.orgId === storedOrgId);
+    if (storedValid) return storedOrgId;
+
+    const personal = list.find(o => o.orgType === 'PERSONAL');
+    return personal?.orgId || list[0].orgId;
+  }
+
   // ── 加载 ────────────────────────────────────────────────────────────
   async function loadOrgs() {
     orgLoading.value = true;
     try {
       organizations.value = await api.listOrganizations();
-      // 默认选中个人空间
-      if (!currentOrgId.value && organizations.value.length) {
-        const personal = organizations.value.find(o => o.orgType === 'PERSONAL');
-        currentOrgId.value = personal?.orgId || organizations.value[0].orgId;
+      const preferredOrgId = resolvePreferredOrgId(organizations.value);
+      currentOrgId.value = preferredOrgId;
+      if (preferredOrgId) {
+        persistOrgId(preferredOrgId);
       }
       // Fix 14: 加载完组织后刷新通知计数
       refreshNoticeCount();
@@ -62,6 +99,7 @@ export const useOrgStore = defineStore('org', () => {
 
   function selectOrg(orgId) {
     currentOrgId.value = orgId;
+    persistOrgId(orgId);
   }
 
   async function createOrg(name, description) {

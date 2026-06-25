@@ -146,7 +146,7 @@
                 stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
         </svg>
         {{ currentKbName }}
-        <button class="kb-active-clear" type="button" title="取消关联知识库" @click.stop="sess.currentKbId = null">×</button>
+        <button class="kb-active-clear" type="button" title="取消关联知识库" @click.stop="sess.clearCurrentKb()">×</button>
       </span>
       <span class="hint-text" :class="{ over: inputTooLong }">{{ inputHintText }}</span>
     </div>

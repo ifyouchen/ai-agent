@@ -663,7 +663,9 @@ async function handleDeleteKb(item) {
   });
   if (!confirmed) return;
   try {
+    const wasActiveInChat = sess.currentKbId === item.id && sess.currentKbOrgId === org.currentOrgId;
     await kb.deleteKb(item.id, org.currentOrgId);
+    if (wasActiveInChat) sess.clearCurrentKb();
     ui.showToast('success', `已删除：${item.name}`);
   } catch (err) {
     ui.showToast('error', err.message || '删除失败');
@@ -723,7 +725,7 @@ async function runQuery() {
 
 // Fix 4: 关联后不强制跳转，Toast 提供行动按钮供用户自主选择
 function useKbInChat() {
-  sess.currentKbId = kb.currentKbId;
+  sess.setCurrentKb(kb.currentKbId, org.currentOrgId);
   ui.showToast('success', `已关联「${kb.currentKbName}」，可继续管理文档或前往对话`);
   // 不再强制 router.push('/chat')，让用户决定是否切换页面
 }

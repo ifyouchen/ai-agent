@@ -145,6 +145,7 @@ onMounted(async () => {
   await auth.refreshProfile();
   await org.loadOrgs();
   await sess.init();
+  await syncKnowledgeBasesForOrg(org.currentOrgId);
 
   // 全局代码块复制处理
   setupCopyCodeHandler(() => ui.showToast('warning', '复制失败，请手动复制'));
@@ -164,10 +165,35 @@ onBeforeUnmount(() => {
 
 // P2-13：组织切换时自动刷新知识库
 watch(() => org.currentOrgId, (newOrgId) => {
-  sess.currentKbId = null;
-  if (newOrgId) kb.loadKbs(newOrgId, { reset: true });
-  else kb.resetSelection();
+  syncKnowledgeBasesForOrg(newOrgId);
 });
+
+async function syncKnowledgeBasesForOrg(orgId) {
+  if (!orgId) {
+    kb.resetSelection();
+    sess.clearCurrentKb();
+    return;
+  }
+
+  await kb.loadKbs(orgId, { reset: true });
+  if (org.currentOrgId !== orgId) return;
+
+  if (!sess.currentKbId) return;
+  if (sess.currentKbOrgId !== orgId) {
+    sess.clearCurrentKb();
+    return;
+  }
+
+  const activeKbExists = kb.knowledgeBases.some(item => item.id === sess.currentKbId);
+  if (!activeKbExists) {
+    sess.clearCurrentKb();
+    return;
+  }
+
+  if (kb.currentKbId !== sess.currentKbId) {
+    await kb.selectKb(sess.currentKbId, orgId);
+  }
+}
 
 watch(() => route.fullPath, (path) => {
   applyRouteSidebarPreference(path);

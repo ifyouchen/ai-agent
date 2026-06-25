@@ -30,6 +30,44 @@ export const useKbStore = defineStore('kb', () => {
   const currentKbName = computed(() => currentKb.value?.name || '');
 
   // ── 知识库列表 ──────────────────────────────────────────────────────
+  function kbPreferenceKey(orgId) {
+    const userId = api.getUser()?.userId;
+    return userId && orgId ? `ai_agent_recent_kb_${userId}_${orgId}` : null;
+  }
+
+  function readStoredKbId(orgId) {
+    const key = kbPreferenceKey(orgId);
+    if (!key) return null;
+    try {
+      const raw = localStorage.getItem(key);
+      const value = raw ? Number(raw) : null;
+      return Number.isFinite(value) ? value : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function persistKbId(kbId, orgId) {
+    const key = kbPreferenceKey(orgId);
+    if (!key || !kbId) return;
+    try {
+      localStorage.setItem(key, String(kbId));
+    } catch {}
+  }
+
+  function resolvePreferredKbId(orgId, list) {
+    if (!list.length) return null;
+
+    const currentValid = currentKbId.value && list.find(kb => kb.id === currentKbId.value);
+    if (currentValid) return currentKbId.value;
+
+    const storedKbId = readStoredKbId(orgId);
+    const storedValid = storedKbId && list.find(kb => kb.id === storedKbId);
+    if (storedValid) return storedKbId;
+
+    return list[0].id;
+  }
+
   function stopAllDocPolling() {
     Object.keys(_pollTimers).forEach(docId => stopDocPolling(docId));
   }
@@ -55,12 +93,15 @@ export const useKbStore = defineStore('kb', () => {
       const list = await api.listKnowledgeBases(orgId);
       if (seq !== _kbLoadSeq) return;
       knowledgeBases.value = list;
-      // 当前选中的 KB 若不在新列表中，清空
-      if (currentKbId.value && !knowledgeBases.value.find(kb => kb.id === currentKbId.value)) {
+      const preferredKbId = resolvePreferredKbId(orgId, knowledgeBases.value);
+      if (!preferredKbId) {
         resetSelection();
+        return;
       }
-      if (knowledgeBases.value.length && !currentKbId.value) {
-        await selectKb(knowledgeBases.value[0].id, orgId);
+      if (currentKbId.value !== preferredKbId) {
+        await selectKb(preferredKbId, orgId);
+      } else if (!docs.value.length) {
+        await loadDocs(orgId);
       }
     } catch (err) {
       if (seq === _kbLoadSeq) {
@@ -76,6 +117,7 @@ export const useKbStore = defineStore('kb', () => {
   async function selectKb(kbId, orgId) {
     currentKbId.value    = kbId;
     kbMembersVisible.value = false;
+    persistKbId(kbId, orgId);
     await loadDocs(orgId);
   }
 

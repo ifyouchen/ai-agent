@@ -107,6 +107,9 @@ async function handleQuickShare() {
 }
 
 async function handleAttachKb() {
+  if (!kb.knowledgeBases.length && !kb.kbLoading) {
+    await kb.loadKbs(org.currentOrgId);
+  }
   const kbs = kb.knowledgeBases;
   if (!kbs.length) {
     ui.showToast('warning', '暂无知识库，请先在「知识库」页创建知识库并上传文档');
@@ -131,10 +134,10 @@ async function handleAttachKb() {
   });
   if (chosen === false || chosen === undefined) return;
   if (chosen === '') {
-    sess.currentKbId = null;
+    sess.clearCurrentKb();
     ui.showToast('info', '已取消关联知识库');
   } else {
-    sess.currentKbId = Number(chosen);
+    sess.setCurrentKb(Number(chosen), org.currentOrgId);
     const found = kbs.find(k => k.id === sess.currentKbId);
     if (kb.currentKbId !== sess.currentKbId) {
       await kb.selectKb(sess.currentKbId, org.currentOrgId);
