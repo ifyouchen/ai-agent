@@ -1,5 +1,23 @@
 <template>
   <div class="kb-view" :class="{ 'kb-view-empty': !kb.kbLoading && !hasKnowledgeBases }">
+    <section class="kb-ops-header">
+      <div class="kb-ops-copy">
+        <span class="kb-kicker">知识资产</span>
+        <h2>{{ kbOpsTitle }}</h2>
+        <p>{{ kbOpsHint }}</p>
+      </div>
+      <div class="kb-ops-stats" aria-label="知识库概览">
+        <div v-for="item in kbOpsStats" :key="item.label" class="kb-ops-stat">
+          <strong>{{ item.value }}</strong>
+          <span>{{ item.label }}</span>
+        </div>
+      </div>
+      <div class="kb-ops-actions">
+        <button v-if="hasKnowledgeBases" class="kb-action-btn" type="button" @click="handleCreateKb">新建知识库</button>
+        <button class="kb-action-btn primary" type="button" :disabled="!kb.currentKbId" @click="useKbInChat">在对话中使用</button>
+      </div>
+    </section>
+
     <!-- 顶部：知识库选择器 -->
     <div class="kb-selector-header">
       <h3 class="kb-selector-title">
@@ -81,6 +99,7 @@
           </svg>
           {{ item.docCount || 0 }} 篇文档
         </div>
+        <div v-if="item.id === kb.currentKbId" class="kb-card-current">当前管理中</div>
         <div v-if="item.description" class="kb-card-desc" :title="item.description">{{ item.description }}</div>
       </div>
     </div>
@@ -100,6 +119,17 @@
 
       <template v-else>
         <!-- 头部：Tab + 操作 -->
+        <div class="kb-current-summary">
+          <div>
+            <span class="kb-kicker">当前知识库</span>
+            <strong>{{ kb.currentKbName }}</strong>
+            <p>{{ kb.currentKb?.description || '上传文档后，可在对话和测试查询中使用这些内容。' }}</p>
+          </div>
+          <div class="kb-current-meta">
+            <span>{{ filteredDocs.length }} 个文档项</span>
+            <span>{{ canManageKb ? '可管理' : '只读访问' }}</span>
+          </div>
+        </div>
         <div class="kb-main-header">
           <div class="kb-tabs">
             <button class="kb-tab" :class="{ active: activeTab === 'docs' }" type="button" @click="activeTab = 'docs'">
@@ -469,6 +499,22 @@ const dragOver      = ref(false);
 const expandedDocId = ref(null);
 const docChunksCache = reactive({});
 const hasKnowledgeBases = computed(() => kb.knowledgeBases.length > 0);
+const totalKbDocCount = computed(() =>
+  kb.knowledgeBases.reduce((sum, item) => sum + Number(item.docCount || 0), 0)
+);
+const kbOpsTitle = computed(() =>
+  kb.currentKbId ? `${kb.currentKbName} 已接入 ${org.currentOrgName}` : `${org.currentOrgName} 的知识库`
+);
+const kbOpsHint = computed(() => {
+  if (!hasKnowledgeBases.value) return '先创建一个知识库，再上传文档形成可检索的团队知识资产。';
+  if (kb.currentKbId) return '文档、检索测试和成员权限集中在同一页，便于从维护切到验证。';
+  return '选择一个知识库后，可以上传文档、测试问答效果，并决定是否用于对话。';
+});
+const kbOpsStats = computed(() => [
+  { label: '知识库', value: kb.knowledgeBases.length },
+  { label: '总文档', value: totalKbDocCount.value },
+  { label: '当前文档', value: kb.currentKbId ? filteredDocs.value.length : 0 },
+]);
 
 // Fix 7: KB 操作权限（org OWNER/ADMIN 可编辑删除 KB）
 const canManageKb = computed(() =>

@@ -96,6 +96,25 @@
           </div>
         </section>
 
+        <section class="org-overview-strip" aria-label="组织概览">
+          <div class="org-overview-copy">
+            <span class="org-kicker">{{ org.currentOrg.orgType === 'PERSONAL' ? '私人空间' : '协作空间' }}</span>
+            <strong>{{ orgOverviewTitle }}</strong>
+            <p>{{ orgOverviewHint }}</p>
+          </div>
+          <div class="org-overview-stats">
+            <div v-for="item in orgOverviewStats" :key="item.label" class="org-overview-stat">
+              <strong>{{ item.value }}</strong>
+              <span>{{ item.label }}</span>
+            </div>
+          </div>
+          <div class="org-overview-actions">
+            <button v-if="canManageMembers" class="org-primary-btn" type="button" @click="activeSection = 'invite'">邀请成员</button>
+            <button v-if="canManageMembers && pendingOrgWork > 0" class="org-text-btn" type="button" @click="activeSection = 'orgJoinRequests'">处理申请</button>
+            <button v-if="isPersonalOrg" class="org-primary-btn" type="button" @click="activeSection = 'members'">申请加入</button>
+          </div>
+        </section>
+
         <div class="org-management-body">
           <nav class="org-section-tabs" aria-label="组织管理功能">
             <button
@@ -513,6 +532,28 @@ const filteredMembers = computed(() => {
 const pendingMyJoinRequests = computed(() =>
   myJoinRequests.value.filter(item => item.status === 'PENDING')
 );
+
+const pendingOrgWork = computed(() =>
+  pendingInvitations.value.length + pendingJoinRequests.value.length
+);
+
+const orgOverviewTitle = computed(() => {
+  if (isPersonalOrg.value) return '个人空间用于私有创作和知识沉淀';
+  if (pendingOrgWork.value) return `有 ${pendingOrgWork.value} 条协作事项待处理`;
+  return '成员、邀请和权限状态稳定';
+});
+
+const orgOverviewHint = computed(() => {
+  if (isPersonalOrg.value) return '需要协作时，可以申请加入组织，或创建新的企业组织。';
+  if (canManageMembers.value) return '管理员可以在这里邀请成员、审批加入申请，并快速调整成员角色。';
+  return '当前组织的成员和权限在这里查看，管理操作由所有者或管理员处理。';
+});
+
+const orgOverviewStats = computed(() => [
+  { label: '组织空间', value: org.organizations.length },
+  { label: isPersonalOrg.value ? '待处理申请' : '成员', value: isPersonalOrg.value ? pendingMyJoinRequests.value.length : filteredMembers.value.length },
+  { label: '协作待办', value: pendingOrgWork.value },
+]);
 
 const activeSectionKey = computed(() => {
   let validKeys = ['members'];

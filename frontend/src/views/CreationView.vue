@@ -4,6 +4,23 @@
       <div><h1>创作中心</h1><p>写小说、改小说、转短剧分场稿的一体化工作台。</p></div>
       <button class="creation-primary-btn" type="button" @click="openCreateDialog('long_novel')">新建作品</button>
     </header>
+    <section class="creation-command-center">
+      <div class="creation-command-copy">
+        <span class="creation-kicker">今日创作台</span>
+        <h2>{{ creationFocusTitle }}</h2>
+        <p>{{ creationFocusHint }}</p>
+      </div>
+      <div class="creation-command-stats" aria-label="创作概览">
+        <div v-for="item in creationOverview" :key="item.label" class="creation-command-stat">
+          <strong>{{ item.value }}</strong>
+          <span>{{ item.label }}</span>
+        </div>
+      </div>
+      <div class="creation-command-actions">
+        <button class="creation-primary-btn" type="button" @click="openCreateDialog('long_novel')">新建长篇</button>
+        <button class="creation-secondary-btn" type="button" @click="router.push('/creation/projects')">进入作品库</button>
+      </div>
+    </section>
     <section class="creation-grid">
       <button v-for="item in shortcuts" :key="item.key" class="creation-action-card" :class="`action-${item.key}`" type="button" @click="item.action">
         <span class="creation-action-icon">{{ item.icon }}</span><strong>{{ item.title }}</strong><small>{{ item.desc }}</small>
@@ -60,31 +77,6 @@
       </div>
       <p v-if="activeRewriteTask.errorMessage" class="creation-risk">{{ activeRewriteTask.errorMessage }}</p>
     </section>
-    <section class="creation-panel creation-task-history">
-      <div class="creation-section-title">
-        <div>
-          <h2>历史任务</h2>
-          <p>隐藏后的任务也会保留在这里，可查看进度和结果。</p>
-        </div>
-        <button class="creation-secondary-btn" type="button" :disabled="taskHistoryLoading" @click="loadTaskHistory">{{ taskHistoryLoading ? '刷新中...' : '刷新' }}</button>
-      </div>
-      <div v-if="!taskHistory.length" class="creation-muted">暂无历史任务</div>
-      <div v-else class="creation-history-list">
-        <div v-for="item in taskHistory" :key="item.id" class="creation-history-item" :class="`status-${item.status || 'unknown'}`">
-          <div>
-            <strong>{{ item.title }}</strong>
-            <span>{{ item.projectTitle || '未关联作品' }} · {{ taskStatusLabelFor(item.status) }} · {{ taskProgressFor(item) }}%</span>
-            <small>{{ item.currentStep || '暂无进度信息' }}</small>
-          </div>
-          <div class="creation-history-actions">
-            <button class="creation-secondary-btn compact" type="button" @click="restoreHistoryTask(item)">恢复到任务卡</button>
-            <button class="creation-primary-btn compact" type="button" :disabled="!historyTaskCanOpen(item)" @click="openHistoryTask(item)">打开</button>
-            <button class="creation-secondary-btn compact" type="button" :disabled="!historyTaskCanCancel(item)" @click="cancelHistoryTask(item)">终止</button>
-            <button class="creation-secondary-btn compact" type="button" :disabled="!historyTaskCanRetry(item)" @click="retryHistoryTask(item)">重试</button>
-          </div>
-        </div>
-      </div>
-    </section>
     <ProjectCards title="最近作品" :projects="projects.slice(0, 6)" :converting-project-id="activeScriptProjectId" :exporting-project-id="projectExportingId" :deleting-project-id="projectDeletingId" @script="startScript" @export="downloadProjectExport" @delete="deleteProject" />
   </div>
 
@@ -99,7 +91,7 @@
     <div class="creation-tabs">
       <button v-for="f in filters" :key="f.value" :class="{ active: filter === f.value }" type="button" @click="filter = f.value">{{ f.label }}</button>
     </div>
-    <div class="creation-toolbar">
+    <div v-if="filter !== 'history'" class="creation-toolbar">
       <div class="creation-filters">
         <label>状态<CreationSelect v-model="statusFilter" :options="statusOptions" /></label>
         <label>排序<CreationSelect v-model="sortOrder" :options="sortOptions" /></label>
@@ -110,7 +102,7 @@
         <button v-if="searchQuery" class="creation-secondary-btn" type="button" @click="clearProjectSearch">清空</button>
       </form>
     </div>
-    <section v-if="activeTask" class="creation-panel creation-task-card" :class="`status-${activeTask.status || 'unknown'}`">
+    <section v-if="filter !== 'history' && activeTask" class="creation-panel creation-task-card" :class="`status-${activeTask.status || 'unknown'}`">
       <div class="creation-section-title">
         <div>
           <h2>{{ taskPanelTitle }}</h2>
@@ -136,7 +128,7 @@
       <p v-if="activeTask.tokenUsage?.totalTokens" class="creation-muted">预估 Token：{{ activeTask.tokenUsage.totalTokens }}（输入 {{ activeTask.tokenUsage.inputTokens }} / 输出 {{ activeTask.tokenUsage.outputTokens }}）</p>
       <p v-if="activeTask.errorMessage" class="creation-risk">{{ activeTask.errorMessage }}</p>
     </section>
-    <section v-if="activeRewriteTask" class="creation-panel creation-task-card" :class="`status-${activeRewriteTask.status || 'unknown'}`">
+    <section v-if="filter !== 'history' && activeRewriteTask" class="creation-panel creation-task-card" :class="`status-${activeRewriteTask.status || 'unknown'}`">
       <div class="creation-section-title">
         <div>
           <h2>{{ rewriteTaskPanelTitle }}</h2>
@@ -161,38 +153,54 @@
       </div>
       <p v-if="activeRewriteTask.errorMessage" class="creation-risk">{{ activeRewriteTask.errorMessage }}</p>
     </section>
-    <section class="creation-panel creation-task-history">
+    <section v-if="filter === 'history'" class="creation-panel creation-task-history">
       <div class="creation-section-title">
         <div>
-          <h2>历史任务</h2>
-          <p>隐藏后的任务也会保留在这里，可查看进度和结果。</p>
+          <h2>历史任务 <span v-if="taskHistory.length">{{ taskHistoryBadgeText }}</span></h2>
+          <p>默认展示最近 3 条，可展开查看完整任务记录。</p>
         </div>
-        <button class="creation-secondary-btn" type="button" :disabled="taskHistoryLoading" @click="loadTaskHistory">{{ taskHistoryLoading ? '刷新中...' : '刷新' }}</button>
+        <div class="creation-row">
+          <button v-if="taskHistoryCanExpand" class="creation-secondary-btn" type="button" @click="toggleTaskHistory">{{ taskHistoryToggleLabel }}</button>
+          <button class="creation-secondary-btn" type="button" :disabled="taskHistoryLoading" @click="loadTaskHistory">{{ taskHistoryLoading ? '刷新中...' : '刷新' }}</button>
+        </div>
       </div>
+      <form v-if="taskHistory.length" class="creation-history-search" @submit.prevent>
+        <input v-model="taskHistorySearchInput" type="search" placeholder="搜索小说名、任务名、状态或进度" @input="taskHistoryExpanded = false" />
+        <button v-if="taskHistorySearchInput" class="creation-secondary-btn compact" type="button" @click="clearTaskHistorySearch">清空</button>
+      </form>
       <div v-if="!taskHistory.length" class="creation-muted">暂无历史任务</div>
-      <div v-else class="creation-history-list">
-        <div v-for="item in taskHistory" :key="item.id" class="creation-history-item" :class="`status-${item.status || 'unknown'}`">
+      <div v-else-if="!filteredTaskHistory.length" class="creation-muted">没有匹配的历史任务</div>
+      <div v-else class="creation-history-list" :class="{ expanded: taskHistoryExpanded }">
+        <div v-for="item in visibleTaskHistory" :key="item.id" class="creation-history-item" :class="`status-${item.status || 'unknown'}`">
           <div>
             <strong>{{ item.title }}</strong>
             <span>{{ item.projectTitle || '未关联作品' }} · {{ taskStatusLabelFor(item.status) }} · {{ taskProgressFor(item) }}%</span>
             <small>{{ item.currentStep || '暂无进度信息' }}</small>
           </div>
           <div class="creation-history-actions">
-            <button class="creation-secondary-btn compact" type="button" @click="restoreHistoryTask(item)">恢复到任务卡</button>
+            <button class="creation-secondary-btn compact" type="button" @click="restoreHistoryTask(item)">置顶任务</button>
             <button class="creation-primary-btn compact" type="button" :disabled="!historyTaskCanOpen(item)" @click="openHistoryTask(item)">打开</button>
             <button class="creation-secondary-btn compact" type="button" :disabled="!historyTaskCanCancel(item)" @click="cancelHistoryTask(item)">终止</button>
             <button class="creation-secondary-btn compact" type="button" :disabled="!historyTaskCanRetry(item)" @click="retryHistoryTask(item)">重试</button>
           </div>
         </div>
       </div>
+      <p v-if="taskHistoryHiddenCount" class="creation-history-note">还有 {{ taskHistoryHiddenCount }} 条{{ taskHistorySearchActive ? '匹配的' : '' }}历史任务，展开后可查看和操作。</p>
     </section>
-    <ProjectCards title="全部作品" :projects="filteredProjects" :converting-project-id="activeScriptProjectId" :exporting-project-id="projectExportingId" :deleting-project-id="projectDeletingId" @script="startScript" @export="downloadProjectExport" @delete="deleteProject" />
+    <ProjectCards v-if="filter !== 'history'" title="全部作品" :projects="filteredProjects" :converting-project-id="activeScriptProjectId" :exporting-project-id="projectExportingId" :deleting-project-id="projectDeletingId" @script="startScript" @export="downloadProjectExport" @delete="deleteProject" />
   </div>
 
-  <div v-else-if="mode === 'editor'" class="creation-workbench has-ai-config" :class="{ 'ai-config-collapsed': aiConfigCollapsed }">
+  <div v-else-if="mode === 'editor'" class="creation-workbench creation-writing-workbench has-ai-config" :class="{ 'ai-config-collapsed': aiConfigCollapsed }">
     <aside class="creation-side">
-      <router-link class="creation-back-link" to="/creation/projects">返回作品库</router-link>
-      <h2>{{ project?.title || '作品编辑器' }}</h2>
+      <div class="creation-side-top">
+        <router-link class="creation-back-link" to="/creation/projects">返回作品库</router-link>
+        <h2>{{ project?.title || '作品编辑器' }}</h2>
+        <div class="creation-project-meta">
+          <span>{{ project?.typeLabel || project?.type || '作品' }}</span>
+          <span>{{ chapters.length }} 章</span>
+          <span>{{ wordCount }} 字</span>
+        </div>
+      </div>
       <div v-if="activeTask" class="creation-side-section creation-side-task" :class="`status-${activeTask.status || 'unknown'}`">
         <h3>{{ taskPanelTitle }}</h3>
         <strong>{{ activeTask.currentStep || activeTaskStatusLabel }}</strong>
@@ -218,21 +226,29 @@
         <button class="creation-secondary-btn full compact" type="button" :disabled="!rewriteTaskCanRetry" @click="retryActiveRewriteTask">重试</button>
       </div>
       <div class="creation-side-section">
-        <h3>创作资产</h3>
-        <button
-          v-for="asset in assetTypes"
-          :key="asset.type"
-          class="creation-list-btn"
-          :class="{ active: editorPanel === 'asset' && activeAssetType === asset.type }"
-          type="button"
-          @click="selectAsset(asset.type)"
-        >
-          {{ asset.label }}
-        </button>
+        <div class="creation-side-section-head">
+          <h3>创作资产</h3>
+          <span>{{ assetTypes.length }} 项</span>
+        </div>
+        <div class="creation-asset-grid">
+          <button
+            v-for="asset in assetTypes"
+            :key="asset.type"
+            class="creation-list-btn creation-asset-chip"
+            :class="{ active: editorPanel === 'asset' && activeAssetType === asset.type }"
+            type="button"
+            @click="selectAsset(asset.type)"
+          >
+            {{ asset.label }}
+          </button>
+        </div>
       </div>
       <div class="creation-side-section">
-        <h3>章节</h3>
-        <button class="creation-primary-btn full" type="button" @click="addChapter">新增章节</button>
+        <div class="creation-side-section-head">
+          <h3>章节</h3>
+          <span>{{ chapters.length }} 章</span>
+        </div>
+        <button class="creation-primary-btn full creation-add-chapter-btn" type="button" @click="addChapter">新增章节</button>
         <div
           v-for="chapter in chapters"
           :key="chapter.id"
@@ -267,9 +283,10 @@
         </router-link>
       </div>
     </aside>
-    <main v-if="editorPanel === 'asset'" class="creation-editor">
+    <main v-if="editorPanel === 'asset'" class="creation-editor creation-writing-editor">
       <div class="creation-asset-head">
         <div>
+          <span class="creation-editor-kicker">创作资产</span>
           <h1>{{ activeAssetLabel }}</h1>
           <p>{{ activeAssetHint }}</p>
         </div>
@@ -281,15 +298,27 @@
       </label>
       <textarea v-model="assetForm.content" class="creation-manuscript" :placeholder="activeAssetPlaceholder"></textarea>
       <footer>
-        <span>{{ assetWordCount }} 字</span>
+        <span>{{ activeAssetLabel }} · {{ assetWordCount }} 字</span>
         <button type="button" :disabled="assetSaving" @click="saveAsset">{{ assetSaving ? '保存中...' : `保存${activeAssetLabel}` }}</button>
       </footer>
     </main>
-    <main v-else class="creation-editor">
+    <main v-else class="creation-editor creation-writing-editor">
+      <div class="creation-editor-headbar">
+        <div>
+          <span class="creation-editor-kicker">章节写作</span>
+          <strong>{{ currentChapterLabel }}</strong>
+          <p>{{ currentChapterStatusLabel }}</p>
+        </div>
+        <div class="creation-editor-stats">
+          <span>{{ wordCount }} 字</span>
+          <span>{{ chapterVersions.length }} 个快照</span>
+          <span v-if="currentChapter && hasChapterDraft(currentChapter)">未保存草稿</span>
+        </div>
+      </div>
       <input v-model="chapterForm.title" class="creation-title-input" placeholder="章节标题" />
       <textarea v-model="chapterForm.content" class="creation-manuscript" placeholder="在这里写小说正文。"></textarea>
-      <footer>
-        <span>{{ wordCount }} 字</span>
+      <footer class="creation-editor-footer">
+        <span>{{ activeAction?.label || 'AI 助手' }} · {{ promptConfig.global.style }} · {{ promptConfig.global.pace }}</span>
         <button type="button" :disabled="chapterSaving" @click="saveChapter">{{ chapterSaving ? '保存中...' : '保存章节' }}</button>
       </footer>
     </main>
@@ -309,6 +338,7 @@
       </template>
       <div class="creation-ai-config-body" v-show="!aiConfigCollapsed">
         <div class="creation-ai-config-head">
+          <span class="creation-editor-kicker">当前动作</span>
           <strong>{{ activeAction.label }}</strong>
           <small>{{ activeAction.hint }}</small>
         </div>
@@ -385,7 +415,10 @@
       </div>
     </aside>
     <aside class="creation-ai">
-      <h3>AI 助手</h3>
+      <div class="creation-ai-head">
+        <h3>AI 助手</h3>
+        <span>{{ aiActions.length + 2 }} 个动作</span>
+      </div>
       <button
         v-for="action in aiActions"
         :key="action.type"
@@ -815,6 +848,8 @@ const chapterVersions = ref([]);
 const activeTask = ref(null);
 const activeRewriteTask = ref(null);
 const taskHistory = ref([]);
+const taskHistoryExpanded = ref(false);
+const taskHistorySearchInput = ref('');
 const chapterSaving = ref(false);
 const assetSaving = ref(false);
 const rewriteStarting = ref(false);
@@ -900,7 +935,14 @@ const createTypeOptions = [
   { value: 'short_story', label: '短篇故事' },
   { value: 'adaptation', label: '改编项目' },
 ];
-const filters = [{ value: 'all', label: '全部' }, { value: 'long_novel', label: '长篇' }, { value: 'short_story', label: '短篇' }, { value: 'adaptation', label: '改编' }, { value: 'short_drama', label: '短剧' }];
+const filters = [
+  { value: 'all', label: '全部' },
+  { value: 'long_novel', label: '长篇' },
+  { value: 'short_story', label: '短篇' },
+  { value: 'adaptation', label: '改编' },
+  { value: 'short_drama', label: '短剧' },
+  { value: 'history', label: '历史任务' },
+];
 const aiActions = [
   { type: 'setting', label: '编辑设定', hint: '生成或补全世界观、题材基调、爽点机制。', placeholder: '例如：古代科举权谋，男主重生，不要系统。' },
   { type: 'characters', label: '编辑人物', hint: '生成或补全人物欲望、弱点、关系网。', placeholder: '例如：主角克制但有狠劲，反派掌握官府资源。' },
@@ -952,6 +994,60 @@ const assetTypes = [
 ];
 
 const mode = computed(() => route.meta.creationMode || 'home');
+const TASK_HISTORY_PREVIEW_LIMIT = 3;
+const runningTaskCount = computed(() =>
+  [activeTask.value, activeRewriteTask.value].filter(task => task && ['pending', 'running'].includes(task.status)).length
+);
+const scriptDraftCount = computed(() =>
+  projects.value.reduce((sum, item) => sum + Number(item.scriptDraftCount || 0), 0)
+);
+const creationOverview = computed(() => [
+  { label: '作品', value: projects.value.length },
+  { label: '进行中', value: runningTaskCount.value },
+  { label: '脚本草稿', value: scriptDraftCount.value },
+]);
+const creationFocusTitle = computed(() => {
+  if (activeTask.value && ['pending', 'running'].includes(activeTask.value.status)) return activeTask.value.currentStep || '短剧任务进行中';
+  if (activeRewriteTask.value && ['pending', 'running'].includes(activeRewriteTask.value.status)) return activeRewriteTask.value.currentStep || '改写任务进行中';
+  if (projects.value.length) return '从最近作品继续推进';
+  return '先创建一个可持续迭代的作品';
+});
+const creationFocusHint = computed(() => {
+  if (runningTaskCount.value) return '生成、改写和转短剧任务会在这里汇总，方便随时回到结果。';
+  if (projects.value.length) return '作品资产、导出动作和任务入口放在同一个工作台里，下一步更好找。';
+  return '可以从长篇、短篇、导入或短剧改编开始，后续资产都会进入作品库。';
+});
+const taskHistorySearchActive = computed(() => Boolean(taskHistorySearchInput.value.trim()));
+const filteredTaskHistory = computed(() => {
+  const keyword = taskHistorySearchInput.value.trim().toLowerCase();
+  if (!keyword) return taskHistory.value;
+  return taskHistory.value.filter(item => {
+    const fields = [
+      item.title,
+      item.projectTitle,
+      item.currentStep,
+      item.kind,
+      taskStatusLabelFor(item.status),
+      `${taskProgressFor(item)}%`,
+    ];
+    return fields.some(field => String(field || '').toLowerCase().includes(keyword));
+  });
+});
+const taskHistoryCanExpand = computed(() => filteredTaskHistory.value.length > TASK_HISTORY_PREVIEW_LIMIT);
+const visibleTaskHistory = computed(() =>
+  taskHistoryExpanded.value
+    ? filteredTaskHistory.value
+    : filteredTaskHistory.value.slice(0, TASK_HISTORY_PREVIEW_LIMIT)
+);
+const taskHistoryHiddenCount = computed(() => Math.max(0, filteredTaskHistory.value.length - visibleTaskHistory.value.length));
+const taskHistoryToggleLabel = computed(() =>
+  taskHistoryExpanded.value ? '收起' : `展开全部 ${filteredTaskHistory.value.length} 条`
+);
+const taskHistoryBadgeText = computed(() =>
+  taskHistorySearchActive.value
+    ? `${filteredTaskHistory.value.length}/${taskHistory.value.length} 条`
+    : `${taskHistory.value.length} 条`
+);
 const filteredProjects = computed(() => {
   const keyword = searchQuery.value.trim().toLowerCase();
   const list = projects.value
@@ -966,6 +1062,14 @@ const filteredProjects = computed(() => {
 });
 const wordCount = computed(() => (chapterForm.content || '').replace(/\s/g, '').length);
 const assetWordCount = computed(() => (assetForm.content || '').replace(/\s/g, '').length);
+const currentChapterLabel = computed(() =>
+  currentChapter.value ? chapterDisplayTitle(currentChapter.value) : '未选择章节'
+);
+const currentChapterStatusLabel = computed(() => {
+  if (!currentChapter.value) return '从左侧选择一个章节开始写作。';
+  if (hasChapterDraft(currentChapter.value)) return '当前章节有未保存草稿，保存后会生成版本快照。';
+  return '正文会在本地编辑，点击保存章节后同步到作品。';
+});
 const activeAsset = computed(() => assetTypes.find(asset => asset.type === activeAssetType.value) || assetTypes[0]);
 const activeAssetLabel = computed(() => activeAsset.value.label);
 const activeAssetHint = computed(() => activeAsset.value.hint);
@@ -1098,7 +1202,7 @@ async function loadByMode() {
   try {
     if (mode.value === 'projects' && route.query.import === '1') showImport.value = true;
     if (mode.value === 'home' || mode.value === 'projects') projects.value = await storyApi.listProjects();
-    if (mode.value === 'home' || mode.value === 'projects') await loadTaskHistory();
+    if (mode.value === 'projects') await loadTaskHistory();
     if (['home', 'projects', 'editor'].includes(mode.value)) await loadActiveTask();
     if (['home', 'projects', 'editor'].includes(mode.value)) await loadActiveRewriteTask();
     if (mode.value === 'editor') await loadProject();
@@ -1801,11 +1905,21 @@ async function loadTaskHistory() {
   try {
     const result = await storyApi.listTaskHistory(30);
     taskHistory.value = Array.isArray(result.tasks) ? result.tasks : [];
+    if (taskHistory.value.length <= TASK_HISTORY_PREVIEW_LIMIT) taskHistoryExpanded.value = false;
   } catch (err) {
     ui.showToast('error', err.message || '历史任务加载失败');
   } finally {
     taskHistoryLoading.value = false;
   }
+}
+
+function toggleTaskHistory() {
+  taskHistoryExpanded.value = !taskHistoryExpanded.value;
+}
+
+function clearTaskHistorySearch() {
+  taskHistorySearchInput.value = '';
+  taskHistoryExpanded.value = false;
 }
 
 function taskStatusLabelFor(status) {
@@ -1850,7 +1964,7 @@ async function restoreHistoryTask(item) {
       localStorage.setItem('story:lastRewriteTaskId', String(activeRewriteTask.value.id));
       if (['pending', 'running'].includes(activeRewriteTask.value.status)) startRewritePolling();
     }
-    ui.showToast('success', '已恢复到任务卡');
+    ui.showToast('success', '已置顶到任务卡');
   } catch (err) {
     ui.showToast('error', err.message || '恢复任务失败');
   }
