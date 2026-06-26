@@ -26,58 +26,46 @@
         <span class="creation-action-icon">{{ item.icon }}</span><strong>{{ item.title }}</strong><small>{{ item.desc }}</small>
       </button>
     </section>
-    <section v-if="activeTask" class="creation-panel creation-task-card" :class="`status-${activeTask.status || 'unknown'}`">
-      <div class="creation-section-title">
-        <div>
-          <h2>{{ taskPanelTitle }}</h2>
-          <p>{{ activeTaskName }}</p>
-        </div>
-        <div class="creation-row">
-          <button class="creation-primary-btn" type="button" :disabled="!taskCanOpen" @click="openActiveTask">{{ activeTaskOpenLabel }}</button>
-          <button class="creation-secondary-btn" type="button" @click="refreshTask">刷新</button>
-          <button class="creation-secondary-btn" type="button" :disabled="!taskCanCancel" @click="cancelTask">终止</button>
-          <button class="creation-secondary-btn" type="button" :disabled="!taskCanRetry" @click="retryTask">重试</button>
-          <button class="creation-secondary-btn" type="button" @click="dismissTask">隐藏</button>
-        </div>
-      </div>
-      <div class="creation-task-body">
-        <div>
-          <strong>{{ activeTask.currentStep || activeTaskStatusLabel }}</strong>
-          <span>{{ activeTaskStatusLabel }} · {{ activeTaskProgress }}%</span>
-        </div>
-        <div class="creation-task-progress" :aria-label="`任务进度 ${activeTaskProgress}%`">
-          <i :style="{ width: `${activeTaskProgress}%` }"></i>
-        </div>
-      </div>
-      <p v-if="activeTask.tokenUsage?.totalTokens" class="creation-muted">预估 Token：{{ activeTask.tokenUsage.totalTokens }}（输入 {{ activeTask.tokenUsage.inputTokens }} / 输出 {{ activeTask.tokenUsage.outputTokens }}）</p>
-      <p v-if="activeTask.errorMessage" class="creation-risk">{{ activeTask.errorMessage }}</p>
-    </section>
-    <section v-if="activeRewriteTask" class="creation-panel creation-task-card" :class="`status-${activeRewriteTask.status || 'unknown'}`">
-      <div class="creation-section-title">
-        <div>
-          <h2>{{ rewriteTaskPanelTitle }}</h2>
-          <p>改小说三栏对照</p>
-        </div>
-        <div class="creation-row">
-          <button class="creation-primary-btn" type="button" :disabled="!rewriteTaskCanOpen" @click="openActiveRewriteTask">{{ rewriteTaskOpenLabel }}</button>
-          <button class="creation-secondary-btn" type="button" @click="refreshRewriteTask">刷新</button>
-          <button class="creation-secondary-btn" type="button" :disabled="!rewriteTaskCanCancel" @click="cancelActiveRewriteTask">终止</button>
-          <button class="creation-secondary-btn" type="button" :disabled="!rewriteTaskCanRetry" @click="retryActiveRewriteTask">重试</button>
-          <button class="creation-secondary-btn" type="button" @click="dismissRewriteTask">隐藏</button>
-        </div>
-      </div>
-      <div class="creation-task-body">
-        <div>
-          <strong>{{ activeRewriteTask.currentStep || rewriteTaskStatusLabel }}</strong>
-          <span>{{ rewriteTaskStatusLabel }} · {{ rewriteTaskProgress }}%</span>
-        </div>
-        <div class="creation-task-progress" :aria-label="`改写任务进度 ${rewriteTaskProgress}%`">
-          <i :style="{ width: `${rewriteTaskProgress}%` }"></i>
-        </div>
-      </div>
-      <p v-if="activeRewriteTask.errorMessage" class="creation-risk">{{ activeRewriteTask.errorMessage }}</p>
-    </section>
-    <ProjectCards title="最近作品" :projects="projects.slice(0, 6)" :converting-project-id="activeScriptProjectId" :exporting-project-id="projectExportingId" :deleting-project-id="projectDeletingId" @script="startScript" @export="downloadProjectExport" @delete="deleteProject" />
+    <CreationTaskCard
+      v-if="activeTask"
+      :task="activeTask"
+      :title="taskPanelTitle"
+      :subtitle="activeTaskName"
+      :status-label="activeTaskStatusLabel"
+      :progress="activeTaskProgress"
+      :open-label="activeTaskOpenLabel"
+      :can-open="taskCanOpen"
+      :can-cancel="taskCanCancel"
+      :can-retry="taskCanRetry"
+      :busy="taskActionBusy"
+      :token-usage="activeTask.tokenUsage"
+      show-dismiss
+      @open="openActiveTask"
+      @refresh="refreshTask"
+      @cancel="cancelTask"
+      @retry="retryTask"
+      @dismiss="dismissTask"
+    />
+    <CreationTaskCard
+      v-if="activeRewriteTask"
+      :task="activeRewriteTask"
+      :title="rewriteTaskPanelTitle"
+      subtitle="改小说三栏对照"
+      :status-label="rewriteTaskStatusLabel"
+      :progress="rewriteTaskProgress"
+      :open-label="rewriteTaskOpenLabel"
+      :can-open="rewriteTaskCanOpen"
+      :can-cancel="rewriteTaskCanCancel"
+      :can-retry="rewriteTaskCanRetry"
+      :busy="rewriteTaskActionBusy"
+      show-dismiss
+      @open="openActiveRewriteTask"
+      @refresh="refreshRewriteTask"
+      @cancel="cancelActiveRewriteTask"
+      @retry="retryActiveRewriteTask"
+      @dismiss="dismissRewriteTask"
+    />
+    <ProjectCards title="最近作品" :projects="projects.slice(0, 6)" :converting-project-id="scriptConvertingProjectId || activeScriptProjectId" :exporting-project-id="projectExportingId" :deleting-project-id="projectDeletingId" @script="startScript" @export="downloadProjectExport" @delete="deleteProject" />
   </div>
 
   <div v-else-if="mode === 'projects'" class="creation-view">
@@ -102,92 +90,74 @@
         <button v-if="searchQuery" class="creation-secondary-btn" type="button" @click="clearProjectSearch">清空</button>
       </form>
     </div>
-    <section v-if="filter !== 'history' && activeTask" class="creation-panel creation-task-card" :class="`status-${activeTask.status || 'unknown'}`">
-      <div class="creation-section-title">
-        <div>
-          <h2>{{ taskPanelTitle }}</h2>
-          <p>{{ activeTaskName }}</p>
-        </div>
-        <div class="creation-row">
-          <button class="creation-primary-btn" type="button" :disabled="!taskCanOpen" @click="openActiveTask">{{ activeTaskOpenLabel }}</button>
-          <button class="creation-secondary-btn" type="button" @click="refreshTask">刷新</button>
-          <button class="creation-secondary-btn" type="button" :disabled="!taskCanCancel" @click="cancelTask">终止</button>
-          <button class="creation-secondary-btn" type="button" :disabled="!taskCanRetry" @click="retryTask">重试</button>
-          <button class="creation-secondary-btn" type="button" @click="dismissTask">隐藏</button>
-        </div>
-      </div>
-      <div class="creation-task-body">
-        <div>
-          <strong>{{ activeTask.currentStep || activeTaskStatusLabel }}</strong>
-          <span>{{ activeTaskStatusLabel }} · {{ activeTaskProgress }}%</span>
-        </div>
-        <div class="creation-task-progress" :aria-label="`任务进度 ${activeTaskProgress}%`">
-          <i :style="{ width: `${activeTaskProgress}%` }"></i>
-        </div>
-      </div>
-      <p v-if="activeTask.tokenUsage?.totalTokens" class="creation-muted">预估 Token：{{ activeTask.tokenUsage.totalTokens }}（输入 {{ activeTask.tokenUsage.inputTokens }} / 输出 {{ activeTask.tokenUsage.outputTokens }}）</p>
-      <p v-if="activeTask.errorMessage" class="creation-risk">{{ activeTask.errorMessage }}</p>
-    </section>
-    <section v-if="filter !== 'history' && activeRewriteTask" class="creation-panel creation-task-card" :class="`status-${activeRewriteTask.status || 'unknown'}`">
-      <div class="creation-section-title">
-        <div>
-          <h2>{{ rewriteTaskPanelTitle }}</h2>
-          <p>改小说三栏对照</p>
-        </div>
-        <div class="creation-row">
-          <button class="creation-primary-btn" type="button" :disabled="!rewriteTaskCanOpen" @click="openActiveRewriteTask">{{ rewriteTaskOpenLabel }}</button>
-          <button class="creation-secondary-btn" type="button" @click="refreshRewriteTask">刷新</button>
-          <button class="creation-secondary-btn" type="button" :disabled="!rewriteTaskCanCancel" @click="cancelActiveRewriteTask">终止</button>
-          <button class="creation-secondary-btn" type="button" :disabled="!rewriteTaskCanRetry" @click="retryActiveRewriteTask">重试</button>
-          <button class="creation-secondary-btn" type="button" @click="dismissRewriteTask">隐藏</button>
-        </div>
-      </div>
-      <div class="creation-task-body">
-        <div>
-          <strong>{{ activeRewriteTask.currentStep || rewriteTaskStatusLabel }}</strong>
-          <span>{{ rewriteTaskStatusLabel }} · {{ rewriteTaskProgress }}%</span>
-        </div>
-        <div class="creation-task-progress" :aria-label="`改写任务进度 ${rewriteTaskProgress}%`">
-          <i :style="{ width: `${rewriteTaskProgress}%` }"></i>
-        </div>
-      </div>
-      <p v-if="activeRewriteTask.errorMessage" class="creation-risk">{{ activeRewriteTask.errorMessage }}</p>
-    </section>
-    <section v-if="filter === 'history'" class="creation-panel creation-task-history">
-      <div class="creation-section-title">
-        <div>
-          <h2>历史任务 <span v-if="taskHistory.length">{{ taskHistoryBadgeText }}</span></h2>
-          <p>默认展示最近 3 条，可展开查看完整任务记录。</p>
-        </div>
-        <div class="creation-row">
-          <button v-if="taskHistoryCanExpand" class="creation-secondary-btn" type="button" @click="toggleTaskHistory">{{ taskHistoryToggleLabel }}</button>
-          <button class="creation-secondary-btn" type="button" :disabled="taskHistoryLoading" @click="loadTaskHistory">{{ taskHistoryLoading ? '刷新中...' : '刷新' }}</button>
-        </div>
-      </div>
-      <form v-if="taskHistory.length" class="creation-history-search" @submit.prevent>
-        <input v-model="taskHistorySearchInput" type="search" placeholder="搜索小说名、任务名、状态或进度" @input="taskHistoryExpanded = false" />
-        <button v-if="taskHistorySearchInput" class="creation-secondary-btn compact" type="button" @click="clearTaskHistorySearch">清空</button>
-      </form>
-      <div v-if="!taskHistory.length" class="creation-muted">暂无历史任务</div>
-      <div v-else-if="!filteredTaskHistory.length" class="creation-muted">没有匹配的历史任务</div>
-      <div v-else class="creation-history-list" :class="{ expanded: taskHistoryExpanded }">
-        <div v-for="item in visibleTaskHistory" :key="item.id" class="creation-history-item" :class="`status-${item.status || 'unknown'}`">
-          <div>
-            <strong>{{ item.title }}</strong>
-            <span>{{ item.projectTitle || '未关联作品' }} · {{ taskStatusLabelFor(item.status) }} · {{ taskProgressFor(item) }}%</span>
-            <small>{{ item.currentStep || '暂无进度信息' }}</small>
-          </div>
-          <div class="creation-history-actions">
-            <button class="creation-secondary-btn compact" type="button" @click="restoreHistoryTask(item)">置顶任务</button>
-            <button class="creation-primary-btn compact" type="button" :disabled="!historyTaskCanOpen(item)" @click="openHistoryTask(item)">打开</button>
-            <button class="creation-secondary-btn compact" type="button" :disabled="!historyTaskCanCancel(item)" @click="cancelHistoryTask(item)">终止</button>
-            <button class="creation-secondary-btn compact" type="button" :disabled="!historyTaskCanRetry(item)" @click="retryHistoryTask(item)">重试</button>
-          </div>
-        </div>
-      </div>
-      <p v-if="taskHistoryHiddenCount" class="creation-history-note">还有 {{ taskHistoryHiddenCount }} 条{{ taskHistorySearchActive ? '匹配的' : '' }}历史任务，展开后可查看和操作。</p>
-    </section>
-    <ProjectCards v-if="filter !== 'history'" title="全部作品" :projects="filteredProjects" :converting-project-id="activeScriptProjectId" :exporting-project-id="projectExportingId" :deleting-project-id="projectDeletingId" @script="startScript" @export="downloadProjectExport" @delete="deleteProject" />
+    <CreationTaskCard
+      v-if="filter !== 'history' && activeTask"
+      :task="activeTask"
+      :title="taskPanelTitle"
+      :subtitle="activeTaskName"
+      :status-label="activeTaskStatusLabel"
+      :progress="activeTaskProgress"
+      :open-label="activeTaskOpenLabel"
+      :can-open="taskCanOpen"
+      :can-cancel="taskCanCancel"
+      :can-retry="taskCanRetry"
+      :busy="taskActionBusy"
+      :token-usage="activeTask.tokenUsage"
+      show-dismiss
+      @open="openActiveTask"
+      @refresh="refreshTask"
+      @cancel="cancelTask"
+      @retry="retryTask"
+      @dismiss="dismissTask"
+    />
+    <CreationTaskCard
+      v-if="filter !== 'history' && activeRewriteTask"
+      :task="activeRewriteTask"
+      :title="rewriteTaskPanelTitle"
+      subtitle="改小说三栏对照"
+      :status-label="rewriteTaskStatusLabel"
+      :progress="rewriteTaskProgress"
+      :open-label="rewriteTaskOpenLabel"
+      :can-open="rewriteTaskCanOpen"
+      :can-cancel="rewriteTaskCanCancel"
+      :can-retry="rewriteTaskCanRetry"
+      :busy="rewriteTaskActionBusy"
+      show-dismiss
+      @open="openActiveRewriteTask"
+      @refresh="refreshRewriteTask"
+      @cancel="cancelActiveRewriteTask"
+      @retry="retryActiveRewriteTask"
+      @dismiss="dismissRewriteTask"
+    />
+    <TaskHistoryPanel
+      v-if="filter === 'history'"
+      :badge-text="taskHistoryBadgeText"
+      :can-expand="taskHistoryCanExpand"
+      :toggle-label="taskHistoryToggleLabel"
+      :loading="taskHistoryLoading"
+      :search-input="taskHistorySearchInput"
+      :visible-tasks="visibleTaskHistory"
+      :expanded="taskHistoryExpanded"
+      :hidden-count="taskHistoryHiddenCount"
+      :search-active="taskHistorySearchActive"
+      :busy-key="historyTaskBusyKey"
+      :busy-action="historyTaskBusyAction"
+      :task-key-for="historyTaskKey"
+      :status-label-for="taskStatusLabelFor"
+      :progress-for="taskProgressFor"
+      :can-open="historyTaskCanOpen"
+      :can-cancel="historyTaskCanCancel"
+      :can-retry="historyTaskCanRetry"
+      @toggle="toggleTaskHistory"
+      @refresh="loadTaskHistory"
+      @update:search-input="updateTaskHistorySearch"
+      @clear-search="clearTaskHistorySearch"
+      @restore="restoreHistoryTask"
+      @open="openHistoryTask"
+      @cancel="cancelHistoryTask"
+      @retry="retryHistoryTask"
+    />
+    <ProjectCards v-if="filter !== 'history'" title="全部作品" :projects="filteredProjects" :converting-project-id="scriptConvertingProjectId || activeScriptProjectId" :exporting-project-id="projectExportingId" :deleting-project-id="projectDeletingId" @script="startScript" @export="downloadProjectExport" @delete="deleteProject" />
   </div>
 
   <div v-else-if="mode === 'editor'" class="creation-workbench creation-writing-workbench has-ai-config" :class="{ 'ai-config-collapsed': aiConfigCollapsed }">
@@ -201,30 +171,40 @@
           <span>{{ wordCount }} 字</span>
         </div>
       </div>
-      <div v-if="activeTask" class="creation-side-section creation-side-task" :class="`status-${activeTask.status || 'unknown'}`">
-        <h3>{{ taskPanelTitle }}</h3>
-        <strong>{{ activeTask.currentStep || activeTaskStatusLabel }}</strong>
-        <div class="creation-task-progress" :aria-label="`任务进度 ${activeTaskProgress}%`">
-          <i :style="{ width: `${activeTaskProgress}%` }"></i>
-        </div>
-        <small>{{ activeTaskStatusLabel }} · {{ activeTaskProgress }}%</small>
-        <button class="creation-primary-btn full compact" type="button" :disabled="!taskCanOpen" @click="openActiveTask">{{ activeTaskOpenLabel }}</button>
-        <button class="creation-secondary-btn full compact" type="button" @click="refreshTask">刷新</button>
-        <button class="creation-secondary-btn full compact" type="button" :disabled="!taskCanCancel" @click="cancelTask">终止</button>
-        <button class="creation-secondary-btn full compact" type="button" :disabled="!taskCanRetry" @click="retryTask">重试</button>
-      </div>
-      <div v-if="activeRewriteTask" class="creation-side-section creation-side-task" :class="`status-${activeRewriteTask.status || 'unknown'}`">
-        <h3>{{ rewriteTaskPanelTitle }}</h3>
-        <strong>{{ activeRewriteTask.currentStep || rewriteTaskStatusLabel }}</strong>
-        <div class="creation-task-progress" :aria-label="`改写任务进度 ${rewriteTaskProgress}%`">
-          <i :style="{ width: `${rewriteTaskProgress}%` }"></i>
-        </div>
-        <small>{{ rewriteTaskStatusLabel }} · {{ rewriteTaskProgress }}%</small>
-        <button class="creation-primary-btn full compact" type="button" :disabled="!rewriteTaskCanOpen" @click="openActiveRewriteTask">{{ rewriteTaskOpenLabel }}</button>
-        <button class="creation-secondary-btn full compact" type="button" @click="refreshRewriteTask">刷新</button>
-        <button class="creation-secondary-btn full compact" type="button" :disabled="!rewriteTaskCanCancel" @click="cancelActiveRewriteTask">终止</button>
-        <button class="creation-secondary-btn full compact" type="button" :disabled="!rewriteTaskCanRetry" @click="retryActiveRewriteTask">重试</button>
-      </div>
+      <CreationTaskCard
+        v-if="activeTask"
+        compact
+        :task="activeTask"
+        :title="taskPanelTitle"
+        :status-label="activeTaskStatusLabel"
+        :progress="activeTaskProgress"
+        :open-label="activeTaskOpenLabel"
+        :can-open="taskCanOpen"
+        :can-cancel="taskCanCancel"
+        :can-retry="taskCanRetry"
+        :busy="taskActionBusy"
+        @open="openActiveTask"
+        @refresh="refreshTask"
+        @cancel="cancelTask"
+        @retry="retryTask"
+      />
+      <CreationTaskCard
+        v-if="activeRewriteTask"
+        compact
+        :task="activeRewriteTask"
+        :title="rewriteTaskPanelTitle"
+        :status-label="rewriteTaskStatusLabel"
+        :progress="rewriteTaskProgress"
+        :open-label="rewriteTaskOpenLabel"
+        :can-open="rewriteTaskCanOpen"
+        :can-cancel="rewriteTaskCanCancel"
+        :can-retry="rewriteTaskCanRetry"
+        :busy="rewriteTaskActionBusy"
+        @open="openActiveRewriteTask"
+        @refresh="refreshRewriteTask"
+        @cancel="cancelActiveRewriteTask"
+        @retry="retryActiveRewriteTask"
+      />
       <div class="creation-side-section">
         <div class="creation-side-section-head">
           <h3>创作资产</h3>
@@ -248,7 +228,9 @@
           <h3>章节</h3>
           <span>{{ chapters.length }} 章</span>
         </div>
-        <button class="creation-primary-btn full creation-add-chapter-btn" type="button" @click="addChapter">新增章节</button>
+        <button class="creation-primary-btn full creation-add-chapter-btn" type="button" :disabled="chapterAdding" @click="addChapter">
+          {{ chapterAdding ? '新增中...' : '新增章节' }}
+        </button>
         <div
           v-for="chapter in chapters"
           :key="chapter.id"
@@ -392,7 +374,9 @@
           {{ actionForm.loading ? '生成中...' : '执行' }}
         </button>
         <button v-if="actionForm.loading" class="creation-secondary-btn full compact creation-stop-btn" type="button" @click="stopActionGeneration">停止生成</button>
-        <button class="creation-secondary-btn full compact" type="button" :disabled="actionForm.loading" @click="savePromptConfig">保存 AI 配置</button>
+        <button class="creation-secondary-btn full compact" type="button" :disabled="actionForm.loading || promptConfigSaving" @click="savePromptConfig">
+          {{ promptConfigSaving ? '保存中...' : '保存 AI 配置' }}
+        </button>
         <label v-if="actionForm.loading || actionForm.result" class="creation-ai-result">
           <span>{{ actionResultTitle }}</span>
           <div v-if="actionForm.loading" class="creation-ai-pending">
@@ -433,403 +417,130 @@
         <span v-if="rewriteStarting || rewriteTaskRunning" class="creation-spinner dark"></span>
         {{ rewriteStarting || rewriteTaskRunning ? '改写中...' : '改小说三栏对照' }}
       </button>
-      <button class="creation-primary-btn full" type="button" :disabled="activeScriptProjectId === project?.id" @click="startScript(project)">
-        {{ activeScriptProjectId === project?.id ? '转短剧中...' : '转短剧' }}
+      <button class="creation-primary-btn full" type="button" :disabled="scriptConvertingProjectId === project?.id || activeScriptProjectId === project?.id" @click="startScript(project)">
+        <span v-if="scriptConvertingProjectId === project?.id || activeScriptProjectId === project?.id" class="creation-spinner"></span>
+        {{ scriptConvertingProjectId === project?.id || activeScriptProjectId === project?.id ? '转短剧中...' : '转短剧' }}
       </button>
       <div class="creation-versions">
         <h3>版本快照</h3>
-        <button v-for="version in chapterVersions" :key="version.id" type="button" @click="restoreVersion(version)">
-          V{{ version.versionNo }} · {{ version.note || version.source }}
+        <button v-for="version in chapterVersions" :key="version.id" type="button" :disabled="versionRestoringId === version.id" @click="restoreVersion(version)">
+          {{ versionRestoringId === version.id ? '恢复中...' : `V${version.versionNo} · ${version.note || version.source}` }}
         </button>
         <p v-if="currentChapter && !chapterVersions.length">暂无快照</p>
       </div>
     </aside>
   </div>
 
-  <div v-else-if="mode === 'rewrite'" class="creation-view">
-    <header class="creation-header">
-      <div>
-        <h1>改小说三栏对照</h1>
-        <p>{{ rewriteReviewSummary }}</p>
-      </div>
-      <div class="creation-row">
-        <button class="creation-secondary-btn" type="button" @click="router.push(rewriteBackPath)">返回作品</button>
-        <button class="creation-secondary-btn" type="button" @click="refreshRewritePage">刷新</button>
-        <button class="creation-primary-btn" type="button" :disabled="!rewriteReady || rewriteAccepting" @click="acceptRewrite">
-          <span v-if="rewriteAccepting" class="creation-spinner"></span>
-          {{ rewriteAccepting ? '保存中...' : '保存为新版本' }}
-        </button>
-      </div>
-    </header>
-    <section v-if="rewriteTask && !rewriteReady" class="creation-panel creation-task-card" :class="`status-${rewriteTask.status || 'unknown'}`">
-      <div class="creation-section-title">
-        <div>
-          <h2>{{ rewriteTaskStatusLabelFor(rewriteTask) }}</h2>
-          <p>{{ rewriteTask.currentStep || '正在准备改写内容' }}</p>
-        </div>
-        <div class="creation-row">
-          <button class="creation-secondary-btn" type="button" @click="refreshRewritePage">刷新</button>
-          <button class="creation-secondary-btn" type="button" :disabled="!rewritePageCanCancel" @click="cancelRewritePage">终止</button>
-          <button class="creation-secondary-btn" type="button" :disabled="!rewritePageCanRetry" @click="retryRewrite">重试</button>
-        </div>
-      </div>
-      <div class="creation-task-body">
-        <div>
-          <strong>{{ rewriteTask.currentStep || rewriteTaskStatusLabelFor(rewriteTask) }}</strong>
-          <span>{{ rewriteTaskStatusLabelFor(rewriteTask) }} · {{ rewritePageProgress }}%</span>
-        </div>
-        <div class="creation-task-progress" :aria-label="`改写任务进度 ${rewritePageProgress}%`">
-          <i :style="{ width: `${rewritePageProgress}%` }"></i>
-        </div>
-      </div>
-      <p v-if="rewriteTask.errorMessage" class="creation-risk">{{ rewriteTask.errorMessage }}</p>
-    </section>
-    <section class="creation-rewrite-summary" v-if="rewriteReady">
-      <span>共 {{ rewriteSegments.length }} 段</span>
-      <span>采用 AI {{ rewriteAcceptedCount }} 段</span>
-      <span>保留原文 {{ rewriteRejectedCount }} 段</span>
-    </section>
-    <section class="creation-columns creation-rewrite-columns" v-if="rewriteReady">
-      <article>
-        <h2>原文</h2>
-        <div v-for="(s, i) in rewriteSegments" :key="i" class="creation-rewrite-segment">
-          <strong>第 {{ i + 1 }} 段</strong>
-          <p>{{ s.source }}</p>
-        </div>
-      </article>
-      <article>
-        <h2>AI 改写稿</h2>
-        <div v-for="(s, i) in rewriteSegments" :key="i" class="creation-rewrite-choice" :class="`status-${s.status || 'accepted'}`">
-          <div class="creation-rewrite-choice-head">
-            <strong>第 {{ i + 1 }} 段</strong>
-            <span>{{ s.status === 'rejected' ? '将保留原文' : '将采用 AI 改写' }}</span>
-          </div>
-          <textarea v-model="s.rewritten"></textarea>
-          <div class="creation-segment-actions">
-            <button type="button" :class="{ active: s.status !== 'rejected' }" @click="setRewriteSegmentStatus(s, 'accepted')">采用 AI 改写</button>
-            <button type="button" :class="{ active: s.status === 'rejected' }" @click="setRewriteSegmentStatus(s, 'rejected')">保留原文</button>
-          </div>
-        </div>
-      </article>
-      <article>
-        <h2>本次改写说明</h2>
-        <div class="creation-rewrite-note">
-          <strong>{{ rewriteTask.summaryNote || '本次改写已完成，请逐段确认采用 AI 改写或保留原文。' }}</strong>
-          <p>保存为新版本时，采用 AI 的段落会写入改写稿；选择保留原文的段落会写回原文。</p>
-        </div>
-        <label class="creation-field">指定要求<textarea v-model="rewriteForm.instruction" rows="4" placeholder="例如：更口语、更狠一点、保留某个设定"></textarea></label>
-        <button class="creation-secondary-btn full" type="button" :disabled="rewriteRetrying" @click="retryRewrite">
-          <span v-if="rewriteRetrying" class="creation-spinner dark"></span>
-          {{ rewriteRetrying ? '提交中...' : '按要求再改一次' }}
-        </button>
-        <div v-if="rewriteSegmentNotes.length" class="creation-rewrite-note-list">
-          <p v-for="item in rewriteSegmentNotes" :key="item.index">第 {{ item.index }} 段：{{ item.note }}</p>
-        </div>
-      </article>
-    </section>
-  </div>
+  <RewriteCompareView
+    v-else-if="mode === 'rewrite'"
+    :task="rewriteTask"
+    :review-summary="rewriteReviewSummary"
+    :ready="rewriteReady"
+    :accepting="rewriteAccepting"
+    :retrying="rewriteRetrying"
+    :page-busy="rewritePageActionBusy"
+    :can-cancel="rewritePageCanCancel"
+    :can-retry="rewritePageCanRetry"
+    :progress="rewritePageProgress"
+    :segments="rewriteSegments"
+    :accepted-count="rewriteAcceptedCount"
+    :rejected-count="rewriteRejectedCount"
+    :segment-notes="rewriteSegmentNotes"
+    :form="rewriteForm"
+    :status-label-for="rewriteTaskStatusLabelFor"
+    @back="router.push(rewriteBackPath)"
+    @refresh="refreshRewritePage"
+    @accept="acceptRewrite"
+    @cancel="cancelRewritePage"
+    @retry="retryRewrite"
+    @set-segment-status="setRewriteSegmentStatus"
+  />
 
-  <div v-else-if="mode === 'script'" class="creation-workbench script-workbench">
-    <aside class="creation-side">
-      <router-link class="creation-back-link" to="/creation/projects">返回作品库</router-link>
-      <h2>{{ draft?.title || '短剧改编' }}</h2>
-      <button class="creation-primary-btn full creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="qualityCheck">
-        <span v-if="scriptActionBusy === 'draft:quality'" class="creation-spinner"></span>
-        {{ scriptActionBusy === 'draft:quality' ? '质检中...' : '质检全稿' }}
-      </button>
-      <div v-if="draft?.sourceChapters?.length" class="creation-side-section">
-        <h3>原文章节</h3>
-        <details v-for="source in draft.sourceChapters" :key="source.id" class="creation-source-item">
-          <summary>{{ source.title }} · {{ source.wordCount }}字</summary>
-          <p>{{ source.preview }}</p>
-        </details>
-      </div>
-      <template v-for="ep in draft?.episodes || []" :key="ep.id">
-        <h3>第{{ ep.episodeNo }}集</h3>
-        <button class="creation-secondary-btn full compact creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="addScene(ep)">
-          <span v-if="scriptActionBusy === `add:${ep.id}`" class="creation-spinner dark"></span>
-          {{ scriptActionBusy === `add:${ep.id}` ? '新增中...' : '新增场次' }}
-        </button>
-        <button v-for="scene in ep.scenes" :key="scene.id" class="creation-list-btn" :class="{ active: scene.id === currentScene?.id }" type="button" :disabled="!!scriptActionBusy" @click="selectScene(ep, scene)">第{{ scene.sceneNo }}场</button>
-      </template>
-    </aside>
-    <main class="creation-editor script-editor" v-if="currentScene">
-      <input v-model="sceneForm.sceneTitle" class="creation-title-input" />
-      <label>场景<input v-model="sceneForm.location" /></label>
-      <label>人物<input v-model="sceneForm.characters" /></label>
-      <label>本场功能<input v-model="sceneForm.sceneFunction" /></label>
-      <label>画面<textarea v-model="sceneForm.visualAction"></textarea></label>
-      <label>旁白<textarea v-model="sceneForm.narration"></textarea></label>
-      <label>对白<textarea v-model="sceneForm.dialogue"></textarea></label>
-      <label>表演/镜头<textarea v-model="sceneForm.performanceCameraNote"></textarea></label>
-      <label>钩子<textarea v-model="sceneForm.hook"></textarea></label>
-      <footer><span>{{ currentEpisode?.coreHook }}</span><button type="button" @click="saveScene">保存场次</button></footer>
-    </main>
-    <aside class="creation-ai">
-      <h3>短剧助手</h3>
-      <div v-if="scriptActionBusy" class="creation-assistant-status" aria-live="polite">
-        <span class="creation-spinner dark"></span>
-        <div>
-          <strong>{{ scriptActionTitle }}</strong>
-          <small>处理中，请稍候。完成后会自动刷新当前内容。</small>
-        </div>
-      </div>
-      <button class="creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="improveEpisode">
-        <span v-if="scriptActionBusy === 'episode:rewrite'" class="creation-spinner dark"></span>
-        {{ scriptActionBusy === 'episode:rewrite' ? '重写本集中...' : '重写本集' }}
-      </button>
-      <button class="creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="improveScene('rewrite')">
-        <span v-if="scriptActionBusy === 'scene:rewrite'" class="creation-spinner dark"></span>
-        {{ scriptActionBusy === 'scene:rewrite' ? '重写本场中...' : '重写本场' }}
-      </button>
-      <button class="creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="improveScene('hook')">
-        <span v-if="scriptActionBusy === 'scene:hook'" class="creation-spinner dark"></span>
-        {{ scriptActionBusy === 'scene:hook' ? '补钩子中...' : '补钩子' }}
-      </button>
-      <button class="creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="improveScene('dialogue')">
-        <span v-if="scriptActionBusy === 'scene:dialogue'" class="creation-spinner dark"></span>
-        {{ scriptActionBusy === 'scene:dialogue' ? '对白优化中...' : '对白口语化' }}
-      </button>
-      <button class="creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="improveScene('externalize')">
-        <span v-if="scriptActionBusy === 'scene:externalize'" class="creation-spinner dark"></span>
-        {{ scriptActionBusy === 'scene:externalize' ? '心理外化中...' : '心理外化' }}
-      </button>
-      <button class="creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="moveScene('up')">
-        <span v-if="scriptActionBusy === 'scene:move-up'" class="creation-spinner dark"></span>
-        {{ scriptActionBusy === 'scene:move-up' ? '上移中...' : '上移场次' }}
-      </button>
-      <button class="creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="moveScene('down')">
-        <span v-if="scriptActionBusy === 'scene:move-down'" class="creation-spinner dark"></span>
-        {{ scriptActionBusy === 'scene:move-down' ? '下移中...' : '下移场次' }}
-      </button>
-      <button class="creation-assist-btn" type="button" :disabled="!!scriptActionBusy" @click="deleteScene">
-        <span v-if="scriptActionBusy === 'scene:delete'" class="creation-spinner dark"></span>
-        {{ scriptActionBusy === 'scene:delete' ? '删除中...' : '删除场次' }}
-      </button>
-      <router-link class="creation-primary-btn full" :to="`/creation/scripts/${route.params.draftId}/export`">导出预览</router-link>
-      <div v-if="qualityReport" class="creation-quality">
-        <div class="creation-quality-head">
-          <strong>评分 {{ qualityReport.totalScore }}</strong>
-          <button class="creation-secondary-btn compact" type="button" :disabled="!!scriptActionBusy" @click="qualityCheck">重新质检</button>
-        </div>
-        <div v-if="qualityIssueList.length" class="creation-quality-issues">
-          <div v-for="issue in qualityIssueList" :key="issue" class="creation-quality-issue" :class="{ optimized: isQualityIssueOptimized(issue) }">
-            <p>{{ issue }}</p>
-            <button
-              class="creation-secondary-btn compact"
-              type="button"
-              :class="{ optimized: isQualityIssueOptimized(issue) }"
-              :disabled="!!scriptActionBusy || isQualityIssueOptimized(issue)"
-              @click="improveFromQualityIssue(issue)"
-            >
-              <span v-if="scriptActionBusy === 'quality:fix' && qualityFixingIssue === issue" class="creation-spinner dark"></span>
-              {{ isQualityIssueOptimized(issue) ? '已优化' : 'AI 优化' }}
-            </button>
-          </div>
-        </div>
-      </div>
-      <div v-if="adaptationPlanEntries.length" class="creation-quality">
-        <strong>改编方案</strong>
-        <p v-for="item in adaptationPlanEntries" :key="item.label">{{ item.label }}：{{ item.value }}</p>
-      </div>
-    </aside>
-  </div>
+  <ScriptWorkbenchView
+    v-else-if="mode === 'script'"
+    :draft="draft"
+    :draft-id="route.params.draftId"
+    :current-episode="currentEpisode"
+    :current-scene="currentScene"
+    :scene-form="sceneForm"
+    :busy="scriptActionBusy"
+    :action-title="scriptActionTitle"
+    :quality-report="qualityReport"
+    :quality-issue-list="qualityIssueList"
+    :fixing-issue="qualityFixingIssue"
+    :adaptation-plan-entries="adaptationPlanEntries"
+    :is-issue-optimized="isQualityIssueOptimized"
+    @quality-check="qualityCheck"
+    @add-scene="addScene"
+    @select-scene="selectScene"
+    @save-scene="saveScene"
+    @improve-episode="improveEpisode"
+    @improve-scene="improveScene"
+    @move-scene="moveScene"
+    @delete-scene="deleteScene"
+    @improve-issue="improveFromQualityIssue"
+  />
 
-  <div v-else-if="mode === 'export'" class="creation-view">
-    <header class="creation-header">
-        <div><h1>导出预览</h1><p>生成 Markdown、Word、HTML、PDF 或 TXT 导出内容。</p></div>
-      <div class="creation-row">
-        <button class="creation-secondary-btn" type="button" @click="downloadExport">下载文件</button>
-        <button class="creation-primary-btn" type="button" @click="exportDraft">生成导出内容</button>
-      </div>
-    </header>
-    <section class="creation-export">
-      <aside class="creation-panel">
-        <label>格式<CreationSelect v-model="exportForm.format" :options="exportFormatOptions" /></label>
-        <label>范围<CreationSelect v-model="exportForm.scope" :options="exportScopeOptions" /></label>
-        <label v-if="exportForm.scope === 'episode'">集数<CreationSelect v-model="exportForm.episodeNo" :options="exportEpisodeOptions" /></label>
-        <label v-if="exportForm.scope === 'scene'">场次<CreationSelect v-model="exportForm.sceneId" :options="exportSceneOptions" /></label>
-        <label><input v-model="exportForm.includeQualityReport" type="checkbox" /> 包含质量报告</label>
-        <label><input v-model="exportForm.includeAdaptationPlan" type="checkbox" /> 包含改编方案</label>
-        <label><input v-model="exportForm.includeCharacterTable" type="checkbox" /> 包含人物表</label>
-        <label><input v-model="exportForm.includeSceneDirectory" type="checkbox" /> 包含场次目录</label>
-        <div class="creation-check-list">
-          <strong>导出前检查 · {{ exportIssueCount }} 项待处理</strong>
-          <p v-for="item in exportChecks" :key="item.label" :class="{ pass: item.pass }">{{ item.pass ? '通过' : '待修复' }}：{{ item.label }}</p>
-        </div>
-        <button class="creation-secondary-btn full" type="button" @click="router.push(`/creation/scripts/${route.params.draftId}`)">返回修复</button>
-        <button class="creation-secondary-btn full" type="button" @click="autoFixExportIssues">AI 自动修复可修复项</button>
-      </aside>
-      <main class="creation-panel"><pre>{{ exported?.content || scriptPreview }}</pre></main>
-    </section>
-  </div>
+  <ScriptExportView
+    v-else-if="mode === 'export'"
+    :form="exportForm"
+    :format-options="exportFormatOptions"
+    :scope-options="exportScopeOptions"
+    :episode-options="exportEpisodeOptions"
+    :scene-options="exportSceneOptions"
+    :checks="exportChecks"
+    :issue-count="exportIssueCount"
+    :exported="exported"
+    :preview="scriptPreview"
+    :busy="exportBusy"
+    :downloading="exportDownloading"
+    :generating="exportGenerating"
+    :auto-fixing="exportAutoFixing"
+    :feedback="exportFeedback"
+    :feedback-tone="exportFeedbackTone"
+    @download="downloadExport"
+    @generate="exportDraft"
+    @back="router.push(`/creation/scripts/${route.params.draftId}`)"
+    @auto-fix="autoFixExportIssues"
+  />
 
-  <div v-if="showCreate" class="creation-modal" @click.self="showCreate = false">
-    <form class="creation-dialog" @submit.prevent="createProject"><h2>新建作品</h2><input v-model="createForm.title" required placeholder="作品名" /><CreationSelect v-model="createForm.type" :options="createTypeOptions" /><textarea v-model="createForm.description" placeholder="简介"></textarea><button class="creation-primary-btn">创建</button></form>
-  </div>
-  <div v-if="showImport" class="creation-modal" @click.self="closeImportDialog">
-    <form class="creation-dialog wide" @submit.prevent="previewImport">
-      <div class="creation-dialog-head">
-        <div>
-          <h2>导入小说文本</h2>
-          <p>上传 DOCX/TXT，或直接粘贴正文，系统会先解析章节再导入。</p>
-        </div>
-        <button class="creation-icon-btn" type="button" :disabled="importBusy" @click="closeImportDialog">×</button>
-      </div>
-      <input v-model="importForm.title" required placeholder="作品名" :disabled="importBusy" />
-      <label class="creation-file-field">
-        <span>上传文件</span>
-        <span class="creation-file-picker">
-          <input type="file" accept=".txt,.md,.doc,.docx" :disabled="importBusy" @change="onImportFileChange" />
-          <span class="creation-file-button">选择文件</span>
-          <span class="creation-file-name">{{ importFileRef?.name || '支持 .txt / .md / .doc / .docx' }}</span>
-        </span>
-      </label>
-      <textarea v-model="importForm.content" rows="12" placeholder="或直接粘贴正文" :disabled="importBusy"></textarea>
-      <div v-if="importPreviewLoading || importConfirming" class="creation-import-loading" aria-live="polite">
-        <span class="creation-spinner dark"></span>
-        <div>
-          <strong>{{ importConfirming ? '正在导入作品' : '正在解析章节' }}</strong>
-          <p>{{ importConfirming ? '作品库即将更新，并自动进入创作页面。' : '正在读取文件结构、识别章节和正文，请稍候。' }}</p>
-        </div>
-      </div>
-      <section v-if="importPreview" class="creation-import-preview">
-        <strong>{{ importPreview.detectedTypeLabel }} · {{ importPreview.wordCount }} 字 · {{ importPreview.chapterCount }} 章</strong>
-        <p v-if="importPreview.truncated">仅展示前 20 章预览。</p>
-        <div v-for="chapter in importPreview.chapters" :key="chapter.chapterNo">
-          第{{ chapter.chapterNo }}章 · {{ chapter.title }} · {{ chapter.wordCount }}字
-        </div>
-      </section>
-      <div class="creation-row">
-        <button class="creation-secondary-btn" type="submit" :disabled="importBusy">
-          <span v-if="importPreviewLoading" class="creation-spinner dark"></span>
-          {{ importPreviewLoading ? '解析中...' : '解析预览' }}
-        </button>
-        <button class="creation-primary-btn" type="button" :disabled="!importPreview || importBusy" @click="confirmImport">
-          <span v-if="importConfirming" class="creation-spinner"></span>
-          {{ importConfirming ? '导入中...' : '确认导入' }}
-        </button>
-      </div>
-    </form>
-  </div>
+  <CreateProjectDialog
+    v-if="showCreate"
+    :form="createForm"
+    :type-options="createTypeOptions"
+    :creating="projectCreating"
+    @close="showCreate = false"
+    @create="createProject"
+  />
+  <ImportProjectDialog
+    v-if="showImport"
+    :form="importForm"
+    :preview="importPreview"
+    :file-name="importFileRef?.name"
+    :busy="importBusy"
+    :preview-loading="importPreviewLoading"
+    :confirming="importConfirming"
+    @close="closeImportDialog"
+    @preview="previewImport"
+    @file-change="onImportFileChange"
+    @confirm="confirmImport"
+  />
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import CreateProjectDialog from '../components/creation/CreateProjectDialog.vue';
+import CreationSelect from '../components/creation/CreationSelect.vue';
+import CreationTaskCard from '../components/creation/CreationTaskCard.vue';
+import ImportProjectDialog from '../components/creation/ImportProjectDialog.vue';
+import ProjectCards from '../components/creation/ProjectCards.vue';
+import RewriteCompareView from '../components/creation/RewriteCompareView.vue';
+import ScriptExportView from '../components/creation/ScriptExportView.vue';
+import ScriptWorkbenchView from '../components/creation/ScriptWorkbenchView.vue';
+import TaskHistoryPanel from '../components/creation/TaskHistoryPanel.vue';
 import { storyApi } from '../services/storyApi.js';
 import { useUiStore } from '../stores/ui.js';
-
-const CreationSelect = defineComponent({
-  props: {
-    modelValue: { type: [String, Number, Boolean], default: null },
-    options: { type: Array, default: () => [] },
-    disabled: Boolean,
-    placeholder: { type: String, default: '请选择' },
-  },
-  emits: ['update:modelValue', 'change'],
-  setup(props, { emit }) {
-    const open = ref(false);
-    const current = computed(() => props.options.find(option => option.value === props.modelValue));
-    const selectOption = option => {
-      if (option.disabled) return;
-      emit('update:modelValue', option.value);
-      emit('change', option.value);
-      open.value = false;
-    };
-    const closeOnFocusOut = event => {
-      if (!event.currentTarget.contains(event.relatedTarget)) open.value = false;
-    };
-    const onKeydown = event => {
-      if (event.key === 'Escape') open.value = false;
-    };
-    return () => h('div', {
-      class: ['creation-select', { open: open.value, disabled: props.disabled }],
-      onFocusout: closeOnFocusOut,
-      onKeydown,
-    }, [
-      h('button', {
-        class: 'creation-select-trigger',
-        type: 'button',
-        disabled: props.disabled,
-        'aria-haspopup': 'listbox',
-        'aria-expanded': open.value ? 'true' : 'false',
-        onClick: () => { if (!props.disabled) open.value = !open.value; },
-      }, [
-        h('span', current.value?.label ?? props.placeholder),
-        h('i', { 'aria-hidden': 'true' }),
-      ]),
-      open.value ? h('div', { class: 'creation-select-menu', role: 'listbox' }, props.options.map(option => h('button', {
-        key: option.value,
-        class: ['creation-select-option', { selected: option.value === props.modelValue }],
-        type: 'button',
-        role: 'option',
-        disabled: option.disabled,
-        'aria-selected': option.value === props.modelValue ? 'true' : 'false',
-        onClick: () => selectOption(option),
-      }, [
-        h('span', option.label),
-        option.value === props.modelValue ? h('em', '✓') : null,
-      ]))) : null,
-    ]);
-  },
-});
-
-const ProjectCards = defineComponent({
-  props: { title: String, projects: Array, convertingProjectId: [String, Number], exportingProjectId: [String, Number], deletingProjectId: [String, Number] },
-  emits: ['script', 'export', 'delete'],
-  setup(props, { emit }) {
-    const projectExportFormats = reactive({});
-    const exportOptions = [
-      { value: 'md', label: 'MD' },
-      { value: 'docx', label: 'Word' },
-      { value: 'html', label: 'HTML' },
-      { value: 'pdf', label: 'PDF' },
-      { value: 'txt', label: 'TXT' },
-    ];
-    const selectedFormat = project => projectExportFormats[project.id] || 'md';
-    return () => h('section', { class: 'creation-panel' }, [
-      h('div', { class: 'creation-section-title' }, [h('h2', props.title)]),
-      !props.projects?.length
-        ? h('div', { class: 'creation-empty' }, '暂无作品')
-        : h('div', { class: 'creation-projects' }, props.projects.map(project => h('article', { class: 'creation-project-card', key: project.id }, [
-            h('span', { class: ['creation-type-tag', `type-${project.type || 'unknown'}`] }, project.typeLabel || project.type),
-            h('h3', project.title),
-            h('p', project.description || '还没有简介'),
-            h('small', `${project.status || 'writing'} · ${project.chapterCount || 0}章 · ${project.scriptDraftCount || 0}个脚本`),
-            h('div', { class: 'creation-row' }, [
-              h('a', { href: `#/creation/projects/${project.id}/editor` }, '继续写作'),
-              project.latestScriptDraftId ? h('a', { href: `#/creation/scripts/${project.latestScriptDraftId}` }, '查看脚本') : null,
-              h('button', {
-                type: 'button',
-                disabled: props.convertingProjectId === project.id,
-                onClick: () => emit('script', project),
-              }, props.convertingProjectId === project.id ? '转短剧中...' : '转短剧'),
-            ]),
-            h('div', { class: 'creation-export-controls' }, [
-              h(CreationSelect, {
-                modelValue: selectedFormat(project),
-                options: exportOptions,
-                disabled: props.exportingProjectId === project.id,
-                'onUpdate:modelValue': value => { projectExportFormats[project.id] = value; },
-              }),
-              h('button', {
-                class: 'creation-secondary-btn',
-                type: 'button',
-                disabled: props.exportingProjectId === project.id,
-                onClick: () => emit('export', { project, format: selectedFormat(project) }),
-              }, props.exportingProjectId === project.id ? '导出中...' : '导出'),
-              h('button', {
-                class: 'creation-danger-btn',
-                type: 'button',
-                disabled: props.deletingProjectId === project.id || props.convertingProjectId === project.id || props.exportingProjectId === project.id,
-                onClick: () => emit('delete', project),
-              }, props.deletingProjectId === project.id ? '删除中...' : '删除'),
-            ]),
-          ]))),
-    ]);
-  },
-});
 
 const route = useRoute();
 const router = useRouter();
@@ -844,14 +555,28 @@ const currentEpisode = ref(null);
 const currentScene = ref(null);
 const qualityReport = ref(null);
 const exported = ref(null);
+const exportGenerating = ref(false);
+const exportDownloading = ref(false);
+const exportAutoFixing = ref(false);
+const exportFeedback = ref('');
+const exportFeedbackTone = ref('info');
 const chapterVersions = ref([]);
 const activeTask = ref(null);
 const activeRewriteTask = ref(null);
 const taskHistory = ref([]);
 const taskHistoryExpanded = ref(false);
 const taskHistorySearchInput = ref('');
+const taskActionBusy = ref('');
+const rewriteTaskActionBusy = ref('');
+const rewritePageActionBusy = ref('');
+const historyTaskBusyKey = ref('');
+const historyTaskBusyAction = ref('');
 const chapterSaving = ref(false);
+const chapterAdding = ref(false);
 const assetSaving = ref(false);
+const projectCreating = ref(false);
+const promptConfigSaving = ref(false);
+const versionRestoringId = ref(null);
 const rewriteStarting = ref(false);
 const rewriteAccepting = ref(false);
 const rewriteRetrying = ref(false);
@@ -968,6 +693,7 @@ const scriptActionLabels = {
   'scene:move-up': '正在上移场次',
   'scene:move-down': '正在下移场次',
   'scene:delete': '正在删除场次',
+  'scene:save': '正在保存场次',
 };
 const assetTypes = [
   {
@@ -1062,6 +788,7 @@ const filteredProjects = computed(() => {
 });
 const wordCount = computed(() => (chapterForm.content || '').replace(/\s/g, '').length);
 const assetWordCount = computed(() => (assetForm.content || '').replace(/\s/g, '').length);
+const exportBusy = computed(() => exportGenerating.value || exportDownloading.value || exportAutoFixing.value);
 const currentChapterLabel = computed(() =>
   currentChapter.value ? chapterDisplayTitle(currentChapter.value) : '未选择章节'
 );
@@ -1226,12 +953,17 @@ function openCreateDialog(type = 'long_novel') {
 }
 
 async function createProject() {
+  if (projectCreating.value) return;
+  projectCreating.value = true;
   try {
     const p = await storyApi.createProject(createForm);
     showCreate.value = false;
+    ui.showToast('success', '作品已创建');
     router.push(`/creation/projects/${p.id}/editor`);
   } catch (err) {
     ui.showToast('error', err.message || '创建作品失败');
+  } finally {
+    projectCreating.value = false;
   }
 }
 
@@ -1472,9 +1204,17 @@ function promptConfigPayload() {
 }
 
 async function savePromptConfig() {
-  project.value = await storyApi.updateProject(project.value.id, { promptConfig: promptConfigPayload() });
-  applyPromptConfig(project.value.promptConfig || project.value.metadata?.promptConfig);
-  ui.showToast('success', 'AI 配置已保存');
+  if (promptConfigSaving.value) return;
+  promptConfigSaving.value = true;
+  try {
+    project.value = await storyApi.updateProject(project.value.id, { promptConfig: promptConfigPayload() });
+    applyPromptConfig(project.value.promptConfig || project.value.metadata?.promptConfig);
+    ui.showToast('success', 'AI 配置已保存');
+  } catch (err) {
+    ui.showToast('error', err.message || 'AI 配置保存失败');
+  } finally {
+    promptConfigSaving.value = false;
+  }
 }
 
 function restoreActionPrompt() {
@@ -1605,15 +1345,29 @@ function cacheCurrentAssetInstruction() {
 }
 
 async function addChapter() {
+  if (chapterAdding.value) return;
+  chapterAdding.value = true;
   cacheCurrentChapterDraft();
-  const chapter = await storyApi.createChapter(project.value.id, { title: `第${chapters.value.length + 1}章`, content: '' });
-  chapters.value.push(chapter);
-  selectChapter(chapter, { skipCache: true });
+  try {
+    const chapter = await storyApi.createChapter(project.value.id, { title: `第${chapters.value.length + 1}章`, content: '' });
+    chapters.value.push(chapter);
+    selectChapter(chapter, { skipCache: true });
+    ui.showToast('success', '章节已新增');
+    return chapter;
+  } catch (err) {
+    ui.showToast('error', err.message || '新增章节失败');
+    return null;
+  } finally {
+    chapterAdding.value = false;
+  }
 }
 
 async function saveChapter() {
   if (chapterSaving.value) return;
-  if (!currentChapter.value) await addChapter();
+  if (!currentChapter.value) {
+    const chapter = await addChapter();
+    if (!chapter) return;
+  }
   chapterSaving.value = true;
   try {
     const saved = await storyApi.updateChapter(currentChapter.value.id, chapterForm);
@@ -1694,15 +1448,23 @@ async function loadChapterVersions() {
 }
 
 async function restoreVersion(version) {
-  const saved = await storyApi.restoreChapter(currentChapter.value.id, { versionId: version.id });
-  Object.assign(currentChapter.value, saved);
-  const index = chapters.value.findIndex(chapter => chapter.id === saved.id);
-  if (index >= 0) chapters.value[index] = { ...chapters.value[index], ...saved };
-  delete chapterDrafts[saved.id];
-  chapterForm.title = saved.title;
-  chapterForm.content = saved.content;
-  await loadChapterVersions();
-  ui.showToast('success', `已恢复到 V${version.versionNo}`);
+  if (!currentChapter.value?.id || versionRestoringId.value) return;
+  versionRestoringId.value = version.id;
+  try {
+    const saved = await storyApi.restoreChapter(currentChapter.value.id, { versionId: version.id });
+    Object.assign(currentChapter.value, saved);
+    const index = chapters.value.findIndex(chapter => chapter.id === saved.id);
+    if (index >= 0) chapters.value[index] = { ...chapters.value[index], ...saved };
+    delete chapterDrafts[saved.id];
+    chapterForm.title = saved.title;
+    chapterForm.content = saved.content;
+    await loadChapterVersions();
+    ui.showToast('success', `已恢复到 V${version.versionNo}`);
+  } catch (err) {
+    ui.showToast('error', err.message || '恢复版本失败');
+  } finally {
+    versionRestoringId.value = null;
+  }
 }
 
 async function generateAsset(type) {
@@ -1747,8 +1509,9 @@ async function acceptRewrite() {
 }
 
 async function retryRewrite() {
-  if (rewriteRetrying.value) return;
+  if (rewriteRetrying.value || rewritePageActionBusy.value) return;
   rewriteRetrying.value = true;
+  rewritePageActionBusy.value = 'retry';
   try {
     const task = await storyApi.retryRewrite(route.params.taskId, {
       rewriteMode: rewriteTask.value?.rewriteMode || 'deslop',
@@ -1765,6 +1528,7 @@ async function retryRewrite() {
     ui.showToast('error', err.message || '重新改写失败');
   } finally {
     rewriteRetrying.value = false;
+    rewritePageActionBusy.value = '';
   }
 }
 
@@ -1843,15 +1607,23 @@ async function loadActiveTask() {
 
 async function refreshTask(options = {}) {
   if (!activeTask.value?.id) return;
-  const previousStatus = activeTask.value.status;
-  activeTask.value = await storyApi.getTask(activeTask.value.id);
-  if (['pending', 'running'].includes(activeTask.value.status)) {
-    startActiveTaskPolling();
-  } else {
-    stopActiveTaskPolling();
-  }
-  if (!options.silent && ['pending', 'running'].includes(previousStatus) && activeTask.value.status === 'completed') {
-    ui.showToast('success', '短剧分场稿已生成，可从任务卡查看');
+  if (!options.silent && taskActionBusy.value) return;
+  if (!options.silent) taskActionBusy.value = 'refresh';
+  try {
+    const previousStatus = activeTask.value.status;
+    activeTask.value = await storyApi.getTask(activeTask.value.id);
+    if (['pending', 'running'].includes(activeTask.value.status)) {
+      startActiveTaskPolling();
+    } else {
+      stopActiveTaskPolling();
+    }
+    if (!options.silent && ['pending', 'running'].includes(previousStatus) && activeTask.value.status === 'completed') {
+      ui.showToast('success', '短剧分场稿已生成，可从任务卡查看');
+    }
+  } catch (err) {
+    if (!options.silent) ui.showToast('error', err.message || '刷新任务失败');
+  } finally {
+    if (!options.silent) taskActionBusy.value = '';
   }
 }
 
@@ -1862,7 +1634,7 @@ function startActiveTaskPolling() {
       stopActiveTaskPolling();
       return;
     }
-    refreshTask().catch(() => {});
+    refreshTask({ silent: true }).catch(() => {});
   }, 3000);
 }
 
@@ -1884,20 +1656,35 @@ function dismissTask() {
 }
 
 async function cancelTask() {
-  if (!activeTask.value?.id) return;
-  activeTask.value = await storyApi.cancelTask(activeTask.value.id);
-  stopActiveTaskPolling();
-  await loadTaskHistory();
-  ui.showToast('success', '已终止转短剧任务');
+  if (!activeTask.value?.id || taskActionBusy.value) return;
+  taskActionBusy.value = 'cancel';
+  try {
+    activeTask.value = await storyApi.cancelTask(activeTask.value.id);
+    stopActiveTaskPolling();
+    await loadTaskHistory();
+    ui.showToast('success', '已终止转短剧任务');
+  } catch (err) {
+    ui.showToast('error', err.message || '终止转短剧任务失败');
+  } finally {
+    taskActionBusy.value = '';
+  }
 }
 
 async function retryTask() {
-  if (!activeTask.value?.id) return;
-  const task = await storyApi.retryTask(activeTask.value.id);
-  activeTask.value = task;
-  localStorage.setItem('story:lastTaskId', String(task.id));
-  if (['pending', 'running'].includes(task.status)) startActiveTaskPolling();
-  await loadTaskHistory();
+  if (!activeTask.value?.id || taskActionBusy.value) return;
+  taskActionBusy.value = 'retry';
+  try {
+    const task = await storyApi.retryTask(activeTask.value.id);
+    activeTask.value = task;
+    localStorage.setItem('story:lastTaskId', String(task.id));
+    if (['pending', 'running'].includes(task.status)) startActiveTaskPolling();
+    await loadTaskHistory();
+    ui.showToast('success', '已重新提交转短剧任务');
+  } catch (err) {
+    ui.showToast('error', err.message || '重试转短剧任务失败');
+  } finally {
+    taskActionBusy.value = '';
+  }
 }
 
 async function loadTaskHistory() {
@@ -1919,6 +1706,11 @@ function toggleTaskHistory() {
 
 function clearTaskHistorySearch() {
   taskHistorySearchInput.value = '';
+  taskHistoryExpanded.value = false;
+}
+
+function updateTaskHistorySearch(value) {
+  taskHistorySearchInput.value = value;
   taskHistoryExpanded.value = false;
 }
 
@@ -1952,8 +1744,14 @@ function historyTaskCanRetry(item) {
   return item && ['failed', 'canceled', 'completed', 'accepted'].includes(item.status);
 }
 
+function historyTaskKey(item) {
+  return `${item?.kind || 'task'}:${item?.taskId || item?.id || ''}`;
+}
+
 async function restoreHistoryTask(item) {
-  if (!item?.taskId) return;
+  if (!item?.taskId || historyTaskBusyKey.value) return;
+  historyTaskBusyKey.value = historyTaskKey(item);
+  historyTaskBusyAction.value = 'restore';
   try {
     if (item.kind === 'generation') {
       activeTask.value = await storyApi.getTask(item.taskId);
@@ -1967,6 +1765,9 @@ async function restoreHistoryTask(item) {
     ui.showToast('success', '已置顶到任务卡');
   } catch (err) {
     ui.showToast('error', err.message || '恢复任务失败');
+  } finally {
+    historyTaskBusyKey.value = '';
+    historyTaskBusyAction.value = '';
   }
 }
 
@@ -1986,7 +1787,9 @@ async function openHistoryTask(item) {
 }
 
 async function cancelHistoryTask(item) {
-  if (!historyTaskCanCancel(item)) return;
+  if (!historyTaskCanCancel(item) || historyTaskBusyKey.value) return;
+  historyTaskBusyKey.value = historyTaskKey(item);
+  historyTaskBusyAction.value = 'cancel';
   try {
     if (item.kind === 'generation') {
       const task = await storyApi.cancelTask(item.taskId);
@@ -1999,11 +1802,16 @@ async function cancelHistoryTask(item) {
     ui.showToast('success', '任务已终止');
   } catch (err) {
     ui.showToast('error', err.message || '终止任务失败');
+  } finally {
+    historyTaskBusyKey.value = '';
+    historyTaskBusyAction.value = '';
   }
 }
 
 async function retryHistoryTask(item) {
-  if (!historyTaskCanRetry(item)) return;
+  if (!historyTaskCanRetry(item) || historyTaskBusyKey.value) return;
+  historyTaskBusyKey.value = historyTaskKey(item);
+  historyTaskBusyAction.value = 'retry';
   try {
     if (item.kind === 'generation') {
       const task = await storyApi.retryTask(item.taskId);
@@ -2022,6 +1830,9 @@ async function retryHistoryTask(item) {
     ui.showToast('success', '已重新提交任务');
   } catch (err) {
     ui.showToast('error', err.message || '重试任务失败');
+  } finally {
+    historyTaskBusyKey.value = '';
+    historyTaskBusyAction.value = '';
   }
 }
 
@@ -2057,17 +1868,25 @@ async function loadActiveRewriteTask() {
 
 async function refreshRewriteTask(options = {}) {
   if (!activeRewriteTask.value?.id) return;
-  const previousStatus = activeRewriteTask.value.status;
-  const task = await storyApi.getRewrite(activeRewriteTask.value.id);
-  activeRewriteTask.value = task;
-  if (rewriteTask.value?.id === task.id) rewriteTask.value = task;
-  if (['pending', 'running'].includes(task.status)) {
-    startRewritePolling();
-  } else {
-    stopRewritePolling();
-  }
-  if (!options.silent && ['pending', 'running'].includes(previousStatus) && task.status === 'completed') {
-    ui.showToast('success', '改写任务已完成，可从任务卡查看三栏对照');
+  if (!options.silent && rewriteTaskActionBusy.value) return;
+  if (!options.silent) rewriteTaskActionBusy.value = 'refresh';
+  try {
+    const previousStatus = activeRewriteTask.value.status;
+    const task = await storyApi.getRewrite(activeRewriteTask.value.id);
+    activeRewriteTask.value = task;
+    if (rewriteTask.value?.id === task.id) rewriteTask.value = task;
+    if (['pending', 'running'].includes(task.status)) {
+      startRewritePolling();
+    } else {
+      stopRewritePolling();
+    }
+    if (!options.silent && ['pending', 'running'].includes(previousStatus) && task.status === 'completed') {
+      ui.showToast('success', '改写任务已完成，可从任务卡查看三栏对照');
+    }
+  } catch (err) {
+    if (!options.silent) ui.showToast('error', err.message || '刷新改写任务失败');
+  } finally {
+    if (!options.silent) rewriteTaskActionBusy.value = '';
   }
 }
 
@@ -2078,7 +1897,7 @@ function startRewritePolling() {
       stopRewritePolling();
       return;
     }
-    refreshRewriteTask().catch(() => {});
+    refreshRewriteTask({ silent: true }).catch(() => {});
   }, 3000);
 }
 
@@ -2100,7 +1919,8 @@ function dismissRewriteTask() {
 }
 
 async function cancelActiveRewriteTask() {
-  if (!activeRewriteTask.value?.id || !rewriteTaskCanCancel.value) return;
+  if (!activeRewriteTask.value?.id || !rewriteTaskCanCancel.value || rewriteTaskActionBusy.value) return;
+  rewriteTaskActionBusy.value = 'cancel';
   try {
     const task = await storyApi.cancelRewrite(activeRewriteTask.value.id);
     activeRewriteTask.value = task;
@@ -2110,11 +1930,14 @@ async function cancelActiveRewriteTask() {
     ui.showToast('success', '已终止改写任务');
   } catch (err) {
     ui.showToast('error', err.message || '终止改写失败');
+  } finally {
+    rewriteTaskActionBusy.value = '';
   }
 }
 
 async function cancelRewritePage() {
-  if (!rewriteTask.value?.id || !rewritePageCanCancel.value) return;
+  if (!rewriteTask.value?.id || !rewritePageCanCancel.value || rewritePageActionBusy.value) return;
+  rewritePageActionBusy.value = 'cancel';
   try {
     const task = await storyApi.cancelRewrite(rewriteTask.value.id);
     rewriteTask.value = task;
@@ -2124,12 +1947,15 @@ async function cancelRewritePage() {
     ui.showToast('success', '已终止改写任务');
   } catch (err) {
     ui.showToast('error', err.message || '终止改写失败');
+  } finally {
+    rewritePageActionBusy.value = '';
   }
 }
 
 async function retryActiveRewriteTask() {
-  if (!activeRewriteTask.value?.id || !rewriteTaskCanRetry.value || rewriteRetrying.value) return;
+  if (!activeRewriteTask.value?.id || !rewriteTaskCanRetry.value || rewriteRetrying.value || rewriteTaskActionBusy.value) return;
   rewriteRetrying.value = true;
+  rewriteTaskActionBusy.value = 'retry';
   try {
     const task = await storyApi.retryRewrite(activeRewriteTask.value.id, {
       rewriteMode: activeRewriteTask.value.rewriteMode || 'deslop',
@@ -2144,17 +1970,25 @@ async function retryActiveRewriteTask() {
     ui.showToast('error', err.message || '重新改写失败');
   } finally {
     rewriteRetrying.value = false;
+    rewriteTaskActionBusy.value = '';
   }
 }
 
 async function refreshRewritePage() {
-  if (!route.params.taskId) return;
-  rewriteTask.value = await storyApi.getRewrite(route.params.taskId);
-  activeRewriteTask.value = rewriteTask.value;
-  if (['pending', 'running'].includes(rewriteTask.value.status)) {
-    startRewritePolling();
-  } else {
-    stopRewritePolling();
+  if (!route.params.taskId || rewritePageActionBusy.value) return;
+  rewritePageActionBusy.value = 'refresh';
+  try {
+    rewriteTask.value = await storyApi.getRewrite(route.params.taskId);
+    activeRewriteTask.value = rewriteTask.value;
+    if (['pending', 'running'].includes(rewriteTask.value.status)) {
+      startRewritePolling();
+    } else {
+      stopRewritePolling();
+    }
+  } catch (err) {
+    ui.showToast('error', err.message || '刷新改写任务失败');
+  } finally {
+    rewritePageActionBusy.value = '';
   }
 }
 
@@ -2177,9 +2011,17 @@ function selectScene(ep, scene) {
 }
 
 async function saveScene() {
-  const saved = await storyApi.updateScene(currentScene.value.id, sceneForm);
-  Object.assign(currentScene.value, saved);
-  ui.showToast('success', '场次已保存');
+  if (!currentScene.value || scriptActionBusy.value) return;
+  scriptActionBusy.value = 'scene:save';
+  try {
+    const saved = await storyApi.updateScene(currentScene.value.id, sceneForm);
+    Object.assign(currentScene.value, saved);
+    ui.showToast('success', '场次已保存');
+  } catch (err) {
+    ui.showToast('error', err.message || '保存场次失败');
+  } finally {
+    scriptActionBusy.value = '';
+  }
 }
 
 async function addScene(ep) {
@@ -2226,6 +2068,7 @@ async function moveScene(direction) {
     currentEpisode.value.scenes = scenes;
     const moved = scenes.find(scene => scene.id === currentScene.value.id);
     selectScene(currentEpisode.value, moved || scenes[0] || null);
+    ui.showToast('success', direction === 'up' ? '场次已上移' : '场次已下移');
   } catch (err) {
     ui.showToast('error', err.message || '移动场次失败');
   } finally {
@@ -2331,29 +2174,77 @@ function qualityActionForIssue(issue) {
 }
 
 async function autoFixExportIssues() {
-  const scenes = (draft.value?.episodes || []).flatMap(ep => ep.scenes || []);
-  let fixed = 0;
-  for (const scene of scenes) {
-    if (!scene.hook) {
-      await storyApi.improveScene(scene.id, { action: 'hook', scene });
-      fixed++;
-    } else if (!scene.dialogue) {
-      await storyApi.improveScene(scene.id, { action: 'dialogue', scene });
-      fixed++;
+  if (exportAutoFixing.value || exportBusy.value) return;
+  exportAutoFixing.value = true;
+  exportFeedbackTone.value = 'info';
+  exportFeedback.value = '正在自动修复导出前检查项，请稍候。';
+  try {
+    const scenes = (draft.value?.episodes || []).flatMap(ep => ep.scenes || []);
+    let fixed = 0;
+    for (const scene of scenes) {
+      if (!scene.hook) {
+        await storyApi.improveScene(scene.id, { action: 'hook', scene });
+        fixed++;
+      } else if (!scene.dialogue) {
+        await storyApi.improveScene(scene.id, { action: 'dialogue', scene });
+        fixed++;
+      }
     }
+    qualityReport.value = await storyApi.checkQuality(route.params.draftId, { useFallback: true });
+    await loadDraft();
+    exportFeedbackTone.value = fixed ? 'success' : 'info';
+    exportFeedback.value = fixed ? `已修复 ${fixed} 个可自动处理的场次。` : '没有发现可自动修复的空缺项。';
+    ui.showToast(fixed ? 'success' : 'info', fixed ? `已修复 ${fixed} 个可自动处理的场次` : '没有发现可自动修复的空缺项');
+  } catch (err) {
+    exportFeedbackTone.value = 'error';
+    exportFeedback.value = err.message || '自动修复失败，请稍后重试。';
+    ui.showToast('error', exportFeedback.value);
+  } finally {
+    exportAutoFixing.value = false;
   }
-  qualityReport.value = await storyApi.checkQuality(route.params.draftId, { useFallback: true });
-  await loadDraft();
-  ui.showToast(fixed ? 'success' : 'info', fixed ? `已修复 ${fixed} 个可自动处理的场次` : '没有发现可自动修复的空缺项');
 }
 
 async function exportDraft() {
-  exported.value = await storyApi.exportDraft(route.params.draftId, exportForm);
+  if (exportBusy.value) return;
+  exportGenerating.value = true;
+  exportFeedbackTone.value = 'info';
+  exportFeedback.value = '正在生成导出内容，请稍候。';
+  try {
+    exported.value = await storyApi.exportDraft(route.params.draftId, exportForm);
+    exportFeedbackTone.value = 'success';
+    exportFeedback.value = `导出内容已生成，可预览或下载 ${exportFormatLabel(exportForm.format)} 文件。`;
+    ui.showToast('success', '导出内容已生成');
+  } catch (err) {
+    exportFeedbackTone.value = 'error';
+    exportFeedback.value = err.message || '导出内容生成失败，请稍后重试。';
+    ui.showToast('error', exportFeedback.value);
+  } finally {
+    exportGenerating.value = false;
+  }
 }
 
 async function downloadExport() {
-  const response = await storyApi.exportDraftFile(route.params.draftId, exportForm);
-  saveBlobResponse(response, exported.value?.filename || `短剧分场稿.${exportExtension(exportForm.format)}`);
+  if (exportBusy.value) return;
+  exportDownloading.value = true;
+  exportFeedbackTone.value = 'info';
+  exportFeedback.value = '正在打包并下载文件，请不要重复点击。';
+  try {
+    const response = await storyApi.exportDraftFile(route.params.draftId, exportForm);
+    saveBlobResponse(response, exported.value?.filename || `短剧分场稿.${exportExtension(exportForm.format)}`);
+    exportFeedbackTone.value = 'success';
+    exportFeedback.value = '文件已开始下载，请查看浏览器下载记录。';
+    ui.showToast('success', '文件已开始下载');
+  } catch (err) {
+    exportFeedbackTone.value = 'error';
+    exportFeedback.value = err.message || '下载文件失败，请稍后重试。';
+    ui.showToast('error', exportFeedback.value);
+  } finally {
+    exportDownloading.value = false;
+  }
+}
+
+function exportFormatLabel(format) {
+  return exportFormatOptions.find(option => option.value === format)?.label || String(format || '').toUpperCase();
 }
 
 function saveBlobResponse(response, fallbackFilename) {
