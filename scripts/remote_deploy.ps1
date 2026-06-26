@@ -4,7 +4,7 @@ param(
     [string]$User,
     [int]$Port = 22,
     [string]$RepoUrl = "https://github.com/ifyouchen/ai-agent.git",
-    [string]$Branch = "feat/novel",
+    [string]$Branch = "main",
     [string]$RemoteDir = "/opt/aiagent",
     [string]$ComposeFile = "docker-compose.yml",
     [switch]$ForceReset,
