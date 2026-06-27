@@ -22,6 +22,11 @@
       </header>
 
       <section class="usage-kpis">
+        <article class="usage-kpi usage-kpi-today">
+          <span>今日用量</span>
+          <strong>{{ fmtNum(todayUsage.totalTokens) }}</strong>
+          <small>${{ fmtCost(todayUsage.costUsd) }}</small>
+        </article>
         <article class="usage-kpi">
           <span>总 Token</span>
           <strong>{{ fmtNum(summary.totalTokens) }}</strong>
@@ -49,7 +54,7 @@
           <h2>每日消耗趋势</h2>
           <span>{{ summary.startAt || '-' }} 至 {{ summary.endAt || '-' }}</span>
         </div>
-        <div v-if="!dailySeries.length" class="usage-empty">暂无趋势数据</div>
+        <div v-if="!dailySeries.length && !loading" class="usage-empty">暂无趋势数据</div>
         <div v-else class="usage-chart-frame">
           <canvas ref="chartEl"></canvas>
         </div>
@@ -98,21 +103,8 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
-import {
-  CategoryScale,
-  Chart,
-  Filler,
-  Legend,
-  LinearScale,
-  LineController,
-  LineElement,
-  PointElement,
-  Tooltip,
-} from 'chart.js';
 import { useUiStore } from '../stores/ui.js';
 import * as api from '../services/api.js';
-
-Chart.register(LineController, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler);
 
 const ui = useUiStore();
 const dayOptions = [7, 14, 30];
@@ -130,6 +122,9 @@ const chartEl = ref(null);
 let chart = null;
 
 const dailySeries = computed(() => buildDailySeries(days.value, dailyRows.value));
+const todayUsage = computed(() =>
+  dailySeries.value[dailySeries.value.length - 1] || { totalTokens: 0, costUsd: 0 }
+);
 
 onMounted(loadAll);
 onBeforeUnmount(() => chart?.destroy());
@@ -147,20 +142,25 @@ async function setDetailPage(value) {
 
 async function loadAll() {
   loading.value = true;
+  loadingDetails.value = true;
   try {
-    const [summaryRes, dailyRes] = await Promise.all([
+    const [summaryRes, dailyRes, detailsRes] = await Promise.all([
       api.getMyUsageSummary(days.value),
       api.getMyDailyUsage(days.value),
+      api.getMyUsageDetails({ days: days.value, page: detailPage.value, size: detailSize }),
     ]);
     summary.value = summaryRes || {};
     dailyRows.value = dailyRes || [];
-    await loadDetails();
+    detailItems.value = detailsRes?.items || [];
+    detailTotal.value = Number(detailsRes?.total || 0);
+    detailTotalPages.value = Number(detailsRes?.totalPages || 0);
     await nextTick();
     renderChart();
   } catch (err) {
     ui.showToast('error', err.message || '加载 Token 用量失败');
   } finally {
     loading.value = false;
+    loadingDetails.value = false;
   }
 }
 
@@ -182,9 +182,16 @@ async function loadDetails() {
   }
 }
 
-function renderChart() {
+let chartRegistered = false;
+
+async function renderChart() {
   if (!chartEl.value || !dailySeries.value.length) return;
   chart?.destroy();
+  const { Chart, LineController, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler } = await import('chart.js');
+  if (!chartRegistered) {
+    Chart.register(LineController, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler);
+    chartRegistered = true;
+  }
   chart = new Chart(chartEl.value, {
     type: 'line',
     data: {

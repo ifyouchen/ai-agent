@@ -5,6 +5,9 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import * as api from '../services/api.js';
 import { useUiStore } from './ui.js';
+import { createTtlCache } from '../js/cache.js';
+
+const kbListCache = createTtlCache(60000);
 
 export const useKbStore = defineStore('kb', () => {
   const ui = useUiStore();
@@ -90,7 +93,10 @@ export const useKbStore = defineStore('kb', () => {
     }
     kbLoading.value = true;
     try {
-      const list = await api.listKnowledgeBases(orgId);
+      const cacheKey = `list:${orgId}`;
+      const cached = kbListCache.get(cacheKey);
+      const list = cached || await api.listKnowledgeBases(orgId);
+      if (!cached) kbListCache.set(cacheKey, list);
       if (seq !== _kbLoadSeq) return;
       knowledgeBases.value = list;
       const preferredKbId = resolvePreferredKbId(orgId, knowledgeBases.value);
@@ -122,6 +128,7 @@ export const useKbStore = defineStore('kb', () => {
   }
 
   async function createKb(name, description, orgId) {
+    kbListCache.invalidate();
     const created = await api.createKnowledgeBase(name, description, orgId);
     ui.showToast('success', `知识库「${name}」已创建`);
     await loadKbs(orgId);
@@ -131,12 +138,14 @@ export const useKbStore = defineStore('kb', () => {
   }
 
   async function updateKb(kbId, name, description, orgId) {
+    kbListCache.invalidate();
     await api.updateKnowledgeBase(kbId, name, description, orgId);
     ui.showToast('success', '知识库已更新');
     await loadKbs(orgId);
   }
 
   async function deleteKb(kbId, orgId) {
+    kbListCache.invalidate();
     await api.deleteKnowledgeBase(kbId, orgId);
     if (currentKbId.value === kbId) { currentKbId.value = null; docs.value = []; }
     await loadKbs(orgId);

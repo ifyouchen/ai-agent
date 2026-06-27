@@ -64,5 +64,12 @@
         DELETE FROM sys_organization WHERE org_id = #{orgId}
     </delete>
 
+    <select id="findOrgsWithDetailByUserId" resultType="java.util.Map">
+        SELECT m.org_id AS "orgId", m.role AS "role", o.name AS "name", o.org_type AS "orgType"
+        FROM sys_org_member m
+        JOIN sys_organization o ON o.org_id = m.org_id
+        WHERE m.user_id = #{userId}
+    </select>
+
 </mapper>
 

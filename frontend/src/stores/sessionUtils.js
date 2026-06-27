@@ -1,4 +1,4 @@
-import { formatMarkdown } from '../js/utils.js';
+import { formatMarkdown } from '../js/markdown.js';
 
 export const MAX_SESSIONS = 50;
 export const MAX_MSGS = 100;
@@ -24,10 +24,11 @@ export function trimText(str, max) {
   return s.length > max ? s.slice(0, max) + '…' : s;
 }
 
+const _stripDiv = document.createElement('div');
+
 export function stripHtml(html) {
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  return tmp.textContent || '';
+  _stripDiv.innerHTML = html;
+  return _stripDiv.textContent || '';
 }
 
 export function storageKey(userId) {

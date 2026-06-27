@@ -66,8 +66,8 @@
         v-for="item in kb.knowledgeBases"
         :key="item.id"
         class="kb-card"
-        :class="{ active: item.id === kb.currentKbId }"
-        @click="kb.selectKb(item.id, org.currentOrgId)"
+        :class="{ active: item.id === kb.currentKbId, 'kb-card-loading': selectingKbId === item.id }"
+        @click="handleSelectKb(item)"
       >
         <div class="kb-card-header">
           <div class="kb-card-icon">
@@ -75,6 +75,9 @@
               <path d="M4 19V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7M4 19h16M4 19a2 2 0 0 1-2-2v-1h20v1a2 2 0 0 1-2 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
             </svg>
           </div>
+          <svg v-if="selectingKbId === item.id" class="inline-spinner" viewBox="0 0 24 24" fill="none" width="14" height="14">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
+          </svg>
           <div class="kb-card-actions">
             <template v-if="canManageKb">
               <button class="kb-card-action-btn" type="button" title="编辑知识库" @click.stop="handleEditKb(item)">
@@ -288,7 +291,10 @@
             </div>
           </div>
           <div class="doc-list">
-            <div v-if="!kb.docs.length" class="empty-state">
+            <div v-if="kb.docsLoading" class="doc-list-skeleton">
+              <div v-for="i in 4" :key="i" class="loading-item-skeleton" style="height:56px; margin-bottom:8px;"></div>
+            </div>
+            <div v-else-if="!kb.docs.length" class="empty-state">
               <div class="empty-state-icon">
                 <svg viewBox="0 0 24 24" fill="none" width="32" height="32">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -483,7 +489,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useKbStore } from '../stores/kb.js';
 import { useOrgStore } from '../stores/org.js';
@@ -500,6 +506,7 @@ const router = useRouter();
 
 const fileInputEl   = ref(null);
 const dragOver      = ref(false);
+const selectingKbId = ref(null);
 
 const expandedDocId = ref(null);
 const docChunksCache = reactive({});
@@ -571,7 +578,11 @@ const hasCompletedUploads = computed(() =>
 
 // Fix 13: KB 统计数据
 const kbStats = ref(null);
-watch(() => kb.currentKbId, async (id) => {
+watch(() => kb.currentKbId, async (id, oldId) => {
+  if (id !== oldId) {
+    expandedDocId.value = null;
+    Object.keys(docChunksCache).forEach(k => delete docChunksCache[k]);
+  }
   if (!id) { kbStats.value = null; return; }
   try { kbStats.value = await api.getKbStats(id, org.currentOrgId); }
   catch { kbStats.value = null; }
@@ -765,6 +776,16 @@ function triggerUpload() {
   fileInputEl.value?.click();
 }
 
+async function handleSelectKb(item) {
+  if (selectingKbId.value) return;
+  selectingKbId.value = item.id;
+  try {
+    await kb.selectKb(item.id, org.currentOrgId);
+  } finally {
+    selectingKbId.value = null;
+  }
+}
+
 function handleFileChange(event) {
   Array.from(event.target.files || []).forEach(f => kb.uploadFile(f, org.currentOrgId));
   event.target.value = '';
@@ -830,6 +851,10 @@ async function retryDoc(doc) {
     ui.showToast('error', err.message || '重试失败，请稍后再试');
   }
 }
+
+onBeforeUnmount(() => {
+  kb.stopAllDocPolling();
+});
 </script>
 
 <style scoped>

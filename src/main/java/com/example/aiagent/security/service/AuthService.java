@@ -9,6 +9,8 @@ import com.example.aiagent.security.entity.SysUser;
 import com.example.aiagent.security.mapper.SysUserMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -245,6 +247,7 @@ public class AuthService {
     /**
      * 获取当前用户个人资料（含 nickname/email）
      */
+    @Cacheable(cacheNames = "profile", key = "#userId")
     public java.util.Map<String, Object> getProfile(String userId) {
         SysUser user = sysUserMapper.findByUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
@@ -263,6 +266,7 @@ public class AuthService {
      *
      * @throws IllegalArgumentException 用户不存在
      */
+    @CacheEvict(cacheNames = "profile", key = "#userId")
     public void updateProfile(String userId, String nickname) {
         sysUserMapper.findByUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("用户不存在"));

@@ -41,6 +41,9 @@ public interface DocumentMapper {
     /** 删除知识库下的所有文档（deleteKnowledgeBase 批量删除优化） */
     int deleteByKbId(@Param("kbId") Long kbId);
 
+    /** 轻量列表投影：kbId 列表用（不含 file_path, parse_error, allowed_roles, file_hash 等重列） */
+    List<Map<String, Object>> findListByKbId(@Param("kbId") Long kbId);
+
     Optional<Document> findById(@Param("id") Long id);
 
     long countAll();

@@ -5,6 +5,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -47,6 +49,7 @@ public class UserMemoryService {
      * 获取用户长期记忆，格式化为可注入 system prompt 的片段。
      * 无记忆时返回空字符串。
      */
+    @Cacheable(cacheNames = "userMemory", key = "#userId", unless = "#result.isEmpty()")
     public String getMemoryText(String userId) {
         if (!enabled || userId == null || userId.isBlank()) return "";
         try {
@@ -69,6 +72,7 @@ public class UserMemoryService {
      * @param aiMsg   本轮 AI 回复
      */
     @Async
+    @CacheEvict(cacheNames = "userMemory", key = "#userId")
     public void extractAsync(String userId, String userMsg, String aiMsg) {
         if (!enabled || userId == null || userId.isBlank()) return;
         if (userMsg == null || userMsg.isBlank()) return;

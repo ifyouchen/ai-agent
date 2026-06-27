@@ -139,4 +139,18 @@
           AND called_at &gt;= #{since}
     </select>
 
+    <select id="sumCostSince" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(cost_usd), 0)
+        FROM llm_token_usage
+        WHERE called_at &gt;= #{since}
+    </select>
+
+    <select id="countTotalAndErrorsSince" resultType="java.util.Map">
+        SELECT
+            COUNT(*)                         AS "total",
+            COUNT(*) FILTER (WHERE success = false) AS "errors"
+        FROM llm_token_usage
+        WHERE called_at &gt;= #{since}
+    </select>
+
 </mapper>

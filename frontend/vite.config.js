@@ -1,5 +1,6 @@
 import { fileURLToPath, URL } from 'node:url';
 import vue from '@vitejs/plugin-vue';
+import compression from 'vite-plugin-compression';
 import { defineConfig, loadEnv } from 'vite';
 
 export default defineConfig(({ mode }) => {
@@ -7,7 +8,11 @@ export default defineConfig(({ mode }) => {
   const backendTarget = env.VITE_BACKEND_TARGET || 'http://localhost:8080';
 
   return {
-    plugins: [vue()],
+    plugins: [
+      vue(),
+      compression({ algorithm: 'brotliCompress' }),
+      compression({ algorithm: 'gzip' }),
+    ],
     server: {
       host: '0.0.0.0',
       port: Number(env.VITE_PORT || 5173),
@@ -31,7 +36,15 @@ export default defineConfig(({ mode }) => {
         input: {
           index: fileURLToPath(new URL('./index.html', import.meta.url)),
           login: fileURLToPath(new URL('./login.html', import.meta.url))
-        }
+        },
+        output: {
+          manualChunks: {
+            vendor: ['vue', 'vue-router', 'pinia'],
+            markdown: ['marked', 'highlight.js', 'dompurify'],
+            chart: ['chart.js'],
+            axios: ['axios'],
+          },
+        },
       }
     }
   };

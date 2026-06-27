@@ -15,6 +15,8 @@ import com.example.aiagent.security.mapper.SysUserMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -540,6 +542,7 @@ public class OrganizationService {
      * @return 最终使用的 orgId（同时作为 tenantId）
      * @throws IllegalArgumentException 组织不存在或用户不是成员
      */
+    @Cacheable(cacheNames = "org", key = "#userId + ':' + #requestedOrgId", unless = "#result == null")
     public String resolveOrgId(String userId, String requestedOrgId) {
         if (requestedOrgId == null || requestedOrgId.isBlank()) {
             return getDefaultOrgId(userId);
@@ -570,20 +573,7 @@ public class OrganizationService {
      * 获取用户可用的所有组织（含组织名称和类型，供前端展示）
      */
     public List<Map<String, Object>> getUserOrganizationsWithDetail(String userId) {
-        List<OrgMember> memberships = orgMemberMapper.findByUserId(userId);
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (OrgMember member : memberships) {
-            Map<String, Object> item = new HashMap<>();
-            item.put("orgId", member.getOrgId());
-            item.put("role", member.getRole());
-            // 查询组织详情获取名称和类型
-            organizationMapper.findByOrgId(member.getOrgId()).ifPresent(org -> {
-                item.put("name", org.getName());
-                item.put("orgType", org.getOrgType());
-            });
-            result.add(item);
-        }
-        return result;
+        return organizationMapper.findOrgsWithDetailByUserId(userId);
     }
 
     /**
@@ -603,6 +593,7 @@ public class OrganizationService {
     /**
      * 按 orgId 查询组织（返回 null 而非抛异常，供 Controller 判断）
      */
+    @Cacheable(cacheNames = "org", key = "'org:' + #orgId", unless = "#result == null")
     public Organization getOrganizationById(String orgId) {
         return organizationMapper.findByOrgId(orgId).orElse(null);
     }
@@ -654,6 +645,7 @@ public class OrganizationService {
      * @throws IllegalArgumentException 若组织不存在、类型为 PERSONAL、或操作者无 OWNER 权限
      */
     @Transactional
+    @CacheEvict(cacheNames = "org", allEntries = true)
     public Organization updateOrganization(String orgId, String name, String description,
                                             String operatorId) {
         Organization org = organizationMapper.findByOrgId(orgId)
@@ -712,6 +704,7 @@ public class OrganizationService {
      * @throws IllegalArgumentException 若组织不存在、是 PERSONAL 组织、或操作者非 OWNER
      */
     @Transactional
+    @CacheEvict(cacheNames = "org", allEntries = true)
     public void deleteOrganization(String orgId, String operatorId) {
         Organization org = organizationMapper.findByOrgId(orgId)
                 .orElseThrow(() -> new IllegalArgumentException("组织不存在：" + orgId));
@@ -726,11 +719,8 @@ public class OrganizationService {
             throw new IllegalArgumentException("只有组织拥有者才能删除组织");
         }
 
-        // 删除所有成员记录
-        List<OrgMember> members = orgMemberMapper.findByOrgId(orgId);
-        for (OrgMember m : members) {
-            orgMemberMapper.deleteByOrgIdAndUserId(orgId, m.getUserId());
-        }
+        // 删除所有成员记录（批量替换逐条循环）
+        orgMemberMapper.deleteByOrgId(orgId);
 
         // 删除组织
         organizationMapper.deleteByOrgId(orgId);

@@ -1,9 +1,20 @@
 package com.example.aiagent.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.cache.RedisCacheConfiguration;
+import org.springframework.data.redis.cache.RedisCacheManager;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -11,6 +22,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.task.DelegatingSecurityContextTaskExecutor;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadPoolExecutor;
 
@@ -19,6 +33,7 @@ import java.util.concurrent.ThreadPoolExecutor;
  */
 @Slf4j
 @Configuration
+@EnableCaching      // 启用 Spring Cache（Redis 分布式缓存）
 @EnableAsync        // 启用 @Async（TokenUsageService 异步写 PostgreSQL 需要）
 @EnableScheduling   // 启用 @Scheduled（AlertService 定时告警需要）
 public class AppConfig {
@@ -197,5 +212,38 @@ public class AppConfig {
         executor.initialize();
         log.info("线程池初始化 name=ragRetrievalExecutor core=4 max=8 queue=100");
         return executor;
+    }
+
+    /**
+     * Redis CacheManager（分布式缓存）
+     *
+     * 热点数据读多写少（组织、知识库、权限、用户资料、长期记忆），
+     * 用 Redis 分布式缓存减少数据库查询。
+     */
+    @Bean
+    public CacheManager cacheManager(RedisConnectionFactory cf) {
+        ObjectMapper mapper = new ObjectMapper()
+                .registerModule(new JavaTimeModule())
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                .activateDefaultTyping(
+                        BasicPolymorphicTypeValidator.builder()
+                                .allowIfBaseType(Object.class)
+                                .build(),
+                        ObjectMapper.DefaultTyping.NON_FINAL);
+
+        RedisCacheConfiguration base = RedisCacheConfiguration.defaultCacheConfig()
+                .serializeValuesWith(RedisSerializationContext.SerializationPair
+                        .fromSerializer(new GenericJackson2JsonRedisSerializer(mapper)));
+        Map<String, RedisCacheConfiguration> ttl = new HashMap<>();
+        ttl.put("org",        base.entryTtl(Duration.ofSeconds(60)));
+        ttl.put("orgMember",  base.entryTtl(Duration.ofSeconds(60)));
+        ttl.put("kb",         base.entryTtl(Duration.ofSeconds(60)));
+        ttl.put("kbAccess",   base.entryTtl(Duration.ofSeconds(60)));
+        ttl.put("profile",    base.entryTtl(Duration.ofSeconds(60)));
+        ttl.put("userMemory", base.entryTtl(Duration.ofSeconds(30)));
+        return RedisCacheManager.builder(cf)
+                .cacheDefaults(base)
+                .withInitialCacheConfigurations(ttl)
+                .build();
     }
 }

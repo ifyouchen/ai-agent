@@ -122,7 +122,7 @@ rag:
     hyde:
       enabled: true            # true=保留 HyDE 检索质量；低延迟场景可关闭
     rewrite:
-      variants: 2              # 0=仅用原始问题；2=多角度改写，召回更充分但会增加一次 LLM 调用
+      variants: 0              # 0=仅用原始问题+HyDE；2=多角度改写（已改为0降低延迟）
 
   cache:
     enabled: true

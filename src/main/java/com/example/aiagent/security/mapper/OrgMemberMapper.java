@@ -39,5 +39,8 @@ public interface OrgMemberMapper {
 
     /** 统计用户加入的组织数 */
     int countByUserId(@Param("userId") String userId);
+
+    /** 按 orgId 批量删除所有成员 */
+    int deleteByOrgId(@Param("orgId") String orgId);
 }
 

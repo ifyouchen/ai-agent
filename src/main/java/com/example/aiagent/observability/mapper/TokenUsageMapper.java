@@ -43,5 +43,11 @@ public interface TokenUsageMapper {
                                                    @Param("offset") int offset);
 
     long countUserDetailsSince(@Param("userId") String userId,
-                               @Param("since") Instant since);
+                                @Param("since") Instant since);
+
+    /** 合并求和：一次查询得总成本 */
+    BigDecimal sumCostSince(@Param("since") Instant since);
+
+    /** 合并计数：一次查询得总调用数与错误数 */
+    Map<String, Object> countTotalAndErrorsSince(@Param("since") Instant since);
 }

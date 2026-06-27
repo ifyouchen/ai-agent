@@ -5,6 +5,9 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import * as api from '../services/api.js';
 import { useUiStore } from './ui.js';
+import { createTtlCache } from '../js/cache.js';
+
+const orgListCache = createTtlCache(60000);
 
 
 export const useOrgStore = defineStore('org', () => {
@@ -67,7 +70,9 @@ export const useOrgStore = defineStore('org', () => {
   async function loadOrgs() {
     orgLoading.value = true;
     try {
-      organizations.value = await api.listOrganizations();
+      const cached = orgListCache.get('list');
+      organizations.value = cached || await api.listOrganizations();
+      if (!cached) orgListCache.set('list', organizations.value);
       const preferredOrgId = resolvePreferredOrgId(organizations.value);
       currentOrgId.value = preferredOrgId;
       if (preferredOrgId) {
@@ -103,6 +108,7 @@ export const useOrgStore = defineStore('org', () => {
   }
 
   async function createOrg(name, description) {
+    orgListCache.invalidate('list');
     const org = await api.createOrganization(name, description);
     ui.showToast('success', `组织「${name}」已创建`);
     await loadOrgs();
@@ -110,18 +116,21 @@ export const useOrgStore = defineStore('org', () => {
   }
 
   async function updateOrg(orgId, name, description) {
+    orgListCache.invalidate('list');
     await api.updateOrganization(orgId, name, description);
     ui.showToast('success', '组织信息已更新');
     await loadOrgs();
   }
 
   async function deleteOrg(orgId) {
+    orgListCache.invalidate('list');
     await api.deleteOrganization(orgId);
     ui.showToast('success', '组织已删除');
     await loadOrgs();
   }
 
   async function leaveOrg(orgId) {
+    orgListCache.invalidate('list');
     await api.leaveOrganization(orgId);
     ui.showToast('success', '已退出组织');
     await loadOrgs();

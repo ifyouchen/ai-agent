@@ -202,4 +202,14 @@
         DELETE FROM kb_document WHERE kb_id = #{kbId}
     </delete>
 
+    <!-- 轻量列表投影：列表展示用，不含 file_hash/parse_error/file_path/allowed_roles 等重列 -->
+    <select id="findListByKbId" resultType="java.util.Map">
+        SELECT id, kb_id AS "kbId", name, doc_type AS "docType",
+               parse_status AS "parseStatus", chunk_count AS "chunkCount",
+               file_size AS "fileSize", created_at AS "createdAt"
+        FROM kb_document
+        WHERE kb_id = #{kbId}
+        ORDER BY created_at DESC
+    </select>
+
 </mapper>

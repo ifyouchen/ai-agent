@@ -14,6 +14,8 @@
  *   - 非 Admin 访问 /monitor → 重定向到 /chat
  */
 import { createRouter, createWebHashHistory } from 'vue-router';
+import NProgress from 'nprogress';
+import 'nprogress/nprogress.css';
 import { getToken, getUser } from '../services/api.js';
 
 // 懒加载各视图组件
@@ -79,10 +81,13 @@ const router = createRouter({
 
 // 全局前置守卫
 router.beforeEach((to) => {
+  NProgress.start();
+
   if (to.meta.public) return true;
 
   // 未登录 → 跳转登录页
   if (!getToken()) {
+    NProgress.done();
     const redirect = `/index.html#${to.fullPath}`;
     location.replace(`/login.html?redirect=${encodeURIComponent(redirect)}`);
     return false;
@@ -93,11 +98,15 @@ router.beforeEach((to) => {
     const user  = getUser();
     const roles = user?.roles || [];
     if (!roles.includes('ROLE_ADMIN')) {
+      NProgress.done();
       return { path: '/chat' };
     }
   }
 
   return true;
 });
+
+router.afterEach(() => NProgress.done());
+router.onError(() => NProgress.done());
 
 export default router;

@@ -131,7 +131,8 @@
 
 <script setup>
 import { computed, ref } from 'vue';
-import { copyText, formatMarkdown } from '../../js/utils.js';
+import { copyText } from '../../js/utils.js';
+import { formatMarkdown } from '../../js/markdown.js';
 import { useUiStore } from '../../stores/ui.js';
 
 const props = defineProps({

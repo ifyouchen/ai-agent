@@ -569,15 +569,26 @@ const activeSectionKey = computed(() => {
   return validKeys.includes(activeSection.value) ? activeSection.value : 'members';
 });
 
+const loadedSections = new Set();
+
 watch(() => org.currentOrgId, () => {
   activeSection.value = 'members';
   clearInvite();
+  loadedSections.clear();
   loadMembers();
-  loadInvitations();
-  loadMyInvitations();
-  loadMyJoinRequests();
-  loadJoinRequests();
+  loadSectionData(activeSection.value);
 }, { immediate: true });
+
+function loadSectionData(section) {
+  if (loadedSections.has(section)) return;
+  loadedSections.add(section);
+  if (section === 'invitations') loadInvitations();
+  if (section === 'myInvitations') loadMyInvitations();
+  if (section === 'myJoinRequests') loadMyJoinRequests();
+  if (section === 'orgJoinRequests') loadJoinRequests();
+}
+
+watch(activeSection, (sec) => loadSectionData(sec));
 
 onMounted(() => {
   const inviteToken = route.query.inviteToken || route.params.token;

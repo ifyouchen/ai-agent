@@ -12,6 +12,7 @@ import com.example.aiagent.rag.retrieval.Bm25Retriever;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 /**
  * 知识库管理服务
@@ -50,6 +53,10 @@ public class KnowledgeBaseService {
 
     @Autowired(required = false)
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired(required = false)
+    @Qualifier("ragRetrievalExecutor")
+    private Executor ragRetrievalExecutor;
 
     private static final String EMBEDDING_TABLE = "knowledge_base";
 
@@ -397,19 +404,29 @@ public class KnowledgeBaseService {
      */
     @Transactional(readOnly = true)
     public Map<String, Object> getStats(String tenantId, Long kbId) {
-        // 先校验归属
+        // 先校验归属（保留在主线程事务内）
         getKnowledgeBase(tenantId, kbId);
 
         Instant sevenDaysAgo = Instant.now().minus(7, ChronoUnit.DAYS);
+        Executor exec = ragRetrievalExecutor != null ? ragRetrievalExecutor : Runnable::run;
 
-        long docCount   = documentMapper.countByKbId(kbId);
-        long chunkCount = chunkMapper.countByKbIdAndIsActive(kbId, true);
-        long recentQueries = retrievalLogMapper
-                .countByTenantIdAndKbIdAndCreatedAtAfter(tenantId, kbId, sevenDaysAgo);
+        // 并行提交 5 个只读统计查询
+        var fDocCount = CompletableFuture.supplyAsync(() -> documentMapper.countByKbId(kbId), exec);
+        var fChunkCount = CompletableFuture.supplyAsync(() -> chunkMapper.countByKbIdAndIsActive(kbId, true), exec);
+        var fRecentQueries = CompletableFuture.supplyAsync(() ->
+                retrievalLogMapper.countByTenantIdAndKbIdAndCreatedAtAfter(tenantId, kbId, sevenDaysAgo), exec);
+        var fAnswerType = CompletableFuture.supplyAsync(() ->
+                retrievalLogMapper.countGroupByAnswerType(tenantId, kbId, sevenDaysAgo), exec);
+        var fRecentLogs = CompletableFuture.supplyAsync(() ->
+                retrievalLogMapper.findRecentByKbId(tenantId, kbId, 5), exec);
 
-        // 按 answerType 分组统计
-        List<Map<String, Object>> answerTypeRows = retrievalLogMapper
-                .countGroupByAnswerType(tenantId, kbId, sevenDaysAgo);
+        CompletableFuture.allOf(fDocCount, fChunkCount, fRecentQueries, fAnswerType, fRecentLogs).join();
+
+        long docCount = fDocCount.join();
+        long chunkCount = fChunkCount.join();
+        long recentQueries = fRecentQueries.join();
+        List<Map<String, Object>> answerTypeRows = fAnswerType.join();
+        List<RetrievalLog> recentLogs = fRecentLogs.join();
 
         Map<String, Long> answerStats = new HashMap<>();
         for (Map<String, Object> row : answerTypeRows) {
@@ -417,10 +434,6 @@ public class KnowledgeBaseService {
             Long   count = ((Number) row.get("cnt")).longValue();
             answerStats.put(type, count);
         }
-
-        // 获取最近 5 条查询记录摘要
-        List<RetrievalLog> recentLogs = retrievalLogMapper
-                .findRecentByKbId(tenantId, kbId, 5);
 
         List<Map<String, Object>> recentLogSummary = recentLogs.stream()
                 .map(l -> {

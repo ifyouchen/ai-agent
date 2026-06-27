@@ -65,7 +65,12 @@
       @retry="retryActiveRewriteTask"
       @dismiss="dismissRewriteTask"
     />
-    <ProjectCards title="最近作品" :projects="projects.slice(0, 6)" :converting-project-id="scriptConvertingProjectId || activeScriptProjectId" :exporting-project-id="projectExportingId" :deleting-project-id="projectDeletingId" @script="startScript" @export="downloadProjectExport" @delete="deleteProject" />
+    <template v-if="projectsLoading && !projects.length">
+      <div class="creation-grid">
+        <div v-for="i in 6" :key="i" class="loading-item-skeleton" style="flex:1 1 180px; min-width:160px; max-width:240px; height:120px;"></div>
+      </div>
+    </template>
+    <ProjectCards v-else title="最近作品" :projects="projects.slice(0, 6)" :converting-project-id="scriptConvertingProjectId || activeScriptProjectId" :exporting-project-id="projectExportingId" :deleting-project-id="projectDeletingId" @script="startScript" @export="downloadProjectExport" @delete="deleteProject" />
   </div>
 
   <div v-else-if="mode === 'projects'" class="creation-view">
@@ -528,16 +533,16 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import CreateProjectDialog from '../components/creation/CreateProjectDialog.vue';
 import CreationSelect from '../components/creation/CreationSelect.vue';
 import CreationTaskCard from '../components/creation/CreationTaskCard.vue';
 import ImportProjectDialog from '../components/creation/ImportProjectDialog.vue';
 import ProjectCards from '../components/creation/ProjectCards.vue';
-import RewriteCompareView from '../components/creation/RewriteCompareView.vue';
-import ScriptExportView from '../components/creation/ScriptExportView.vue';
-import ScriptWorkbenchView from '../components/creation/ScriptWorkbenchView.vue';
+const RewriteCompareView = defineAsyncComponent(() => import('../components/creation/RewriteCompareView.vue'));
+const ScriptExportView = defineAsyncComponent(() => import('../components/creation/ScriptExportView.vue'));
+const ScriptWorkbenchView = defineAsyncComponent(() => import('../components/creation/ScriptWorkbenchView.vue'));
 import TaskHistoryPanel from '../components/creation/TaskHistoryPanel.vue';
 import { storyApi } from '../services/storyApi.js';
 import { useUiStore } from '../stores/ui.js';
@@ -546,6 +551,7 @@ const route = useRoute();
 const router = useRouter();
 const ui = useUiStore();
 const projects = ref([]);
+const projectsLoading = ref(false);
 const project = ref(null);
 const chapters = ref([]);
 const currentChapter = ref(null);
@@ -918,20 +924,33 @@ function selectedExportSceneCount(episodes) {
   return episodes.flatMap(ep => ep.scenes || []).length;
 }
 
+let loadAbortController = null;
+
 onMounted(loadByMode);
 onUnmounted(() => {
+  loadAbortController?.abort();
   stopActiveTaskPolling();
   stopRewritePolling();
 });
 watch(() => route.fullPath, loadByMode);
 
 async function loadByMode() {
+  loadAbortController?.abort();
+  if (loadAbortController?.signal?.aborted) return;
+  loadAbortController = new AbortController();
   try {
     if (mode.value === 'projects' && route.query.import === '1') showImport.value = true;
-    if (mode.value === 'home' || mode.value === 'projects') projects.value = await storyApi.listProjects();
-    if (mode.value === 'projects') await loadTaskHistory();
-    if (['home', 'projects', 'editor'].includes(mode.value)) await loadActiveTask();
-    if (['home', 'projects', 'editor'].includes(mode.value)) await loadActiveRewriteTask();
+    if (mode.value === 'home' || mode.value === 'projects') {
+      projectsLoading.value = true;
+      const result = await Promise.all([
+        storyApi.listProjects(),
+        mode.value === 'projects' ? loadTaskHistory() : Promise.resolve(),
+        (['home', 'projects', 'editor'].includes(mode.value)) ? loadActiveTask() : Promise.resolve(),
+        (['home', 'projects', 'editor'].includes(mode.value)) ? loadActiveRewriteTask() : Promise.resolve(),
+      ]);
+      projects.value = result[0];
+      projectsLoading.value = false;
+    }
     if (mode.value === 'editor') await loadProject();
     if (mode.value === 'rewrite') {
       rewriteTask.value = await storyApi.getRewrite(route.params.taskId);
@@ -941,6 +960,7 @@ async function loadByMode() {
     }
     if (mode.value === 'script' || mode.value === 'export') await loadDraft();
   } catch (err) {
+    projectsLoading.value = false;
     ui.showToast('error', err.message || '加载失败');
   }
 }

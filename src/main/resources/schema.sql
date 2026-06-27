@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS kb_knowledge_base (
     UNIQUE (tenant_id, name)
 );
 CREATE INDEX IF NOT EXISTS idx_kb_tenant ON kb_knowledge_base(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_kb_tenant_created ON kb_knowledge_base(tenant_id, created_at DESC);
 
 -- ============================================================
 -- 2. 文档表
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS kb_document (
     indexed_at       TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_doc_kb_id  ON kb_document(kb_id);
+CREATE INDEX IF NOT EXISTS idx_doc_kb_created ON kb_document(kb_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_doc_tenant ON kb_document(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_doc_status ON kb_document(parse_status);
 CREATE INDEX IF NOT EXISTS idx_doc_hash   ON kb_document(file_hash);
@@ -91,6 +93,7 @@ CREATE TABLE IF NOT EXISTS kb_retrieval_log (
 );
 CREATE INDEX IF NOT EXISTS idx_log_tenant_time ON kb_retrieval_log(tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_log_kb_id       ON kb_retrieval_log(kb_id);
+CREATE INDEX IF NOT EXISTS idx_log_tenant_kb_time ON kb_retrieval_log(tenant_id, kb_id, created_at DESC);
 
 -- ============================================================
 -- 5. Token 用量表
@@ -116,6 +119,8 @@ CREATE TABLE IF NOT EXISTS llm_token_usage (
 CREATE INDEX IF NOT EXISTS idx_usage_user_id   ON llm_token_usage(user_id);
 CREATE INDEX IF NOT EXISTS idx_usage_called_at ON llm_token_usage(called_at DESC);
 CREATE INDEX IF NOT EXISTS idx_usage_model     ON llm_token_usage(model_name);
+CREATE INDEX IF NOT EXISTS idx_usage_user_time  ON llm_token_usage(user_id, called_at DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_time_model ON llm_token_usage(called_at DESC, model_name);
 
 -- ============================================================
 -- 6. 用户账户表

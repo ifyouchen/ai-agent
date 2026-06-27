@@ -81,7 +81,7 @@
 
 .usage-kpis {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -107,6 +107,22 @@
   font-size: 22px;
   line-height: 1.2;
   word-break: break-word;
+}
+
+.usage-kpi small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.usage-kpi-today {
+  border-color: color-mix(in srgb, var(--primary) 26%, var(--border));
+  background: linear-gradient(180deg, #f7f9ff 0%, #fff 100%);
+}
+
+.usage-kpi-today span,
+.usage-kpi-today strong {
+  color: var(--primary);
 }
 
 .usage-panel {

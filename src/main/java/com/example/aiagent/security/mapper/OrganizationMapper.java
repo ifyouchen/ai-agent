@@ -5,6 +5,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -36,5 +37,8 @@ public interface OrganizationMapper {
 
     /** 组织总数（管理员 Dashboard 用） */
     long countAll();
+
+    /** 按 userId 查询组织详情（含名称、类型、角色），JOIN 单次查询替代 N+1 */
+    List<Map<String, Object>> findOrgsWithDetailByUserId(@Param("userId") String userId);
 }
 

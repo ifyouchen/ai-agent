@@ -39,22 +39,22 @@
               分享
             </button>
           </template>
-          <router-link class="topbar-btn topbar-chat-link" to="/chat">对话</router-link>
-          <router-link class="topbar-btn" to="/creation">创作</router-link>
+          <router-link class="topbar-btn topbar-chat-link" to="/chat" @click="handleTopbarNavClick">对话</router-link>
+          <router-link class="topbar-btn" to="/creation" @click="handleTopbarNavClick">创作</router-link>
           <!-- Fix 14: 有待处理通知时显示红点角标 -->
-          <router-link class="topbar-btn topbar-org-link topbar-btn-notice" to="/org">
+          <router-link class="topbar-btn topbar-org-link topbar-btn-notice" to="/org" @click="handleTopbarNavClick">
             组织设置
             <span v-if="org.pendingNoticeCount > 0" class="topbar-notice-badge">{{ org.pendingNoticeCount }}</span>
           </router-link>
-          <router-link class="topbar-btn topbar-kb-link" to="/kb">知识库</router-link>
+          <router-link class="topbar-btn topbar-kb-link" to="/kb" @click="handleTopbarNavClick">知识库</router-link>
           <template v-if="auth.isAdmin">
-            <router-link class="topbar-btn topbar-admin-link" to="/admin/dashboard">管理后台</router-link>
+            <router-link class="topbar-btn topbar-admin-link" to="/admin/dashboard" @click="handleTopbarNavClick">管理后台</router-link>
           </template>
         </div>
       </div>
 
       <!-- 页面内容区 -->
-      <RouterView />
+      <RouterView :key="route.fullPath" />
     </main>
 
     <!-- 全局 Toast + Dialog -->
@@ -142,10 +142,8 @@ let _noticeTimer = null;
 onMounted(async () => {
   setupResponsiveSidebar();
 
-  // 初始化数据
-  await auth.refreshProfile();
-  await org.loadOrgs();
-  await sess.init();
+  // 初始化数据 - 前三者独立，parallelize
+  await Promise.all([ auth.refreshProfile(), org.loadOrgs(), sess.init() ]);
   await syncKnowledgeBasesForOrg(org.currentOrgId);
 
   // 全局代码块复制处理
@@ -198,6 +196,7 @@ async function syncKnowledgeBasesForOrg(orgId) {
 
 watch(() => route.fullPath, (path) => {
   applyRouteSidebarPreference(path);
+  shareDialogVisible.value = false;
 });
 
 function setupResponsiveSidebar() {
@@ -228,12 +227,18 @@ function closeSidebar() {
   if (isMobile.value) sidebarCollapsed.value = true;
 }
 
+function handleTopbarNavClick() {
+  shareDialogVisible.value = false;
+  shareInfo.value = null;
+  closeSidebar();
+}
+
 function applyRouteSidebarPreference(path) {
   if (String(path || '').startsWith('/creation')) {
     sidebarCollapsed.value = true;
     return;
   }
-  if (isMobile.value) closeSidebar();
+  closeSidebar();
 }
 
 function openShareDialog() {

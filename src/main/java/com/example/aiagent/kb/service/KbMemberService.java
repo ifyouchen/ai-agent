@@ -6,6 +6,8 @@ import com.example.aiagent.kb.mapper.KnowledgeBaseMapper;
 import com.example.aiagent.security.mapper.OrgMemberMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,6 +55,7 @@ public class KbMemberService {
      *
      * @return 用户角色，如果无权访问则返回 null
      */
+    @Cacheable(cacheNames = "kbAccess", key = "#kbId + ':' + #userId", unless = "#result == null")
     public String checkAccess(Long kbId, String userId, String orgId) {
         // 1. 检查显式授权
         var explicitRole = kbMemberMapper.findRoleByKbIdAndUserId(kbId, userId);
@@ -121,6 +124,7 @@ public class KbMemberService {
      * @param grantedBy 授权人 userId
      */
     @Transactional
+    @CacheEvict(cacheNames = "kbAccess", key = "#kbId + ':' + #userId")
     public void addMember(Long kbId, String userId, String role, String grantedBy) {
         // 校验授权人权限
         if (!canManageMembers(kbId, grantedBy, null)) {
@@ -160,6 +164,7 @@ public class KbMemberService {
      * 移除知识库成员
      */
     @Transactional
+    @CacheEvict(cacheNames = {"kbAccess", "kb"}, allEntries = true)
     public void removeMember(Long kbId, String userId, String operatorId) {
         if (!canManageMembers(kbId, operatorId, null)) {
             throw new IllegalArgumentException("只有知识库拥有者才能移除成员");

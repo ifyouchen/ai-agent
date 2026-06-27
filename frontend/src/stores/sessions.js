@@ -9,7 +9,7 @@
 import { defineStore } from 'pinia';
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 import * as api from '../services/api.js';
-import { formatMarkdown } from '../js/utils.js';
+import { formatMarkdown } from '../js/markdown.js';
 import { useUiStore } from './ui.js';
 import { useOrgStore } from './org.js';
 import {
@@ -241,14 +241,31 @@ export const useSessionStore = defineStore('sessions', () => {
         sessionMessages[id] = msgs.map(m => ({
           id: m.id || generateId(),
           role: m.role,
-          html: formatMarkdown(m.content || ''),
+          html: escapeHtml(m.content || ''),
           text: m.content || '',
           timestamp: m.createdAt ? new Date(m.createdAt).getTime() : Date.now(),
           durationMs: 0,
           feedback: m.feedback || null,
         }));
+        hydrateMessagesAsync(id, msgs);
       }
     } catch {}
+  }
+
+  function hydrateMessagesAsync(sessionId, msgs) {
+    let index = 0;
+    const arr = sessionMessages[sessionId];
+    function hydrateNext() {
+      if (index >= msgs.length || !arr) return;
+      const m = msgs[index];
+      if (m.content && arr[index]) {
+        arr[index].html = formatMarkdown(m.content);
+      }
+      index++;
+      const scheduleFn = typeof requestIdleCallback !== 'undefined' ? requestIdleCallback : setTimeout;
+      scheduleFn(hydrateNext, { timeout: 100 });
+    }
+    hydrateNext();
   }
 
   // ── 初始化 ────────────────────────────────────────────────────────────
@@ -265,9 +282,6 @@ export const useSessionStore = defineStore('sessions', () => {
       sessionId.value = id;
       messages.value  = sessionMessages[id] || [];
     }
-
-    watch(messages, scheduleSave, { deep: true });
-    watch(sessions, scheduleSave, { deep: true });
   }
 
   // ── 会话操作 ──────────────────────────────────────────────────────────
