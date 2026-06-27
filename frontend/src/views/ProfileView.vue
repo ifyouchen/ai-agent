@@ -16,6 +16,23 @@
         </div>
       </div>
 
+      <!-- 用量入口卡片 -->
+      <router-link class="profile-action-card" to="/profile/usage">
+        <div class="profile-action-icon">
+          <svg viewBox="0 0 24 24" fill="none" width="18" height="18">
+            <path d="M5 19V9M12 19V5M19 19v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M4 19h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="profile-action-main">
+          <strong>Token 用量</strong>
+          <span>查看近 30 天消耗趋势、统计和会话明细</span>
+        </div>
+        <svg class="profile-action-arrow" viewBox="0 0 24 24" fill="none" width="18" height="18">
+          <path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </router-link>
+
       <!-- 基本信息卡片 -->
       <div class="profile-card">
         <div class="profile-card-header">

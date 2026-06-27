@@ -3,6 +3,7 @@ package com.example.aiagent.kb.service;
 import com.example.aiagent.kb.entity.KbMember;
 import com.example.aiagent.kb.mapper.KbMemberMapper;
 import com.example.aiagent.kb.mapper.KnowledgeBaseMapper;
+import com.example.aiagent.security.mapper.OrgMemberMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,7 +27,8 @@ import java.util.List;
  *   OWNER    │    ✓     │    ✓    │    ✓    │    ✓    │    ✓
  *   EDITOR   │    ✓     │    ✓    │    ✓    │    ✗    │    ✗
  *   VIEWER   │    ✓     │    ✗    │    ✗    │    ✗    │    ✗
- *   组织成员(无显式授权) │    ✓     │    ✗    │    ✗    │    ✗    │    ✗
+ *   组织OWNER/ADMIN(无显式授权) │ ✓   │    ✓    │    ✓    │    ✓    │    ✓
+ *   组织MEMBER(无显式授权)      │ ✓   │    ✗    │    ✗    │    ✗    │    ✗
  * </pre>
  */
 @Slf4j
@@ -36,6 +38,7 @@ public class KbMemberService {
 
     private final KbMemberMapper kbMemberMapper;
     private final KnowledgeBaseMapper knowledgeBaseMapper;
+    private final OrgMemberMapper orgMemberMapper;
 
     // ── 权限检查 ──────────────────────────────────────────────
 
@@ -64,14 +67,11 @@ public class KbMemberService {
             return "OWNER";
         }
 
-        // 3. 非创建者 → 检查组织成员权限
+        // 3. 非创建者 → 按组织角色继承知识库权限
         if (kb.isPresent() && orgId != null && kb.get().getTenantId().equals(orgId)) {
-            // 个人组织：唯一成员拥有完整权限（OWNER）
-            // 企业组织：普通成员默认只读（VIEWER）
-            if (orgId.startsWith("org_")) {
-                return "OWNER";
-            }
-            return "VIEWER";  // 企业组织成员默认只读
+            return orgMemberMapper.findByOrgIdAndUserId(orgId, userId)
+                    .map(member -> inheritedKbRole(member.getRole()))
+                    .orElse(null);
         }
 
         return null;  // 无权访问
@@ -198,6 +198,14 @@ public class KbMemberService {
             case "EDITOR" -> 2;
             case "VIEWER" -> 1;
             default -> 0;
+        };
+    }
+
+    private String inheritedKbRole(String orgRole) {
+        return switch (orgRole) {
+            case "OWNER", "ADMIN" -> "OWNER";
+            case "MEMBER" -> "VIEWER";
+            default -> null;
         };
     }
 }

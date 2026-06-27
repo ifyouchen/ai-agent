@@ -22,6 +22,7 @@ const KnowledgeBaseView = () => import('../views/KnowledgeBaseView.vue');
 const OrgView          = () => import('../views/OrgView.vue');
 // /invite/:token 复用 OrgView，组件内读取 token 调用接受邀请 API
 const ProfileView      = () => import('../views/ProfileView.vue');
+const TokenUsageView   = () => import('../views/TokenUsageView.vue');
 const MainLayout       = () => import('../components/layout/MainLayout.vue');
 const ShareView        = () => import('../views/ShareView.vue');
 const CreationView     = () => import('../views/CreationView.vue');
@@ -66,6 +67,7 @@ const routes = [
       { path: 'org',           component: OrgView,           meta: { title: '组织设置' } },
       { path: 'invite/:token', component: OrgView,           meta: { title: '组织邀请' } },
       { path: 'profile', component: ProfileView,       meta: { title: '个人资料' } },
+      { path: 'profile/usage', component: TokenUsageView, meta: { title: 'Token 用量' } },
     ],
   },
 ];

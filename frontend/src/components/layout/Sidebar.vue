@@ -162,6 +162,13 @@
             </svg>
             个人资料
           </router-link>
+          <router-link class="user-dropdown-item" to="/profile/usage" @click="handleProfileClick">
+            <svg viewBox="0 0 24 24" fill="none" width="14" height="14">
+              <path d="M5 19V9M12 19V5M19 19v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M4 19h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            Token 用量
+          </router-link>
           <button class="user-dropdown-item danger" type="button" @click="auth.logout">
             <svg viewBox="0 0 24 24" fill="none" width="14" height="14">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"

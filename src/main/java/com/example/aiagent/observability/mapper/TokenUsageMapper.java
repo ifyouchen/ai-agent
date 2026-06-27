@@ -35,4 +35,13 @@ public interface TokenUsageMapper {
     /** 按天聚合个人费用（个人趋势折线图），返回 [{day, costUsd, totalTokens}] */
     List<Map<String, Object>> aggregateDailyByUserSince(@Param("userId") String userId,
                                                          @Param("since") Instant since);
+
+    /** 分页查询个人 Token 调用明细。 */
+    List<Map<String, Object>> listUserDetailsSince(@Param("userId") String userId,
+                                                   @Param("since") Instant since,
+                                                   @Param("limit") int limit,
+                                                   @Param("offset") int offset);
+
+    long countUserDetailsSince(@Param("userId") String userId,
+                               @Param("since") Instant since);
 }

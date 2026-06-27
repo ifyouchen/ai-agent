@@ -130,7 +130,8 @@ public class TokenUsageService {
      * 个人成本报表：按天统计近 N 天费用趋势（用于个人折线图）
      */
     public List<Map<String, Object>> getUserDailyCostReport(String userId, int days) {
-        Instant since = shanghaiNaturalDaysStart(days);
+        int safeDays = clampPersonalDays(days);
+        Instant since = shanghaiNaturalDaysStart(safeDays);
         List<Map<String, Object>> rows = tokenUsageMapper.aggregateDailyByUserSince(userId, since);
         List<Map<String, Object>> report = new ArrayList<>();
         for (Map<String, Object> row : rows) {
@@ -165,7 +166,7 @@ public class TokenUsageService {
      * 当前用户近 N 个上海自然日的 Token 区间汇总。
      */
     public Map<String, Object> getUserUsageSummary(String userId, int days) {
-        int safeDays = Math.max(1, days);
+        int safeDays = clampPersonalDays(days);
         Instant since = shanghaiNaturalDaysStart(safeDays);
         Map<String, Object> row = tokenUsageMapper.aggregateUserSummarySince(userId, since);
         Map<String, Object> summary = new LinkedHashMap<>();
@@ -184,6 +185,30 @@ public class TokenUsageService {
     }
 
     /**
+     * 当前用户近 N 天 Token 明细分页。
+     */
+    public Map<String, Object> getUserUsageDetailPage(String userId, int days, int page, int size) {
+        int safeDays = clampPersonalDays(days);
+        int safePage = Math.max(1, page);
+        int safeSize = Math.min(50, Math.max(1, size));
+        int offset = (safePage - 1) * safeSize;
+        Instant since = shanghaiNaturalDaysStart(safeDays);
+
+        long total = tokenUsageMapper.countUserDetailsSince(userId, since);
+        List<Map<String, Object>> rows =
+                tokenUsageMapper.listUserDetailsSince(userId, since, safeSize, offset);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("days", safeDays);
+        result.put("page", safePage);
+        result.put("size", safeSize);
+        result.put("total", total);
+        result.put("totalPages", total == 0 ? 0 : (long) Math.ceil((double) total / safeSize));
+        result.put("items", formatDetailRows(rows));
+        return result;
+    }
+
+    /**
      * 查询近 N 分钟的错误率（用于告警判断）
      */
     public double getRecentErrorRate(int minutes) {
@@ -196,6 +221,10 @@ public class TokenUsageService {
     private Instant shanghaiNaturalDaysStart(int days) {
         int safeDays = Math.max(1, days);
         return shanghaiDayStart(safeDays - 1L);
+    }
+
+    private int clampPersonalDays(int days) {
+        return Math.min(30, Math.max(1, days));
     }
 
     private Instant shanghaiDayStart(long daysAgo) {
@@ -221,6 +250,43 @@ public class TokenUsageService {
             return formatShanghai(offsetDateTime.toInstant());
         }
         return String.valueOf(value);
+    }
+
+    private List<Map<String, Object>> formatDetailRows(List<Map<String, Object>> rows) {
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", row.get("id"));
+            item.put("traceId", row.get("traceId"));
+            item.put("sessionId", row.get("sessionId"));
+            item.put("modelName", row.get("modelName"));
+            item.put("scenario", row.get("scenario"));
+            item.put("scenarioLabel", scenarioLabel(row.get("scenario")));
+            item.put("inputTokens", toLong(row.get("inputTokens")));
+            item.put("outputTokens", toLong(row.get("outputTokens")));
+            item.put("totalTokens", toLong(row.get("totalTokens")));
+            item.put("costUsd", toBigDecimal(row.get("costUsd")));
+            item.put("durationMs", row.get("durationMs"));
+            item.put("success", row.get("success"));
+            item.put("errorMessage", row.get("errorMessage"));
+            item.put("inputSnippet", row.get("inputSnippet"));
+            item.put("outputSnippet", row.get("outputSnippet"));
+            item.put("calledAt", formatNullableShanghai(row.get("calledAt")));
+            items.add(item);
+        }
+        return items;
+    }
+
+    private String scenarioLabel(Object value) {
+        String scenario = value == null ? "" : String.valueOf(value);
+        return switch (scenario) {
+            case "chat" -> "对话";
+            case "rag" -> "知识库问答";
+            case "agent" -> "工具调用";
+            case "react" -> "专家模式";
+            case "document_embedding" -> "文档解析";
+            default -> scenario.isBlank() ? "未知" : scenario;
+        };
     }
 
     private long toLong(Object value) {

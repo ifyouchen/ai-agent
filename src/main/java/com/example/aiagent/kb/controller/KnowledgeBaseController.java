@@ -220,7 +220,7 @@ public class KnowledgeBaseController {
 
             if (!kbMemberService.canEdit(kbId, userId, tenantId)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(Map.of("error", "您没有编辑权限，需要 EDITOR 或 OWNER 角色"));
+                        .body(Map.of("error", "您没有编辑权限，需要知识库 EDITOR/OWNER，或组织 ADMIN/OWNER 角色"));
             }
 
             if (file.isEmpty()) {
@@ -229,7 +229,7 @@ public class KnowledgeBaseController {
 
             // 异步解析：立即返回 documentId，后台完成解析和向量化
             // 前端可通过 GET /api/v1/kb/{kbId}/documents 轮询 parseStatus 获取进度
-            Long documentId = ingestService.ingestFileAsync(file, tenantId, kbId);
+            Long documentId = ingestService.ingestFileAsync(file, tenantId, kbId, userId);
             log.info("文档已提交异步解析 userId={} tenantId={} kbId={} file={} documentId={}",
                     userId, tenantId, kbId, file.getOriginalFilename(), documentId);
             return ResponseEntity.ok(Map.of(
@@ -367,7 +367,7 @@ public class KnowledgeBaseController {
 
             if (!kbMemberService.canEdit(kbId, userId, tenantId)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(Map.of("error", "您没有编辑权限，需要 EDITOR 或 OWNER 角色"));
+                        .body(Map.of("error", "您没有编辑权限，需要知识库 EDITOR/OWNER，或组织 ADMIN/OWNER 角色"));
             }
 
             kbService.deleteDocument(tenantId, docId);
@@ -395,10 +395,10 @@ public class KnowledgeBaseController {
 
             if (!kbMemberService.canEdit(kbId, userId, tenantId)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(Map.of("error", "您没有编辑权限，需要 EDITOR 或 OWNER 角色"));
+                        .body(Map.of("error", "您没有编辑权限，需要知识库 EDITOR/OWNER，或组织 ADMIN/OWNER 角色"));
             }
 
-            kbService.retryDocument(tenantId, docId);
+            kbService.retryDocument(tenantId, docId, userId);
             return ResponseEntity.ok(Map.of("message", "已重新提交解析", "docId", docId));
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));

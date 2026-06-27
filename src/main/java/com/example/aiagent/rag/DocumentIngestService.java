@@ -6,6 +6,8 @@ import com.example.aiagent.kb.entity.KnowledgeBase;
 import com.example.aiagent.kb.mapper.ChunkMapper;
 import com.example.aiagent.kb.mapper.DocumentMapper;
 import com.example.aiagent.kb.mapper.KnowledgeBaseMapper;
+import com.example.aiagent.observability.model.LlmCallContext;
+import com.example.aiagent.observability.service.TokenUsageService;
 import com.example.aiagent.rag.model.RetrievedChunk;
 import com.example.aiagent.rag.retrieval.Bm25Retriever;
 import dev.langchain4j.data.segment.TextSegment;
@@ -29,7 +31,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
+import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 知识库文档导入服务
@@ -62,6 +66,7 @@ public class DocumentIngestService {
     private final DocumentMapper documentMapper;
     private final ChunkMapper chunkMapper;
     private final KnowledgeBaseMapper knowledgeBaseMapper;
+    private final TokenUsageService tokenUsageService;
 
     /** BM25 检索器，required=false：未启用时 Bean 不存在，注入 null，不影响启动 */
     @Autowired(required = false)
@@ -88,6 +93,9 @@ public class DocumentIngestService {
 
     @Value("${qianfan.embedding.model:bge-large-zh}")
     private String embeddingModelName;
+
+    @Value("${qianfan.embedding.price-per-million-tokens:0}")
+    private double embeddingPricePerMillionTokens;
 
     /**
      * 是否在日志中打印切片正文预览。
@@ -138,6 +146,10 @@ public class DocumentIngestService {
      * @return documentId（可用于前端轮询状态）
      */
     public Long ingestFileAsync(MultipartFile file, String tenantId, Long kbId) throws IOException {
+        return ingestFileAsync(file, tenantId, kbId, null);
+    }
+
+    public Long ingestFileAsync(MultipartFile file, String tenantId, Long kbId, String operatorUserId) throws IOException {
         validateKnowledgeBase(tenantId, kbId);
 
         // 1. 保存文件到持久化临时目录（不能用系统临时文件，异步线程运行时文件还需存在）
@@ -158,7 +170,7 @@ public class DocumentIngestService {
         // 通过 Spring 代理调用（确保 @Async 生效，避免同类自调用绕过 AOP）
         applicationContext.getBean(DocumentIngestService.class)
                 .doIngestAsync(savedFile, tenantId, kbId, file.getOriginalFilename(),
-                        file.getSize(), file.getContentType(), docEntity.getId(), asyncDir);
+                        file.getSize(), file.getContentType(), docEntity.getId(), asyncDir, operatorUserId);
 
         log.info("文档已提交异步解析 documentId={} tenantId={} kbId={} file={}",
                 docEntity.getId(), tenantId, kbId, file.getOriginalFilename());
@@ -171,7 +183,7 @@ public class DocumentIngestService {
     @Async("documentIngestExecutor")
     public void doIngestAsync(Path filePath, String tenantId, Long kbId,
                               String fileName, Long fileSize, String contentType,
-                              Long docEntityId, Path asyncDir) {
+                              Long docEntityId, Path asyncDir, String operatorUserId) {
         boolean succeeded = false;  // Fix 3: 追踪成功状态，失败时保留文件以供重试
         try {
             log.info("[RAG][开始] 后台导入文档 docId={} tenantId={} kbId={} file={} size={} contentType={}",
@@ -207,7 +219,7 @@ public class DocumentIngestService {
 
             // 切片 + 向量化 + 写入 PgVector / Lucene
             int chunkCount = ingestSingleDocument(document, tenantId, kbId,
-                    fileName, fileSize, docEntityId);
+                    fileName, fileSize, docEntityId, operatorUserId);
 
             // 完成
             documentMapper.updateParseStatus(docEntityId, "DONE");
@@ -236,6 +248,10 @@ public class DocumentIngestService {
      */
     @Async("documentIngestExecutor")
     public void retryIngestAsync(Document doc) {
+        retryIngestAsync(doc, null);
+    }
+
+    public void retryIngestAsync(Document doc, String operatorUserId) {
         if (doc.getFilePath() == null || doc.getFilePath().isBlank()) {
             log.warn("[RAG][重试失败] 文档无存储路径，无法重试 docId={}", doc.getId());
             documentMapper.updateParseStatusWithError(doc.getId(), "FAILED",
@@ -252,7 +268,7 @@ public class DocumentIngestService {
         log.info("[RAG][重试] 开始重新解析文档 docId={} path={}", doc.getId(), doc.getFilePath());
         applicationContext.getBean(DocumentIngestService.class)
                 .doIngestAsync(filePath, doc.getTenantId(), doc.getKbId(),
-                        doc.getName(), doc.getFileSize(), null, doc.getId(), filePath.getParent());
+                        doc.getName(), doc.getFileSize(), null, doc.getId(), filePath.getParent(), operatorUserId);
     }
 
     /**
@@ -398,7 +414,7 @@ public class DocumentIngestService {
 
             // 6. 切片 + 持久化
             int chunkCount = ingestSingleDocument(document, tenantId, kbId,
-                    fileName, fileSize, docEntity.getId());
+                    fileName, fileSize, docEntity.getId(), null);
 
             // 7. 更新 Document 状态 → DONE，更新 chunkCount
             docEntity.setParseStatus("DONE");
@@ -429,6 +445,14 @@ public class DocumentIngestService {
                                      String tenantId, Long kbId,
                                      String fileName, Long fileSize,
                                      Long docEntityId) {
+        return ingestSingleDocument(document, tenantId, kbId, fileName, fileSize, docEntityId, null);
+    }
+
+    private int ingestSingleDocument(dev.langchain4j.data.document.Document document,
+                                     String tenantId, Long kbId,
+                                     String fileName, Long fileSize,
+                                     Long docEntityId,
+                                     String operatorUserId) {
         // 切片
         var splitter = dev.langchain4j.data.document.splitter.DocumentSplitters
                 .recursive(chunkSize, chunkOverlap);
@@ -493,7 +517,7 @@ public class DocumentIngestService {
                 docEntityId, embeddingModelName, segments.size());
 
         // 向量化 + 存入 PgVector（分批调用，避免超出 API 单次批次限制）
-        embedAllInBatches(segments);
+        embedAllInBatches(segments, operatorUserId, docEntityId, fileName);
 
         // 同步索引到 Lucene（BM25）
         if (bm25Retriever != null && bm25Retriever.isAvailable()) {
@@ -577,6 +601,11 @@ public class DocumentIngestService {
      * @param segments 需要向量化并存储的所有切片
      */
     private void embedAllInBatches(List<TextSegment> segments) {
+        embedAllInBatches(segments, null, null, null);
+    }
+
+    private void embedAllInBatches(List<TextSegment> segments, String operatorUserId,
+                                   Long docEntityId, String fileName) {
         int total = segments.size();
         int batchSize = Math.max(1, embeddingBatchSize);
         int totalBatches = (int) Math.ceil((double) total / batchSize);
@@ -592,6 +621,7 @@ public class DocumentIngestService {
                 log.info("[Embed] 批次 {}/{} 开始，范围 {}-{}，本批 {} 条",
                         batchNo, totalBatches, start, end - 1, batch.size());
                 var embeddings = embeddingModel.embedAll(batch).content();
+                recordEmbeddingTokenUsage(operatorUserId, docEntityId, fileName, batch, batchNo);
                 embeddingStore.addAll(embeddings, batch);
                 log.info("[Embed] 批次 {}/{} 完成，范围 {}-{}，已写入向量库 {}/{}",
                         batchNo, totalBatches, start, end - 1, end, total);
@@ -601,6 +631,41 @@ public class DocumentIngestService {
             }
         }
         log.info("[Embed] 向量化完成，共 {} 个切片已写入向量库", total);
+    }
+
+    private void recordEmbeddingTokenUsage(String operatorUserId, Long docEntityId,
+                                           String fileName, List<TextSegment> batch, int batchNo) {
+        if (operatorUserId == null || operatorUserId.isBlank() || batch == null || batch.isEmpty()) {
+            return;
+        }
+        int inputTokens = batch.stream()
+                .map(TextSegment::text)
+                .filter(text -> text != null && !text.isBlank())
+                .mapToInt(this::estimateTokenCount)
+                .sum();
+        if (inputTokens <= 0) return;
+        double costUsd = inputTokens * Math.max(0, embeddingPricePerMillionTokens) / 1_000_000.0;
+        String sessionId = docEntityId != null ? "document:" + docEntityId : null;
+        String snippet = "文档解析向量化"
+                + (fileName != null ? "：" + fileName : "")
+                + "，批次 " + batchNo + "，切片 " + batch.size();
+        LlmCallContext ctx = LlmCallContext.builder()
+                .traceId("doc-ingest-" + (docEntityId != null ? docEntityId : "legacy")
+                        + "-" + batchNo + "-" + UUID.randomUUID().toString().substring(0, 8))
+                .sessionId(sessionId)
+                .userId(operatorUserId)
+                .modelName(embeddingModelName)
+                .scenario("document_embedding")
+                .inputTokens(inputTokens)
+                .outputTokens(0)
+                .durationMs(0)
+                .success(true)
+                .inputSnippet(snippet)
+                .outputSnippet("")
+                .costUsd(costUsd)
+                .startTime(Instant.now())
+                .build();
+        tokenUsageService.saveAsync(ctx);
     }
 
     private void logChunkResult(Long docEntityId, String tenantId, Long kbId,

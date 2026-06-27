@@ -265,6 +265,10 @@ public class KnowledgeBaseService {
      * @throws IllegalStateException    若文档状态不是 FAILED
      */
     public void retryDocument(String tenantId, Long docId) {
+        retryDocument(tenantId, docId, null);
+    }
+
+    public void retryDocument(String tenantId, Long docId, String operatorUserId) {
         log.info("开始重试文档解析 docId={} tenantId={}", docId, tenantId);
         Document doc = documentMapper.findById(docId)
                 .orElseThrow(() -> new IllegalArgumentException("文档不存在：docId=" + docId));
@@ -283,7 +287,7 @@ public class KnowledgeBaseService {
         documentMapper.updateParseStatusWithError(docId, "PENDING", null);
 
         // 异步重新解析
-        documentIngestService.retryIngestAsync(doc);
+        documentIngestService.retryIngestAsync(doc, operatorUserId);
 
         log.info("文档重试已提交 docId={} kbId={} name={}", docId, doc.getKbId(), doc.getName());
     }

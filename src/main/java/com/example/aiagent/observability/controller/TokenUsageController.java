@@ -53,10 +53,42 @@ public class TokenUsageController {
             @AuthenticationPrincipal String userId,
             @RequestParam(defaultValue = "7") int days) {
 
-        if (days < 1 || days > 90) {
+        if (!isValidPersonalDays(days)) {
             return ResponseEntity.badRequest().build();
         }
         return ResponseEntity.ok(tokenUsageService.getUserDailyCostReport(userId, days));
+    }
+
+    /**
+     * 查看自己近 N 天 Token 汇总（普通用户可用，最多 30 天）
+     * GET /api/v1/token-usage/my/summary?days=7
+     */
+    @GetMapping("/api/v1/token-usage/my/summary")
+    public ResponseEntity<Map<String, Object>> myUsageSummary(
+            @AuthenticationPrincipal String userId,
+            @RequestParam(defaultValue = "7") int days) {
+
+        if (!isValidPersonalDays(days)) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(tokenUsageService.getUserUsageSummary(userId, days));
+    }
+
+    /**
+     * 查看自己近 N 天 Token 明细（普通用户可用，最多 30 天）
+     * GET /api/v1/token-usage/my/details?days=7&page=1&size=10
+     */
+    @GetMapping("/api/v1/token-usage/my/details")
+    public ResponseEntity<Map<String, Object>> myUsageDetails(
+            @AuthenticationPrincipal String userId,
+            @RequestParam(defaultValue = "7") int days,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size) {
+
+        if (!isValidPersonalDays(days) || page < 1 || size < 1 || size > 50) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(tokenUsageService.getUserUsageDetailPage(userId, days, page, size));
     }
 
     // ── 管理员接口 ────────────────────────────────────────
@@ -132,6 +164,10 @@ public class TokenUsageController {
                 "errorRate", rate,
                 "errorPct",  String.format("%.2f%%", rate * 100)
         ));
+    }
+
+    private boolean isValidPersonalDays(int days) {
+        return days >= 1 && days <= 30;
     }
 }
 
