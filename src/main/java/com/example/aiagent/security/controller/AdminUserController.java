@@ -1,5 +1,6 @@
 package com.example.aiagent.security.controller;
 
+import com.example.aiagent.admin.service.AdminUserQueryService;
 import com.example.aiagent.security.entity.SysUser;
 import com.example.aiagent.security.mapper.SysUserMapper;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,7 @@ import java.util.Map;
 public class AdminUserController {
 
     private final SysUserMapper sysUserMapper;
+    private final AdminUserQueryService adminUserQueryService;
 
     /**
      * 分页查询全部用户（支持 keyword 关键词过滤）
@@ -52,32 +54,17 @@ public class AdminUserController {
             @RequestParam(defaultValue = "") String keyword,
             @AuthenticationPrincipal String operatorId) {
 
-        if (size > 100) size = 100;
-        int offset = page * size;
-        String kw = keyword.isBlank() ? null : keyword.trim();
+        return ResponseEntity.ok(adminUserQueryService.listUsers(page, size, keyword));
+    }
 
-        List<SysUser> users = sysUserMapper.findByKeyword(kw, offset, size);
-        long total          = sysUserMapper.countByKeyword(kw);
-
-        // 脱敏：不返回 passwordHash
-        List<Map<String, Object>> items = users.stream().map(u -> {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("userId",    u.getUserId());
-            m.put("username",  u.getUsername());
-            m.put("nickname",  u.getNickname());
-            m.put("roles",     u.getRoleList());
-            m.put("enabled",   u.getEnabled());
-            m.put("createdAt", u.getCreatedAt() != null ? u.getCreatedAt().toString() : null);
-            return m;
-        }).toList();
-
-        return ResponseEntity.ok(Map.of(
-                "items",      items,
-                "total",      total,
-                "page",       page,
-                "size",       size,
-                "totalPages", (int) Math.ceil((double) total / size)
-        ));
+    /**
+     * 查询用户详情
+     * GET /api/v1/admin/users/{userId}
+     */
+    @GetMapping("/{userId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Object>> getUser(@PathVariable String userId) {
+        return ResponseEntity.ok(adminUserQueryService.userDetail(userId));
     }
 
     /**

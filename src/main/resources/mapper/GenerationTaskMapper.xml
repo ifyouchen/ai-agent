@@ -30,6 +30,41 @@
         LIMIT #{limit}
     </select>
 
+    <select id="countAll" resultType="long">
+        SELECT COUNT(*) FROM story_generation_task
+    </select>
+
+    <select id="countByStatus" resultType="long">
+        SELECT COUNT(*) FROM story_generation_task WHERE status = #{status}
+    </select>
+
+    <select id="findAdminPage" resultType="java.util.Map">
+        SELECT
+            t.id,
+            t.task_type AS "taskType",
+            t.project_id AS "projectId",
+            t.status,
+            t.progress,
+            t.current_step AS "currentStep",
+            t.error_message AS "errorMessage",
+            t.token_usage AS "tokenUsage",
+            t.created_at AS "createdAt",
+            t.updated_at AS "updatedAt",
+            p.title AS "projectTitle",
+            p.created_by AS "createdBy",
+            u.username AS "creatorUsername"
+        FROM story_generation_task t
+        LEFT JOIN story_project p ON p.id = t.project_id
+        LEFT JOIN biz_user_account u ON u.user_id = p.created_by
+        <where>
+            <if test="status != null and status != ''">
+                t.status = #{status}
+            </if>
+        </where>
+        ORDER BY t.updated_at DESC, t.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO story_generation_task
             (task_type, project_id, status, progress, current_step, error_message, token_usage, created_at, updated_at)

@@ -33,5 +33,8 @@ public interface OrganizationMapper {
 
     /** 检查 orgId 是否已存在 */
     boolean existsByOrgId(@Param("orgId") String orgId);
+
+    /** 组织总数（管理员 Dashboard 用） */
+    long countAll();
 }
 

@@ -36,5 +36,8 @@ public interface OrgMemberMapper {
 
     /** 统计组织成员数 */
     int countByOrgId(@Param("orgId") String orgId);
+
+    /** 统计用户加入的组织数 */
+    int countByUserId(@Param("userId") String userId);
 }
 

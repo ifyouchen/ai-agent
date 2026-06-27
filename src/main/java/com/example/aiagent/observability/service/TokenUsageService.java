@@ -117,6 +117,8 @@ public class TokenUsageService {
         for (Map<String, Object> row : rows) {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("userId",      row.get("userId"));
+            item.put("username",    row.get("username"));
+            item.put("nickname",    row.get("nickname"));
             item.put("totalTokens", row.get("totalTokens"));
             item.put("costUsd",     row.get("costUsd"));
             report.add(item);

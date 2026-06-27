@@ -1,0 +1,149 @@
+.admin-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(130px, 1fr));
+  gap: 12px;
+}
+
+.admin-stat-card {
+  min-height: 84px;
+  padding: 14px;
+  border: 1px solid #e8eaf0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.admin-stat-value {
+  font-size: 22px;
+  font-weight: 750;
+  color: #202124;
+}
+
+.admin-stat-label {
+  margin-top: 6px;
+  color: #7a808c;
+  font-size: 12px;
+}
+
+.admin-grid-2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, .8fr);
+  gap: 16px;
+}
+
+.admin-chart-box {
+  min-height: 0;
+}
+
+.admin-chart-frame {
+  position: relative;
+  height: 260px;
+  margin-top: 12px;
+}
+
+.admin-chart-frame canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.admin-dashboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 188px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.admin-dashboard-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid #eef0f4;
+  font-size: 12px;
+}
+
+.admin-dashboard-list-item:last-child {
+  border-bottom: 0;
+}
+
+.admin-dashboard-list-item strong {
+  display: block;
+  overflow: hidden;
+  color: #343842;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-dashboard-list-item span {
+  color: #8b8f9a;
+}
+
+.admin-inline-link {
+  color: #4d6bfe;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.admin-inline-link:hover {
+  text-decoration: underline;
+}
+
+.admin-tab-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+  margin-bottom: 8px;
+}
+
+.admin-tab-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #dde1ea;
+  border-radius: 7px;
+  background: #fff;
+  color: #5f6470;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.admin-tab-btn.active {
+  border-color: #4d6bfe;
+  background: #eef2ff;
+  color: #3854d9;
+  font-weight: 700;
+}
+
+.admin-mini-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+@media (max-width: 1100px) {
+  .admin-stat-grid {
+    grid-template-columns: repeat(3, minmax(130px, 1fr));
+  }
+
+  .admin-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-chart-frame {
+    height: 240px;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-stat-grid {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+
+  .admin-chart-frame {
+    height: 220px;
+  }
+}

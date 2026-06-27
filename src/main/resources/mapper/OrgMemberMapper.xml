@@ -53,5 +53,9 @@
         SELECT COUNT(*) FROM sys_org_member WHERE org_id = #{orgId}
     </select>
 
+    <select id="countByUserId" resultType="int">
+        SELECT COUNT(*) FROM sys_org_member WHERE user_id = #{userId}
+    </select>
+
 </mapper>
 

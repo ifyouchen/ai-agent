@@ -45,13 +45,16 @@
 
     <select id="aggregateByUserSince" resultType="java.util.Map">
         SELECT
-            user_id           AS "userId",
-            SUM(total_tokens) AS "totalTokens",
-            SUM(cost_usd)     AS "costUsd"
-        FROM llm_token_usage
-        WHERE called_at &gt;= #{since}
-        GROUP BY user_id
-        ORDER BY SUM(cost_usd) DESC
+            COALESCE(t.user_id, 'anonymous') AS "userId",
+            COALESCE(u.username, CASE WHEN t.user_id IS NULL THEN 'anonymous' ELSE t.user_id END) AS "username",
+            u.nickname AS "nickname",
+            SUM(t.total_tokens) AS "totalTokens",
+            SUM(t.cost_usd)     AS "costUsd"
+        FROM llm_token_usage t
+        LEFT JOIN biz_user_account u ON u.user_id = t.user_id
+        WHERE t.called_at &gt;= #{since}
+        GROUP BY t.user_id, u.username, u.nickname
+        ORDER BY SUM(t.cost_usd) DESC
     </select>
 
     <select id="aggregateUserSummarySince" resultType="java.util.Map">

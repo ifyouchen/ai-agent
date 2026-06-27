@@ -44,6 +44,10 @@
         SELECT COUNT(*) > 0 FROM sys_organization WHERE org_id = #{orgId}
     </select>
 
+    <select id="countAll" resultType="long">
+        SELECT COUNT(*) FROM sys_organization
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO sys_organization (org_id, name, org_type, owner_id, description, settings, status)
         VALUES (#{orgId}, #{name}, #{orgType}, #{ownerId}, #{description}, #{settings}::jsonb, #{status})

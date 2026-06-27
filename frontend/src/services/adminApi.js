@@ -22,6 +22,31 @@ export async function adminSetRole(userId, role) {
   return data;
 }
 
+export async function adminGetUser(userId) {
+  const { data } = await http.get(`/api/v1/admin/users/${userId}`);
+  return data;
+}
+
+export async function adminGetDashboardSummary() {
+  const { data } = await http.get('/api/v1/admin/dashboard/summary');
+  return data;
+}
+
+export async function adminListKbs(params = {}) {
+  const { data } = await http.get('/api/v1/admin/kbs', { params });
+  return data;
+}
+
+export async function adminListDocuments(params = {}) {
+  const { data } = await http.get('/api/v1/admin/documents', { params });
+  return data;
+}
+
+export async function adminListTasks(params = {}) {
+  const { data } = await http.get('/api/v1/admin/tasks', { params });
+  return data;
+}
+
 export async function getMyTodayCost() {
   const { data } = await http.get('/api/v1/token-usage/my/today');
   return data;

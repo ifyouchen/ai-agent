@@ -70,6 +70,83 @@
         LIMIT 1
     </select>
 
+    <select id="countAll" resultType="long">
+        SELECT COUNT(*) FROM kb_document
+    </select>
+
+    <select id="countByParseStatus" resultType="long">
+        SELECT COUNT(*) FROM kb_document WHERE parse_status = #{parseStatus}
+    </select>
+
+    <sql id="adminDocumentWhere">
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND d.name ILIKE '%' || #{keyword} || '%'
+            </if>
+            <if test="parseStatus != null and parseStatus != ''">
+                AND d.parse_status = #{parseStatus}
+            </if>
+            <if test="kbId != null">
+                AND d.kb_id = #{kbId}
+            </if>
+            <if test="tenantId != null and tenantId != ''">
+                AND d.tenant_id = #{tenantId}
+            </if>
+        </where>
+    </sql>
+
+    <select id="findAdminPage" resultType="java.util.Map">
+        SELECT
+            d.id,
+            d.kb_id AS "kbId",
+            d.tenant_id AS "tenantId",
+            d.name,
+            d.doc_type AS "docType",
+            d.file_size AS "fileSize",
+            d.parse_status AS "parseStatus",
+            d.parse_error AS "parseError",
+            d.chunk_count AS "chunkCount",
+            d.created_by AS "createdBy",
+            d.created_at AS "createdAt",
+            d.updated_at AS "updatedAt",
+            d.indexed_at AS "indexedAt",
+            kb.name AS "kbName",
+            org.name AS "orgName",
+            usr.username AS "creatorUsername"
+        FROM kb_document d
+        LEFT JOIN kb_knowledge_base kb ON kb.id = d.kb_id
+        LEFT JOIN sys_organization org ON org.org_id = d.tenant_id
+        LEFT JOIN biz_user_account usr ON usr.user_id = d.created_by
+        <include refid="adminDocumentWhere"/>
+        ORDER BY d.updated_at DESC, d.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAdminPage" resultType="long">
+        SELECT COUNT(*)
+        FROM kb_document d
+        <include refid="adminDocumentWhere"/>
+    </select>
+
+    <select id="findRecentFailed" resultType="java.util.Map">
+        SELECT
+            d.id,
+            d.kb_id AS "kbId",
+            d.tenant_id AS "tenantId",
+            d.name,
+            d.parse_status AS "parseStatus",
+            d.parse_error AS "parseError",
+            d.updated_at AS "updatedAt",
+            kb.name AS "kbName",
+            org.name AS "orgName"
+        FROM kb_document d
+        LEFT JOIN kb_knowledge_base kb ON kb.id = d.kb_id
+        LEFT JOIN sys_organization org ON org.org_id = d.tenant_id
+        WHERE d.parse_status = 'FAILED'
+        ORDER BY d.updated_at DESC, d.id DESC
+        LIMIT #{limit}
+    </select>
+
     <!-- 插入文档，时间戳由数据库 NOW() 填充 -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO kb_document

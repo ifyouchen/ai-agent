@@ -56,6 +56,51 @@
         LIMIT 1
     </select>
 
+    <select id="countAll" resultType="long">
+        SELECT COUNT(*) FROM kb_knowledge_base
+    </select>
+
+    <sql id="adminWhere">
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND kb.name ILIKE '%' || #{keyword} || '%'
+            </if>
+            <if test="tenantId != null and tenantId != ''">
+                AND kb.tenant_id = #{tenantId}
+            </if>
+            <if test="status != null">
+                AND kb.status = #{status}
+            </if>
+        </where>
+    </sql>
+
+    <select id="findAdminPage" resultType="java.util.Map">
+        SELECT
+            kb.id,
+            kb.tenant_id AS "tenantId",
+            kb.name,
+            kb.description,
+            kb.status,
+            kb.doc_count AS "docCount",
+            kb.created_by AS "createdBy",
+            kb.created_at AS "createdAt",
+            kb.updated_at AS "updatedAt",
+            org.name AS "orgName",
+            usr.username AS "creatorUsername"
+        FROM kb_knowledge_base kb
+        LEFT JOIN sys_organization org ON org.org_id = kb.tenant_id
+        LEFT JOIN biz_user_account usr ON usr.user_id = kb.created_by
+        <include refid="adminWhere"/>
+        ORDER BY kb.updated_at DESC, kb.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAdminPage" resultType="long">
+        SELECT COUNT(*)
+        FROM kb_knowledge_base kb
+        <include refid="adminWhere"/>
+    </select>
+
     <!-- 插入知识库，时间戳由数据库 NOW() 填充 -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO kb_knowledge_base

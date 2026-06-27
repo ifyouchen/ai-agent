@@ -47,8 +47,7 @@
           </router-link>
           <router-link class="topbar-btn topbar-kb-link" to="/kb">知识库</router-link>
           <template v-if="auth.isAdmin">
-            <router-link class="topbar-btn topbar-admin-link" to="/monitor">监控</router-link>
-            <router-link class="topbar-btn topbar-admin-link" to="/admin">用户管理</router-link>
+            <router-link class="topbar-btn topbar-admin-link" to="/admin/dashboard">管理后台</router-link>
           </template>
         </div>
       </div>

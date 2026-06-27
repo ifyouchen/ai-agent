@@ -10,6 +10,9 @@
 @import './modules/theme-light.css';
 @import './modules/overlays-dialogs.css';
 @import './modules/monitor-admin.css';
+@import './modules/admin/layout.css';
+@import './modules/admin/dashboard.css';
+@import './modules/admin/tables.css';
 @import './modules/creation.css';
 @import './modules/app-extras.css';
 @import './modules/deepseek-final.css';

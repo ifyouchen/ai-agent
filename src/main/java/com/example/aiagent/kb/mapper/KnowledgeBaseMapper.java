@@ -5,6 +5,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -33,4 +34,16 @@ public interface KnowledgeBaseMapper {
     void deleteById(@Param("id") Long id);
 
     Optional<KnowledgeBase> findById(@Param("id") Long id);
+
+    long countAll();
+
+    List<Map<String, Object>> findAdminPage(@Param("keyword") String keyword,
+                                            @Param("tenantId") String tenantId,
+                                            @Param("status") Integer status,
+                                            @Param("offset") int offset,
+                                            @Param("limit") int limit);
+
+    long countAdminPage(@Param("keyword") String keyword,
+                        @Param("tenantId") String tenantId,
+                        @Param("status") Integer status);
 }

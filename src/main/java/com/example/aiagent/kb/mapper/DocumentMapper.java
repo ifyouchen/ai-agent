@@ -5,6 +5,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -41,4 +42,22 @@ public interface DocumentMapper {
     int deleteByKbId(@Param("kbId") Long kbId);
 
     Optional<Document> findById(@Param("id") Long id);
+
+    long countAll();
+
+    long countByParseStatus(@Param("parseStatus") String parseStatus);
+
+    List<Map<String, Object>> findAdminPage(@Param("keyword") String keyword,
+                                            @Param("parseStatus") String parseStatus,
+                                            @Param("kbId") Long kbId,
+                                            @Param("tenantId") String tenantId,
+                                            @Param("offset") int offset,
+                                            @Param("limit") int limit);
+
+    long countAdminPage(@Param("keyword") String keyword,
+                        @Param("parseStatus") String parseStatus,
+                        @Param("kbId") Long kbId,
+                        @Param("tenantId") String tenantId);
+
+    List<Map<String, Object>> findRecentFailed(@Param("limit") int limit);
 }
