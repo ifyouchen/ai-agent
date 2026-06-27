@@ -300,7 +300,7 @@ export const useKbStore = defineStore('kb', () => {
     resetSelection,
     loadKbs, selectKb, createKb, updateKb, deleteKb,
     loadDocs, uploadFile, clearCompletedUploads,
-    startDocPolling, stopDocPolling,
+    startDocPolling, stopDocPolling, stopAllDocPolling,
     loadKbMembers, addKbMember, removeKbMember, updateKbMemberRole,
   };
 });

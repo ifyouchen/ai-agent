@@ -39,22 +39,57 @@
               分享
             </button>
           </template>
-          <router-link class="topbar-btn topbar-chat-link" to="/chat" @click="handleTopbarNavClick">对话</router-link>
-          <router-link class="topbar-btn" to="/creation" @click="handleTopbarNavClick">创作</router-link>
+          <button
+            class="topbar-btn topbar-chat-link"
+            :class="{ 'router-link-active': route.path === '/chat' }"
+            type="button"
+            @click="navigateTopbar('/chat')"
+          >
+            对话
+          </button>
+          <button
+            class="topbar-btn"
+            :class="{ 'router-link-active': route.path.startsWith('/creation') }"
+            type="button"
+            @click="navigateTopbar('/creation')"
+          >
+            创作
+          </button>
           <!-- Fix 14: 有待处理通知时显示红点角标 -->
-          <router-link class="topbar-btn topbar-org-link topbar-btn-notice" to="/org" @click="handleTopbarNavClick">
+          <button
+            class="topbar-btn topbar-org-link topbar-btn-notice"
+            :class="{ 'router-link-active': route.path === '/org' }"
+            type="button"
+            @click="navigateTopbar('/org')"
+          >
             组织设置
             <span v-if="org.pendingNoticeCount > 0" class="topbar-notice-badge">{{ org.pendingNoticeCount }}</span>
-          </router-link>
-          <router-link class="topbar-btn topbar-kb-link" to="/kb" @click="handleTopbarNavClick">知识库</router-link>
+          </button>
+          <button
+            class="topbar-btn topbar-kb-link"
+            :class="{ 'router-link-active': route.path === '/kb' }"
+            type="button"
+            @click="navigateTopbar('/kb')"
+          >
+            知识库
+          </button>
           <template v-if="auth.isAdmin">
-            <router-link class="topbar-btn topbar-admin-link" to="/admin/dashboard" @click="handleTopbarNavClick">管理后台</router-link>
+            <button
+              class="topbar-btn topbar-admin-link"
+              :class="{ 'router-link-active': route.path.startsWith('/admin') }"
+              type="button"
+              @click="navigateTopbar('/admin/dashboard')"
+            >
+              管理后台
+            </button>
           </template>
         </div>
       </div>
 
       <!-- 页面内容区 -->
-      <RouterView :key="route.fullPath" />
+      <RouterView v-slot="{ Component, route: viewRoute }">
+        <component :is="Component" :key="viewRoute.fullPath" />
+      </RouterView>
     </main>
 
     <!-- 全局 Toast + Dialog -->
@@ -107,7 +142,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { RouterView, useRoute } from 'vue-router';
+import { RouterView, useRoute, useRouter } from 'vue-router';
 import Sidebar from './Sidebar.vue';
 import WorkspaceSwitcher from './WorkspaceSwitcher.vue';
 import Toast from '../ui/Toast.vue';
@@ -125,6 +160,7 @@ const kb    = useKbStore();
 const org   = useOrgStore();
 const ui    = useUiStore();
 const route = useRoute();
+const router = useRouter();
 
 const initialMobile = window.matchMedia('(max-width: 860px)').matches;
 const isMobile = ref(initialMobile);
@@ -231,6 +267,14 @@ function handleTopbarNavClick() {
   shareDialogVisible.value = false;
   shareInfo.value = null;
   closeSidebar();
+}
+
+function navigateTopbar(path) {
+  handleTopbarNavClick();
+  if (route.path === path) return;
+  router.push(path).catch((err) => {
+    console.warn('[router] topbar navigation failed:', err);
+  });
 }
 
 function applyRouteSidebarPreference(path) {

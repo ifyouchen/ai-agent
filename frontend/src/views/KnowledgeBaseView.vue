@@ -490,7 +490,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { onBeforeRouteLeave, useRouter } from 'vue-router';
 import { useKbStore } from '../stores/kb.js';
 import { useOrgStore } from '../stores/org.js';
 import { useSessionStore } from '../stores/sessions.js';
@@ -852,8 +852,26 @@ async function retryDoc(doc) {
   }
 }
 
+function cleanupKnowledgeBaseView() {
+  kb.stopAllDocPolling?.();
+  selectingKbId.value = null;
+  dragOver.value = false;
+  expandedDocId.value = null;
+  Object.keys(docChunksCache).forEach(k => delete docChunksCache[k]);
+}
+
+onBeforeRouteLeave((_to, _from, next) => {
+  try {
+    cleanupKnowledgeBaseView();
+  } catch (err) {
+    console.warn('[kb] cleanup before route leave failed:', err);
+  } finally {
+    next();
+  }
+});
+
 onBeforeUnmount(() => {
-  kb.stopAllDocPolling();
+  cleanupKnowledgeBaseView();
 });
 </script>
 
