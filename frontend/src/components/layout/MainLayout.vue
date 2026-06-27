@@ -28,6 +28,7 @@
           <span v-else class="topbar-title">{{ sess.currentSessionTitle }}</span>
         </div>
         <div class="topbar-actions">
+          <WorkspaceSwitcher />
           <!-- 对话页专属操作按钮 -->
           <template v-if="route.path === '/chat'">
             <button class="topbar-btn topbar-share-btn" type="button" @click="openShareDialog" title="分享当前会话快照">
@@ -42,7 +43,7 @@
           <router-link class="topbar-btn" to="/creation">创作</router-link>
           <!-- Fix 14: 有待处理通知时显示红点角标 -->
           <router-link class="topbar-btn topbar-org-link topbar-btn-notice" to="/org">
-            组织
+            组织设置
             <span v-if="org.pendingNoticeCount > 0" class="topbar-notice-badge">{{ org.pendingNoticeCount }}</span>
           </router-link>
           <router-link class="topbar-btn topbar-kb-link" to="/kb">知识库</router-link>
@@ -108,6 +109,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { RouterView, useRoute } from 'vue-router';
 import Sidebar from './Sidebar.vue';
+import WorkspaceSwitcher from './WorkspaceSwitcher.vue';
 import Toast from '../ui/Toast.vue';
 import Dialog from '../ui/Dialog.vue';
 import { useAuthStore } from '../../stores/auth.js';

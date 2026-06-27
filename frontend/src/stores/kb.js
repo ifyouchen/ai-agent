@@ -122,9 +122,12 @@ export const useKbStore = defineStore('kb', () => {
   }
 
   async function createKb(name, description, orgId) {
-    await api.createKnowledgeBase(name, description, orgId);
+    const created = await api.createKnowledgeBase(name, description, orgId);
     ui.showToast('success', `知识库「${name}」已创建`);
     await loadKbs(orgId);
+    const createdId = created?.id ?? created?.kbId;
+    if (createdId) await selectKb(Number(createdId), orgId);
+    return created;
   }
 
   async function updateKb(kbId, name, description, orgId) {

@@ -2,7 +2,7 @@
   <div class="kb-view" :class="{ 'kb-view-empty': !kb.kbLoading && !hasKnowledgeBases }">
     <section class="kb-ops-header">
       <div class="kb-ops-copy">
-        <span class="kb-kicker">知识资产</span>
+        <span class="kb-kicker">知识库中心</span>
         <h2>{{ kbOpsTitle }}</h2>
         <p>{{ kbOpsHint }}</p>
       </div>
@@ -21,7 +21,7 @@
     <!-- 顶部：知识库选择器 -->
     <div class="kb-selector-header">
       <h3 class="kb-selector-title">
-        知识库
+        当前工作空间
         <svg v-if="kb.kbLoading" class="inline-spinner" viewBox="0 0 24 24" fill="none" width="14" height="14">
           <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 50" stroke-linecap="round"/>
         </svg>
@@ -98,6 +98,7 @@
             <polyline points="14 2 14 8 20 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
           {{ item.docCount || 0 }} 篇文档
+          <span class="kb-health-pill" :class="kbHealthTone(item)">{{ kbHealthLabel(item) }}</span>
         </div>
         <div v-if="item.id === kb.currentKbId" class="kb-card-current">当前管理中</div>
         <div v-if="item.description" class="kb-card-desc" :title="item.description">{{ item.description }}</div>
@@ -124,9 +125,13 @@
             <span class="kb-kicker">当前知识库</span>
             <strong>{{ kb.currentKbName }}</strong>
             <p>{{ kb.currentKb?.description || '上传文档后，可在对话和测试查询中使用这些内容。' }}</p>
+            <div v-if="currentKbHealth.message" class="kb-current-health" :class="currentKbHealth.tone">
+              {{ currentKbHealth.message }}
+            </div>
           </div>
           <div class="kb-current-meta">
             <span>{{ filteredDocs.length }} 个文档项</span>
+            <span :class="['kb-health-pill', currentKbHealth.tone]">{{ currentKbHealth.label }}</span>
             <span>{{ canManageKb ? '可管理' : '只读访问' }}</span>
           </div>
         </div>
@@ -291,7 +296,7 @@
                 </svg>
               </div>
               <div class="empty-state-text">暂无文档</div>
-              <div class="empty-state-hint">上传后 AI 可基于文档内容回答</div>
+              <div class="empty-state-hint">知识库为空，上传文档后才能用于知识库问答</div>
             </div>
 
             <div v-for="doc in filteredDocs" :key="doc.id" class="doc-item-wrapper">
@@ -515,6 +520,21 @@ const kbOpsStats = computed(() => [
   { label: '总文档', value: totalKbDocCount.value },
   { label: '当前文档', value: kb.currentKbId ? filteredDocs.value.length : 0 },
 ]);
+const currentKbHealth = computed(() => {
+  if (!kb.currentKbId) return { label: '未选择', tone: 'muted', message: '' };
+  const failed = kb.docs.filter(doc => doc.status === 'FAILED').length;
+  const processing = kb.docs.filter(doc => isProcessingStatus(doc.status)).length;
+  if (failed) {
+    return { label: '有失败文档', tone: 'danger', message: `${failed} 个文档解析失败，请在文档列表中查看原因或重新解析。` };
+  }
+  if (processing) {
+    return { label: '解析中', tone: 'warning', message: `${processing} 个文档仍在解析中，完成后会自动参与检索。` };
+  }
+  if (!kb.docs.length) {
+    return { label: '空库', tone: 'muted', message: '当前知识库还没有文档，上传后才能用于知识库问答。' };
+  }
+  return { label: '可用', tone: 'ok', message: '' };
+});
 
 // Fix 7: KB 操作权限（org OWNER/ADMIN 可编辑删除 KB）
 const canManageKb = computed(() =>
@@ -666,6 +686,28 @@ function statusLabel(status) {
   return map[status] || status;
 }
 
+function isProcessingStatus(status) {
+  return ['PROCESSING', 'PENDING', 'PARSING', 'CHUNKING', 'EMBEDDING'].includes(status);
+}
+
+function kbHealthLabel(item) {
+  const failed = Number(item.failedDocCount ?? item.failedDocuments ?? 0);
+  const processing = Number(item.processingDocCount ?? item.processingDocuments ?? 0);
+  if (item.id === kb.currentKbId) return currentKbHealth.value.label;
+  if (failed > 0) return '有失败文档';
+  if (processing > 0) return '解析中';
+  if (!Number(item.docCount || 0)) return '空库';
+  return '可用';
+}
+
+function kbHealthTone(item) {
+  const label = kbHealthLabel(item);
+  if (label === '有失败文档') return 'danger';
+  if (label === '解析中') return 'warning';
+  if (label === '空库' || label === '未选择') return 'muted';
+  return 'ok';
+}
+
 async function handleCreateKb() {
   const form = await ui.showForm({
     title: '新建知识库',
@@ -769,11 +811,11 @@ async function runQuery() {
   }
 }
 
-// Fix 4: 关联后不强制跳转，Toast 提供行动按钮供用户自主选择
+// 知识库中心的主操作：关联后回到对话页继续使用。
 function useKbInChat() {
   sess.setCurrentKb(kb.currentKbId, org.currentOrgId);
-  ui.showToast('success', `已关联「${kb.currentKbName}」，可继续管理文档或前往对话`);
-  // 不再强制 router.push('/chat')，让用户决定是否切换页面
+  ui.showToast('success', `已关联「${kb.currentKbName}」`);
+  router.push('/chat');
 }
 
 // Fix 3: 重新解析失败的文档

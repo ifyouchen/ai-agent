@@ -50,12 +50,18 @@
 
     <!-- 输入区域 -->
     <MessageInput @attach-kb="handleAttachKb" @upload-files="handleUploadFiles" />
+    <KnowledgeContextDrawer
+      v-model="knowledgeDrawerOpen"
+      @selected="handleKnowledgeSelected"
+      @cleared="pendingUploadFiles = []"
+    />
   </div>
 </template>
 
 <script setup>
 import { nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import KnowledgeContextDrawer from '../components/chat/KnowledgeContextDrawer.vue';
 import MessageBubble from '../components/chat/MessageBubble.vue';
 import MessageInput  from '../components/chat/MessageInput.vue';
 import { copyText } from '../js/utils.js';
@@ -70,6 +76,8 @@ const ui     = useUiStore();
 const org    = useOrgStore();
 const router = useRouter();
 const chatEl = ref(null);
+const knowledgeDrawerOpen = ref(false);
+const pendingUploadFiles = ref([]);
 
 // 只在切换会话或新增消息时即时定位到底部，避免 smooth scroll 产生“从上滚到底”的动画。
 watch(
@@ -107,57 +115,76 @@ async function handleQuickShare() {
 }
 
 async function handleAttachKb() {
-  if (!kb.knowledgeBases.length && !kb.kbLoading) {
-    await kb.loadKbs(org.currentOrgId);
-  }
-  const kbs = kb.knowledgeBases;
-  if (!kbs.length) {
-    ui.showToast('warning', '暂无知识库，请先在「知识库」页创建知识库并上传文档');
-    router.push('/kb');
+  if (!org.currentOrgId) {
+    ui.showToast('warning', '请先创建或加入一个工作空间');
+    router.push('/org');
     return;
   }
-  // P0-4: 去除 4 个上限，展示全部知识库
-  const choices = kbs.map(k => ({
-    value: String(k.id),
-    label: k.name,
-    desc: `${k.docCount || 0} 篇文档`,
-  }));
-  if (sess.currentKbId) {
-    choices.unshift({ value: '', label: '取消关联知识库', desc: '恢复为普通对话模式' });
-  }
-  const chosen = await ui.showChoice({
-    title: '关联知识库',
-    message: '选择知识库后，本次对话将基于其内容生成答案（RAG 模式）',
-    confirmText: '确认',
-    choices,
-    defaultValue: sess.currentKbId ? String(sess.currentKbId) : choices[0]?.value,
-  });
-  if (chosen === false || chosen === undefined) return;
-  if (chosen === '') {
-    sess.clearCurrentKb();
-    ui.showToast('info', '已取消关联知识库');
-  } else {
-    sess.setCurrentKb(Number(chosen), org.currentOrgId);
-    const found = kbs.find(k => k.id === sess.currentKbId);
-    if (kb.currentKbId !== sess.currentKbId) {
-      await kb.selectKb(sess.currentKbId, org.currentOrgId);
-    } else if (!kb.docs.length) {
-      await kb.loadDocs(org.currentOrgId);
-    }
-    ui.showToast('success', `已关联知识库「${found?.name || chosen}」`);
-  }
+  if (!kb.knowledgeBases.length && !kb.kbLoading) await kb.loadKbs(org.currentOrgId);
+  knowledgeDrawerOpen.value = true;
 }
 
 async function handleUploadFiles(files) {
   if (!files?.length) return;
-  if (!kb.knowledgeBases.length) {
-    ui.showToast('warning', '暂无知识库，请先在「知识库」页创建知识库');
-    router.push('/kb');
+  if (!org.currentOrgId) {
+    ui.showToast('warning', '请先创建或加入一个工作空间');
+    router.push('/org');
     return;
   }
+
+  if (!kb.knowledgeBases.length && !kb.kbLoading) await kb.loadKbs(org.currentOrgId);
+
+  const activeKbId = sess.currentKbOrgId === org.currentOrgId ? sess.currentKbId : null;
+  if (activeKbId) {
+    if (kb.currentKbId !== activeKbId) await kb.selectKb(activeKbId, org.currentOrgId);
+    await uploadToCurrentKb(files);
+    return;
+  }
+
+  if (!kb.knowledgeBases.length) {
+    const created = await createKbForUpload();
+    if (!created && !kb.currentKbId) return;
+    await uploadToCurrentKb(files);
+    return;
+  }
+
+  pendingUploadFiles.value = [...files];
+  ui.showToast('info', '请选择要加入的知识库，或新建一个知识库');
+  knowledgeDrawerOpen.value = true;
+}
+
+async function handleKnowledgeSelected() {
+  if (!pendingUploadFiles.value.length) return;
+  const files = [...pendingUploadFiles.value];
+  pendingUploadFiles.value = [];
+  await uploadToCurrentKb(files);
+}
+
+async function createKbForUpload() {
+  const form = await ui.showForm({
+    title: '创建知识库',
+    confirmText: '创建并上传',
+    fields: [
+      { key: 'name', label: '知识库名称', placeholder: '例如：产品文档、客户案例、内部 SOP' },
+      { key: 'description', label: '描述（可选）', placeholder: '这个知识库主要用于什么？', multiline: true },
+    ],
+  });
+  if (!form?.name?.trim()) return null;
+  try {
+    const created = await kb.createKb(form.name.trim(), form.description?.trim() || '', org.currentOrgId);
+    const createdId = created?.id ?? created?.kbId ?? kb.currentKbId;
+    if (createdId) sess.setCurrentKb(Number(createdId), org.currentOrgId);
+    return created || kb.currentKb;
+  } catch (err) {
+    ui.showToast('error', err.message || '创建知识库失败');
+    return null;
+  }
+}
+
+async function uploadToCurrentKb(files) {
   if (!kb.currentKbId) {
-    ui.showToast('warning', '请先在「知识库」页选择一个知识库');
-    router.push('/kb');
+    ui.showToast('warning', '请先选择或创建知识库');
+    knowledgeDrawerOpen.value = true;
     return;
   }
   const targetName = kb.currentKbName || '当前知识库';

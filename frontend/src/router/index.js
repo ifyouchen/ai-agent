@@ -63,7 +63,7 @@ const routes = [
       { path: 'creation/scripts/:draftId', component: CreationView, meta: { title: '短剧改编', creationMode: 'script' } },
       { path: 'creation/scripts/:draftId/export', component: CreationView, meta: { title: '导出预览', creationMode: 'export' } },
       { path: 'kb',      component: KnowledgeBaseView, meta: { title: '知识库' } },
-      { path: 'org',           component: OrgView,           meta: { title: '组织管理' } },
+      { path: 'org',           component: OrgView,           meta: { title: '组织设置' } },
       { path: 'invite/:token', component: OrgView,           meta: { title: '组织邀请' } },
       { path: 'profile', component: ProfileView,       meta: { title: '个人资料' } },
     ],

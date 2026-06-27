@@ -271,6 +271,40 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
+}
+
+.kb-health-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #eef1f5;
+  color: #697386;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.kb-health-pill.ok {
+  background: #e9f8f0;
+  color: #14945d;
+}
+
+.kb-health-pill.warning {
+  background: #fff5df;
+  color: #b97708;
+}
+
+.kb-health-pill.danger {
+  background: #fff0f1;
+  color: #d2363d;
+}
+
+.kb-health-pill.muted {
+  background: #eef1f5;
+  color: #697386;
 }
 
 .kb-card-desc {
@@ -318,6 +352,36 @@
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1.6;
+}
+
+.kb-current-health {
+  width: fit-content;
+  margin-top: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.kb-current-health.ok {
+  background: #e9f8f0;
+  color: #14945d;
+}
+
+.kb-current-health.warning {
+  background: #fff5df;
+  color: #ad7409;
+}
+
+.kb-current-health.danger {
+  background: #fff0f1;
+  color: #c8323b;
+}
+
+.kb-current-health.muted {
+  background: #eef1f5;
+  color: #697386;
 }
 
 .kb-current-meta {

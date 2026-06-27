@@ -1,6 +1,25 @@
 <template>
   <div class="chat-input-area">
     <div class="input-wrapper">
+      <div class="composer-context">
+        <button
+          class="knowledge-context-chip"
+          type="button"
+          :class="knowledgeContextClass"
+          title="选择知识库用于检索增强回答"
+          @click="$emit('attachKb')"
+        >
+          <span class="knowledge-context-dot"></span>
+          <span class="knowledge-context-main">
+            <strong>{{ knowledgeContextTitle }}</strong>
+            <small>{{ knowledgeContextHint }}</small>
+          </span>
+          <svg viewBox="0 0 24 24" fill="none" width="14" height="14">
+            <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <span class="workspace-context-text">{{ org.currentOrgName }}</span>
+      </div>
       <textarea
         id="messageInput"
         ref="inputEl"
@@ -70,7 +89,7 @@
               <path d="M3 12h18M12 3c2.3 2.6 3.5 5.6 3.5 9s-1.2 6.4-3.5 9M12 3c-2.3 2.6-3.5 5.6-3.5 9s1.2 6.4 3.5 9"
                     stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
             </svg>
-            知识库检索
+            {{ sess.currentKbId ? '切换知识库' : '知识库问答' }}
           </button>
         </div>
         <div class="composer-actions">
@@ -140,14 +159,6 @@
 
     <!-- 输入区域底部提示 -->
     <div class="input-hints">
-      <span v-if="sess.currentKbId" class="kb-active-badge">
-        <svg viewBox="0 0 24 24" fill="none" width="11" height="11">
-          <path d="M4 19V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7M4 19h16M4 19a2 2 0 0 1-2-2v-1h20v1a2 2 0 0 1-2 2"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-        {{ currentKbName }}
-        <button class="kb-active-clear" type="button" title="取消关联知识库" @click.stop="sess.clearCurrentKb()">×</button>
-      </span>
       <span class="hint-text" :class="{ over: inputTooLong }">{{ inputHintText }}</span>
     </div>
   </div>
@@ -181,6 +192,30 @@ const inputText = computed({
 });
 
 const currentKbName = computed(() => kb.currentKbName);
+const failedDocCount = computed(() => kb.docs.filter(doc => doc.status === 'FAILED').length);
+const processingDocCount = computed(() =>
+  kb.docs.filter(doc => ['PROCESSING', 'PENDING', 'PARSING', 'CHUNKING', 'EMBEDDING'].includes(doc.status)).length
+);
+const knowledgeContextClass = computed(() => ({
+  active: Boolean(sess.currentKbId),
+  warning: Boolean(sess.currentKbId && processingDocCount.value),
+  danger: Boolean(sess.currentKbId && failedDocCount.value),
+  empty: Boolean(sess.currentKbId && !kb.docs.length && !kb.docsLoading),
+}));
+const knowledgeContextTitle = computed(() => {
+  if (!org.currentOrgId) return '未选择工作空间';
+  if (!sess.currentKbId) return kb.knowledgeBases.length ? '未使用知识库' : '当前组织暂无知识库';
+  const suffix = failedDocCount.value ? ' · 有失败文档' : '';
+  return `知识库：${currentKbName.value || '已关联'}${suffix}`;
+});
+const knowledgeContextHint = computed(() => {
+  if (!org.currentOrgId) return '请先创建或加入组织';
+  if (!sess.currentKbId) return '普通对话，点击可选择知识库';
+  if (failedDocCount.value) return `${failedDocCount.value} 个文档解析失败`;
+  if (processingDocCount.value) return `${processingDocCount.value} 个文档仍在解析中`;
+  if (!kb.docs.length && !kb.docsLoading) return '知识库为空，上传文档后可问答';
+  return `${kb.docs.length} 个文档可用于检索`;
+});
 const mentionSourceDocs = computed(() =>
   kb.docs.filter(doc => doc.filename && (doc.status === 'DONE' || doc.chunks > 0))
 );

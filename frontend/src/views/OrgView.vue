@@ -3,8 +3,8 @@
     <aside class="org-sidebar-panel">
       <div class="org-sidebar-header">
         <div>
-          <h2 class="org-title">组织管理</h2>
-          <p class="org-subtitle">切换空间、邀请成员和维护权限</p>
+          <h2 class="org-title">组织设置</h2>
+          <p class="org-subtitle">维护工作空间成员、邀请和权限</p>
         </div>
         <button class="org-icon-btn primary" type="button" title="创建企业组织" @click="handleCreateOrg">
           <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
@@ -462,12 +462,16 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { copyText } from '../js/utils.js';
 import { useAuthStore } from '../stores/auth.js';
+import { useKbStore } from '../stores/kb.js';
 import { useOrgStore } from '../stores/org.js';
+import { useSessionStore } from '../stores/sessions.js';
 import { useUiStore } from '../stores/ui.js';
 import * as api from '../services/api.js';
 
 const auth = useAuthStore();
+const kb = useKbStore();
 const org = useOrgStore();
+const sess = useSessionStore();
 const ui  = useUiStore();
 const route = useRoute();
 const router = useRouter();
@@ -628,7 +632,14 @@ async function copyOrgId(orgId) {
 }
 
 async function handleSelectOrg(orgId) {
+  if (!orgId || orgId === org.currentOrgId) return;
+  const shouldClearKb = Boolean(sess.currentKbId && sess.currentKbOrgId !== orgId);
   org.selectOrg(orgId);
+  kb.resetSelection();
+  if (shouldClearKb) {
+    sess.clearCurrentKb();
+    ui.showToast('info', '已切换工作空间，请重新选择知识库');
+  }
 }
 
 async function handleCreateOrg() {

@@ -130,6 +130,110 @@
   font-size: 11px;
 }
 
+.composer-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 36px;
+}
+
+.knowledge-context-chip {
+  min-width: 0;
+  max-width: min(520px, 100%);
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border: 1px solid #e4eaf3;
+  border-radius: 14px;
+  background: #f8fafc;
+  color: #4b5565;
+  cursor: pointer;
+  text-align: left;
+}
+
+.knowledge-context-chip:hover {
+  border-color: #cfd9ff;
+  background: #f5f8ff;
+}
+
+.knowledge-context-chip.active {
+  border-color: #cfd9ff;
+  background: #f3f7ff;
+  color: #4f67f5;
+}
+
+.knowledge-context-chip.warning {
+  border-color: #f4d28b;
+  background: #fff9eb;
+  color: #ad7409;
+}
+
+.knowledge-context-chip.danger {
+  border-color: #f2b8be;
+  background: #fff5f6;
+  color: #c8323b;
+}
+
+.knowledge-context-chip.empty {
+  border-style: dashed;
+}
+
+.knowledge-context-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: #aab3c2;
+}
+
+.knowledge-context-chip.active .knowledge-context-dot {
+  background: #4f67f5;
+}
+
+.knowledge-context-chip.warning .knowledge-context-dot {
+  background: #d99018;
+}
+
+.knowledge-context-chip.danger .knowledge-context-dot {
+  background: #dc3d43;
+}
+
+.knowledge-context-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.knowledge-context-main strong,
+.knowledge-context-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-context-main strong {
+  font-size: 13px;
+  line-height: 1.15;
+}
+
+.knowledge-context-main small,
+.workspace-context-text {
+  color: #8b95a7;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.workspace-context-text {
+  flex: 0 0 auto;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .edit-cancel-btn,
 .edit-send-btn {
   min-width: 74px;
@@ -172,5 +276,19 @@
     right: 10px;
     width: auto;
     max-height: 220px;
+  }
+
+  .composer-context {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .knowledge-context-chip {
+    width: 100%;
+  }
+
+  .workspace-context-text {
+    max-width: 100%;
+    padding-left: 4px;
   }
 }
