@@ -30,6 +30,14 @@
         LIMIT #{limit}
     </select>
 
+    <select id="findRecentByProject" resultMap="GenerationTaskRM">
+        SELECT id, task_type, project_id, status, progress, current_step, error_message, token_usage, created_at, updated_at
+        FROM story_generation_task
+        WHERE project_id = #{projectId}
+        ORDER BY updated_at DESC, id DESC
+        LIMIT #{limit}
+    </select>
+
     <select id="countAll" resultType="long">
         SELECT COUNT(*) FROM story_generation_task
     </select>

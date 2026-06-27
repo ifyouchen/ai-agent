@@ -3,6 +3,9 @@ package com.example.aiagent.observability.model;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
 /**
  * 模型定价表（USD / 1M tokens）
  * 定期根据官网价格更新
@@ -50,5 +53,15 @@ public enum TokenPricing {
     public double calculateCost(int inputTokens, int outputTokens) {
         return (inputTokens * inputPricePerMillion
                 + outputTokens * outputPricePerMillion) / 1_000_000.0;
+    }
+
+    /** 计算本次调用费用（USD），用于账务链路，避免 double 作为最终金额。 */
+    public BigDecimal calculateCostDecimal(int inputTokens, int outputTokens) {
+        BigDecimal input = BigDecimal.valueOf(Math.max(inputTokens, 0))
+                .multiply(BigDecimal.valueOf(inputPricePerMillion));
+        BigDecimal output = BigDecimal.valueOf(Math.max(outputTokens, 0))
+                .multiply(BigDecimal.valueOf(outputPricePerMillion));
+        return input.add(output)
+                .divide(BigDecimal.valueOf(1_000_000), 8, RoundingMode.HALF_UP);
     }
 }

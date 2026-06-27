@@ -35,6 +35,15 @@
         LIMIT #{limit}
     </select>
 
+    <select id="findRecentByProject" resultMap="RewriteTaskRM">
+        SELECT id, project_id, chapter_id, source_type, source_text, rewrite_mode, instruction,
+               status, segments_json, result_text, diff_payload, created_at, completed_at
+        FROM story_rewrite_task
+        WHERE project_id = #{projectId}
+        ORDER BY COALESCE(completed_at, created_at) DESC, id DESC
+        LIMIT #{limit}
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO story_rewrite_task
             (project_id, chapter_id, source_type, source_text, rewrite_mode, instruction, status,

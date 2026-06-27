@@ -12,6 +12,7 @@ import java.util.Optional;
 public interface GenerationTaskMapper {
     Optional<GenerationTask> findById(@Param("id") Long id);
     List<GenerationTask> findRecent(@Param("limit") int limit);
+    List<GenerationTask> findRecentByProject(@Param("projectId") Long projectId, @Param("limit") int limit);
     long countAll();
     long countByStatus(@Param("status") String status);
     List<Map<String, Object>> findAdminPage(@Param("status") String status,

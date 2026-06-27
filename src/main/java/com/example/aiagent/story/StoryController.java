@@ -28,6 +28,11 @@ public class StoryController {
         return service.listProjects(type);
     }
 
+    @GetMapping("/workbench/summary")
+    public Map<String, Object> workbenchSummary() {
+        return service.workbenchSummary();
+    }
+
     @PostMapping("/projects")
     public Map<String, Object> createProject(@RequestBody Map<String, Object> payload) {
         log.info("创建故事项目 title={}", payload.get("title"));

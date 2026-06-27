@@ -244,6 +244,80 @@ CREATE INDEX IF NOT EXISTS idx_org_join_request_user_id  ON sys_org_join_request
 CREATE INDEX IF NOT EXISTS idx_org_join_request_status   ON sys_org_join_request(org_id, status);
 
 -- ============================================================
+-- Billing：AI 预付费钱包、充值订单、用量冻结
+-- ============================================================
+CREATE TABLE IF NOT EXISTS billing_wallet (
+    id                      BIGSERIAL      PRIMARY KEY,
+    user_id                 VARCHAR(64)    NOT NULL UNIQUE,
+    available_balance_cny   DECIMAL(18,6)  NOT NULL DEFAULT 0,
+    frozen_balance_cny      DECIMAL(18,6)  NOT NULL DEFAULT 0,
+    total_recharged_cny     DECIMAL(18,6)  NOT NULL DEFAULT 0,
+    total_consumed_cny      DECIMAL(18,6)  NOT NULL DEFAULT 0,
+    status                  VARCHAR(32)    NOT NULL DEFAULT 'ACTIVE',
+    version                 BIGINT         NOT NULL DEFAULT 0,
+    created_at              TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    updated_at              TIMESTAMPTZ    NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_billing_wallet_user_id ON billing_wallet(user_id);
+
+CREATE TABLE IF NOT EXISTS billing_ledger (
+    id                  BIGSERIAL      PRIMARY KEY,
+    ledger_no           VARCHAR(64)    NOT NULL UNIQUE,
+    user_id             VARCHAR(64)    NOT NULL,
+    type                VARCHAR(32)    NOT NULL,
+    amount_cny          DECIMAL(18,6)  NOT NULL,
+    balance_after_cny   DECIMAL(18,6)  NOT NULL,
+    ref_type            VARCHAR(32),
+    ref_id              VARCHAR(128),
+    idempotency_key     VARCHAR(160)   NOT NULL UNIQUE,
+    remark              VARCHAR(512),
+    created_at          TIMESTAMPTZ    NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_billing_ledger_user_time ON billing_ledger(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_ledger_ref ON billing_ledger(ref_type, ref_id);
+
+CREATE TABLE IF NOT EXISTS recharge_order (
+    id                  BIGSERIAL      PRIMARY KEY,
+    order_no            VARCHAR(64)    NOT NULL UNIQUE,
+    user_id             VARCHAR(64)    NOT NULL,
+    package_code        VARCHAR(32)    NOT NULL,
+    amount_cents        BIGINT         NOT NULL,
+    pay_channel         VARCHAR(32)    NOT NULL,
+    status              VARCHAR(32)    NOT NULL DEFAULT 'CREATED',
+    provider_trade_no   VARCHAR(128),
+    pay_qr_content      TEXT,
+    paid_at             TIMESTAMPTZ,
+    expire_at           TIMESTAMPTZ    NOT NULL,
+    created_at          TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ    NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_recharge_order_user_time ON recharge_order(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_recharge_order_status_expire ON recharge_order(status, expire_at);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_recharge_order_provider_trade
+    ON recharge_order(pay_channel, provider_trade_no)
+    WHERE provider_trade_no IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS usage_reservation (
+    id                  BIGSERIAL      PRIMARY KEY,
+    reservation_no      VARCHAR(64)    NOT NULL UNIQUE,
+    trace_id            VARCHAR(64),
+    session_id          VARCHAR(64),
+    user_id             VARCHAR(64)    NOT NULL,
+    model_name          VARCHAR(128)   NOT NULL,
+    input_tokens_est    INT            NOT NULL DEFAULT 0,
+    output_tokens_est   INT            NOT NULL DEFAULT 0,
+    reserved_cny        DECIMAL(18,6)  NOT NULL,
+    actual_cny          DECIMAL(18,6),
+    status              VARCHAR(32)    NOT NULL DEFAULT 'RESERVED',
+    expires_at          TIMESTAMPTZ    NOT NULL,
+    settled_at          TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ    NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_usage_reservation_user_time ON usage_reservation(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_reservation_status_expire ON usage_reservation(status, expires_at);
+
+-- ============================================================
 -- 13. 知识库成员授权表
 -- ============================================================
 CREATE TABLE IF NOT EXISTS kb_member (

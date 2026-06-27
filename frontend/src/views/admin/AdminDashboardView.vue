@@ -7,7 +7,7 @@
       </div>
     </div>
 
-    <div class="admin-grid-2">
+    <div class="admin-usage-chart-grid">
       <section class="admin-panel admin-chart-box">
         <div class="admin-panel-header">
           <h2 class="admin-panel-title">近 7 天成本趋势</h2>
@@ -26,6 +26,16 @@
         <div v-if="!modelReport.length" class="admin-empty">暂无模型消费数据</div>
         <div v-else class="admin-chart-frame">
           <canvas ref="modelChartEl"></canvas>
+        </div>
+      </section>
+
+      <section class="admin-panel admin-chart-box">
+        <div class="admin-panel-header">
+          <h2 class="admin-panel-title">模型 Token 占比</h2>
+        </div>
+        <div v-if="!hasModelTokenShare" class="admin-empty">暂无模型 Token 数据</div>
+        <div v-else class="admin-chart-frame">
+          <canvas ref="modelTokenChartEl"></canvas>
         </div>
       </section>
     </div>
@@ -92,6 +102,7 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { Chart, LineController, DoughnutController, CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Tooltip, Legend, Filler } from 'chart.js';
 import * as api from '../../services/api.js';
 import { displayUserName, fmtCost, fmtNum, fmtPct } from './adminFormat.js';
+import { dailyCostChartOptions, fillDailyCostReport } from './adminUsageCharts.js';
 
 Chart.register(LineController, DoughnutController, CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Tooltip, Legend, Filler);
 
@@ -108,8 +119,10 @@ const failedDocuments = reactive({ items: [], total: 0, totalPages: 0 });
 const failedTasks = reactive({ items: [], total: 0, totalPages: 0 });
 const costChartEl = ref(null);
 const modelChartEl = ref(null);
+const modelTokenChartEl = ref(null);
 let costChart = null;
 let modelChart = null;
+let modelTokenChart = null;
 const pageSize = 4;
 
 const stats = computed(() => [
@@ -126,6 +139,13 @@ const pagedTopUsers = computed(() => {
   const start = topUserPage.value * pageSize;
   return topUsers.value.slice(start, start + pageSize);
 });
+const modelTokenReport = computed(() => modelReport.value.map(row => ({
+  modelName: row.modelName || 'unknown',
+  totalTokens: Number(row.inputTokens || 0) + Number(row.outputTokens || 0),
+})));
+const hasModelTokenShare = computed(() =>
+  modelTokenReport.value.some(row => row.totalTokens > 0)
+);
 
 const failedDocumentItems = computed(() => (failedDocuments.items || []).map(d => ({
     key: `doc-${d.id}`,
@@ -168,7 +188,7 @@ async function loadAll() {
       api.adminListTasks({ status: 'FAILED', page: failedTaskPage.value, size: pageSize }),
     ]);
     Object.assign(summary, summaryRes || {});
-    dailyReport.value = dailyRes || [];
+    dailyReport.value = fillDailyCostReport(dailyRes, 7);
     modelReport.value = modelRes || [];
     topUsers.value = userRes || [];
     Object.assign(failedDocuments, failedDocRes || {});
@@ -209,11 +229,13 @@ async function changeFailedPage(delta) {
 function renderCharts() {
   renderCostChart();
   renderModelChart();
+  renderModelTokenChart();
 }
 
 function renderCostChart() {
-  if (!costChartEl.value || !dailyReport.value.length) return;
   costChart?.destroy();
+  costChart = null;
+  if (!costChartEl.value || !dailyReport.value.length) return;
   costChart = new Chart(costChartEl.value, {
     type: 'line',
     data: {
@@ -226,23 +248,42 @@ function renderCostChart() {
         tension: 0.32,
       }],
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-    },
+    options: dailyCostChartOptions(7),
   });
 }
 
 function renderModelChart() {
-  if (!modelChartEl.value || !modelReport.value.length) return;
   modelChart?.destroy();
+  modelChart = null;
+  if (!modelChartEl.value || !modelReport.value.length) return;
   modelChart = new Chart(modelChartEl.value, {
     type: 'doughnut',
     data: {
       labels: modelReport.value.map(r => r.modelName || 'unknown'),
       datasets: [{
         data: modelReport.value.map(r => Number(r.costUsd || 0)),
+        backgroundColor: ['#4d6bfe', '#00a96e', '#d69e2e', '#e53e3e', '#6b7280'],
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '58%',
+      plugins: { legend: { position: 'bottom' } },
+    },
+  });
+}
+
+function renderModelTokenChart() {
+  modelTokenChart?.destroy();
+  modelTokenChart = null;
+  if (!modelTokenChartEl.value || !hasModelTokenShare.value) return;
+  modelTokenChart = new Chart(modelTokenChartEl.value, {
+    type: 'doughnut',
+    data: {
+      labels: modelTokenReport.value.map(r => r.modelName),
+      datasets: [{
+        data: modelTokenReport.value.map(r => r.totalTokens),
         backgroundColor: ['#4d6bfe', '#00a96e', '#d69e2e', '#e53e3e', '#6b7280'],
       }],
     },

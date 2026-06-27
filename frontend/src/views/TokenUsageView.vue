@@ -22,6 +22,11 @@
       </header>
 
       <section class="usage-kpis">
+        <article class="usage-kpi usage-kpi-balance">
+          <span>可用余额</span>
+          <strong>¥{{ fmtCny(wallet.availableBalanceCny) }}</strong>
+          <small>冻结 ¥{{ fmtCny(wallet.frozenBalanceCny) }}</small>
+        </article>
         <article class="usage-kpi usage-kpi-today">
           <span>今日用量</span>
           <strong>{{ fmtNum(todayUsage.totalTokens) }}</strong>
@@ -49,6 +54,43 @@
         </article>
       </section>
 
+      <section class="usage-panel billing-panel">
+        <div class="usage-panel-header">
+          <h2>余额充值</h2>
+          <span>支付宝 / 微信</span>
+        </div>
+        <div class="recharge-grid">
+          <article v-for="item in packages" :key="item.code" class="recharge-card">
+            <div>
+              <strong>¥{{ fmtCny(item.amountCny) }}</strong>
+              <span>{{ item.name }}</span>
+            </div>
+            <div class="recharge-actions">
+              <button type="button" :disabled="creatingOrder" @click="createOrder(item.code, 'ALIPAY')">
+                支付宝
+              </button>
+              <button type="button" :disabled="creatingOrder" @click="createOrder(item.code, 'WECHAT')">
+                微信
+              </button>
+            </div>
+          </article>
+        </div>
+        <div v-if="latestOrder" class="recharge-order">
+          <div>
+            <span>最近订单</span>
+            <strong>{{ latestOrder.orderNo }}</strong>
+          </div>
+          <div>
+            <span>状态</span>
+            <strong>{{ orderStatusLabel(latestOrder.status) }}</strong>
+          </div>
+          <div>
+            <span>支付内容</span>
+            <strong>{{ latestOrder.payQrContent || '-' }}</strong>
+          </div>
+        </div>
+      </section>
+
       <section class="usage-panel">
         <div class="usage-panel-header">
           <h2>每日消耗趋势</h2>
@@ -57,6 +99,33 @@
         <div v-if="!dailySeries.length && !loading" class="usage-empty">暂无趋势数据</div>
         <div v-else class="usage-chart-frame">
           <canvas ref="chartEl"></canvas>
+        </div>
+      </section>
+
+      <section class="usage-panel">
+        <div class="usage-panel-header">
+          <h2>钱包流水</h2>
+          <span>最近 {{ ledgerItems.length }} 条</span>
+        </div>
+        <div class="usage-detail-list">
+          <article v-for="item in ledgerItems" :key="item.id || item.ledgerNo" class="usage-detail-item">
+            <div class="usage-detail-main">
+              <div class="usage-detail-title">
+                <span class="usage-scenario">{{ ledgerTypeLabel(item.type) }}</span>
+                <strong>{{ item.remark || item.refId || item.ledgerNo }}</strong>
+              </div>
+              <div class="usage-detail-meta">
+                <span>{{ formatDateTime(item.createdAt) }}</span>
+                <span>{{ item.refType || '-' }}</span>
+                <span>{{ item.refId || '-' }}</span>
+              </div>
+            </div>
+            <div class="usage-detail-cost">
+              <strong>{{ signedCny(item.amountCny) }}</strong>
+              <small>余额 ¥{{ fmtCny(item.balanceAfterCny) }}</small>
+            </div>
+          </article>
+          <div v-if="!ledgerItems.length && !loading" class="usage-empty">暂无钱包流水</div>
         </div>
       </section>
 
@@ -113,6 +182,11 @@ const loading = ref(false);
 const loadingDetails = ref(false);
 const summary = ref({});
 const dailyRows = ref([]);
+const wallet = ref({});
+const packages = ref([]);
+const ledgerItems = ref([]);
+const latestOrder = ref(null);
+const creatingOrder = ref(false);
 const detailPage = ref(1);
 const detailSize = 10;
 const detailTotal = ref(0);
@@ -148,6 +222,7 @@ async function loadAll() {
       api.getMyUsageSummary(days.value),
       api.getMyDailyUsage(days.value),
       api.getMyUsageDetails({ days: days.value, page: detailPage.value, size: detailSize }),
+      loadBilling(),
     ]);
     summary.value = summaryRes || {};
     dailyRows.value = dailyRes || [];
@@ -161,6 +236,32 @@ async function loadAll() {
   } finally {
     loading.value = false;
     loadingDetails.value = false;
+  }
+}
+
+async function loadBilling() {
+  const [walletRes, packagesRes, ledgerRes, ordersRes] = await Promise.all([
+    api.getBillingWallet(),
+    api.getBillingPackages(),
+    api.getBillingLedger({ page: 1, size: 10 }),
+    api.getRechargeOrders({ page: 1, size: 1 }),
+  ]);
+  wallet.value = walletRes || {};
+  packages.value = packagesRes || [];
+  ledgerItems.value = ledgerRes || [];
+  latestOrder.value = Array.isArray(ordersRes) && ordersRes.length ? ordersRes[0] : null;
+}
+
+async function createOrder(packageCode, payChannel) {
+  creatingOrder.value = true;
+  try {
+    latestOrder.value = await api.createRechargeOrder({ packageCode, payChannel });
+    ui.showToast('success', '充值订单已创建');
+    await loadBilling();
+  } catch (err) {
+    ui.showToast('error', err.message || '创建充值订单失败');
+  } finally {
+    creatingOrder.value = false;
   }
 }
 
@@ -258,6 +359,46 @@ function fmtNum(value) {
 
 function fmtCost(value) {
   return Number(value || 0).toFixed(6);
+}
+
+function fmtCny(value) {
+  return Number(value || 0).toFixed(2);
+}
+
+function signedCny(value) {
+  const number = Number(value || 0);
+  const sign = number > 0 ? '+' : '';
+  return `${sign}¥${number.toFixed(6)}`;
+}
+
+function ledgerTypeLabel(type) {
+  const labels = {
+    RECHARGE: '充值',
+    RESERVE: '冻结',
+    SETTLE: '扣费',
+    RELEASE: '释放',
+    REFUND: '退款',
+    ADJUSTMENT: '调整',
+  };
+  return labels[type] || type || '流水';
+}
+
+function orderStatusLabel(status) {
+  const labels = {
+    CREATED: '待支付',
+    PAYING: '支付中',
+    PAID: '已支付',
+    CLOSED: '已关闭',
+    REFUNDED: '已退款',
+  };
+  return labels[status] || status || '-';
+}
+
+function formatDateTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString();
 }
 </script>
 

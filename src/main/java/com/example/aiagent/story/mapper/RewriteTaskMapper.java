@@ -11,6 +11,7 @@ import java.util.Optional;
 public interface RewriteTaskMapper {
     Optional<RewriteTask> findById(@Param("id") Long id);
     List<RewriteTask> findRecent(@Param("limit") int limit);
+    List<RewriteTask> findRecentByProject(@Param("projectId") Long projectId, @Param("limit") int limit);
     void insert(RewriteTask task);
     void update(RewriteTask task);
 }

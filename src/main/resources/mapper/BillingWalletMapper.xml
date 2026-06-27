@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.aiagent.billing.mapper.BillingWalletMapper">
+
+    <insert id="insertIfAbsent">
+        INSERT INTO billing_wallet (user_id)
+        VALUES (#{userId})
+        ON CONFLICT (user_id) DO NOTHING
+    </insert>
+
+    <select id="findByUserId" resultType="com.example.aiagent.billing.entity.BillingWallet">
+        SELECT *
+        FROM billing_wallet
+        WHERE user_id = #{userId}
+    </select>
+
+    <update id="reserve">
+        UPDATE billing_wallet
+        SET available_balance_cny = available_balance_cny - #{amount},
+            frozen_balance_cny = frozen_balance_cny + #{amount},
+            version = version + 1,
+            updated_at = NOW()
+        WHERE user_id = #{userId}
+          AND status = 'ACTIVE'
+          AND available_balance_cny &gt;= #{amount}
+    </update>
+
+    <update id="settleReserved">
+        UPDATE billing_wallet
+        SET frozen_balance_cny = frozen_balance_cny - #{reserved},
+            available_balance_cny = available_balance_cny + #{refund} - #{overage},
+            total_consumed_cny = total_consumed_cny + #{actual},
+            version = version + 1,
+            updated_at = NOW()
+        WHERE user_id = #{userId}
+          AND frozen_balance_cny &gt;= #{reserved}
+          AND available_balance_cny + #{refund} &gt;= #{overage}
+    </update>
+
+    <update id="releaseReserved">
+        UPDATE billing_wallet
+        SET frozen_balance_cny = frozen_balance_cny - #{reserved},
+            available_balance_cny = available_balance_cny + #{reserved},
+            version = version + 1,
+            updated_at = NOW()
+        WHERE user_id = #{userId}
+          AND frozen_balance_cny &gt;= #{reserved}
+    </update>
+
+    <update id="creditRecharge">
+        UPDATE billing_wallet
+        SET available_balance_cny = available_balance_cny + #{amount},
+            total_recharged_cny = total_recharged_cny + #{amount},
+            version = version + 1,
+            updated_at = NOW()
+        WHERE user_id = #{userId}
+          AND status = 'ACTIVE'
+    </update>
+
+</mapper>

@@ -30,6 +30,12 @@
   gap: 16px;
 }
 
+.admin-usage-chart-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, .8fr) minmax(260px, .8fr);
+  gap: 16px;
+}
+
 .admin-chart-box {
   min-height: 0;
 }
@@ -129,7 +135,8 @@
     grid-template-columns: repeat(3, minmax(130px, 1fr));
   }
 
-  .admin-grid-2 {
+  .admin-grid-2,
+  .admin-usage-chart-grid {
     grid-template-columns: 1fr;
   }
 

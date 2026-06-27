@@ -1,5 +1,6 @@
 package com.example.aiagent.exception;
 
+import com.example.aiagent.billing.exception.BillingException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -83,5 +84,13 @@ public class GlobalExceptionHandler {
         log.warn("参数错误 uri={} userId={} msg={}", request.getRequestURI(), MDC.get("userId"), e.getMessage());
         return ResponseEntity.badRequest()
                 .body(Map.of("error", "参数错误", "message", e.getMessage()));
+    }
+
+    @ExceptionHandler(BillingException.class)
+    public ResponseEntity<Map<String, String>> handleBilling(BillingException e, HttpServletRequest request) {
+        log.warn("计费异常 uri={} userId={} status={} msg={}",
+                request.getRequestURI(), MDC.get("userId"), e.status().value(), e.getMessage());
+        return ResponseEntity.status(e.status())
+                .body(Map.of("error", "计费异常", "message", e.getMessage()));
     }
 }

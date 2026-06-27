@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.aiagent.billing.mapper.UsageReservationMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO usage_reservation (
+            reservation_no, trace_id, session_id, user_id, model_name,
+            input_tokens_est, output_tokens_est, reserved_cny, status, expires_at
+        ) VALUES (
+            #{reservationNo}, #{traceId}, #{sessionId}, #{userId}, #{modelName},
+            #{inputTokensEst}, #{outputTokensEst}, #{reservedCny}, #{status}, #{expiresAt}
+        )
+    </insert>
+
+    <select id="findByReservationNo" resultType="com.example.aiagent.billing.entity.UsageReservation">
+        SELECT *
+        FROM usage_reservation
+        WHERE reservation_no = #{reservationNo}
+    </select>
+
+    <update id="markSettled">
+        UPDATE usage_reservation
+        SET status = 'SETTLED',
+            actual_cny = #{actualCny},
+            settled_at = NOW(),
+            updated_at = NOW()
+        WHERE reservation_no = #{reservationNo}
+          AND status = 'RESERVED'
+    </update>
+
+    <update id="markReleased">
+        UPDATE usage_reservation
+        SET status = 'RELEASED',
+            updated_at = NOW()
+        WHERE reservation_no = #{reservationNo}
+          AND status = 'RESERVED'
+    </update>
+
+</mapper>

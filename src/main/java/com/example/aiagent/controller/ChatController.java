@@ -1,6 +1,8 @@
 package com.example.aiagent.controller;
 
 import com.example.aiagent.agent.AgentFactory;
+import com.example.aiagent.billing.entity.UsageReservation;
+import com.example.aiagent.billing.service.UsageBillingService;
 import com.example.aiagent.chat.service.ChatHistoryService;
 import com.example.aiagent.dto.ChatRequest;
 import com.example.aiagent.dto.ChatResponse;
@@ -63,6 +65,7 @@ public class ChatController {
     private final ChatRagContextService chatRagContextService;
     private final TokenUsageService tokenUsageService;
     private final TokenUsageIntentService tokenUsageIntentService;
+    private final UsageBillingService usageBillingService;
 
     private static final OpenAiTokenizer SYNC_TOKENIZER = new OpenAiTokenizer();
 
@@ -86,6 +89,8 @@ public class ChatController {
         MDC.put("userId", userId != null ? userId : "anonymous");
         MDC.put("sessionId", sessionId != null ? sessionId : "unknown");
 
+        UsageReservation usageReservation = UsageReservation.disabled();
+        boolean usageSettled = false;
         try {
             // ── Step 1：Prompt 注入检测 ────────────────────
             PromptInjectionFilter.FilterResult injectionCheck =
@@ -138,9 +143,6 @@ public class ChatController {
             // 只有显式选择知识库时才注入 ThreadLocal；未选择知识库则保持普通对话。
             HybridRagContentRetriever.RetrievalContext ragContext =
                     chatRagContextService.resolve(userId, request.getOrgId(), request.getKbId());
-            if (ragContext != null) {
-                HybridRagContentRetriever.setContext(ragContext);
-            }
             // 记忆回灌：Redis 记忆为空时从 DB 历史恢复，避免隔天/重开旧会话失忆
             String memoryKey = ConversationMemoryService.buildMemoryKey(userId, request.getSessionId());
             conversationMemoryService.warmup(memoryKey, request.getSessionId(), userId);
@@ -148,9 +150,16 @@ public class ChatController {
             String sessionSummary = conversationMemoryService.getSummaryForPrompt(memoryKey);
             // 取用户长期记忆注入 system prompt（跨会话个性化）
             String userMemory = userMemoryService.getMemoryText(userId);
+            int estimatedInputTokens = estimateInputTokens(injectionCheck.sanitizedInput(), sessionSummary, userMemory);
+            String billingModelName = inferModelName(request.getModel());
+            usageReservation = usageBillingService.beginUsage(
+                    userId, sessionId, MDC.get("traceId"), billingModelName, estimatedInputTokens);
             long start = System.currentTimeMillis();
             String rawReply;
             try {
+                if (ragContext != null) {
+                    HybridRagContentRetriever.setContext(ragContext);
+                }
                 rawReply = agentFactory.chatAssistantForModel(request.getModel()).chat(
                         memoryKey, injectionCheck.sanitizedInput(), sessionSummary, userMemory);
             } finally {
@@ -170,8 +179,10 @@ public class ChatController {
             String userText = injectionCheck.sanitizedInput();
             String aiText   = outputCheck.filteredContent();
 
-            int inputTokens = estimateInputTokens(userText, sessionSummary, userMemory);
+            int inputTokens = estimatedInputTokens;
             int outputTokens = SYNC_TOKENIZER.estimateTokenCountInText(aiText != null ? aiText : "");
+            usageBillingService.settleUsage(usageReservation, inputTokens, outputTokens);
+            usageSettled = true;
 
             // ── Step 6：审计日志（对话完成）──────────────
             auditLogService.logAiChat(userId, request.getSessionId(), clientIp, inputTokens, outputTokens);
@@ -198,8 +209,17 @@ public class ChatController {
         } catch (IllegalArgumentException e) {
             log.warn("对话知识库上下文无效 userId={} kbId={} orgId={} reason={}",
                     userId, request.getKbId(), request.getOrgId(), e.getMessage());
+            usageBillingService.releaseUsage(usageReservation, "对话参数异常释放冻结");
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            if (!usageSettled) {
+                usageBillingService.releaseUsage(usageReservation, "对话异常释放冻结");
+            }
+            if (e instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException(e);
         } finally {
             MDC.remove("scenario");
             MDC.remove("sessionId");
@@ -234,6 +254,11 @@ public class ChatController {
                 + SYNC_TOKENIZER.estimateTokenCountInText(sessionSummary != null ? sessionSummary : "")
                 + SYNC_TOKENIZER.estimateTokenCountInText(userMemory != null ? userMemory : "")
                 + 600;
+    }
+
+    private static String inferModelName(String model) {
+        if (model == null || model.isBlank()) return "deepseek-v4-flash";
+        return model.trim();
     }
 
     private void recordEstimatedSyncTokenUsage(ChatRequest request, String userId, String sessionId,

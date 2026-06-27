@@ -1,6 +1,10 @@
 import { http } from './http.js';
 
 export const storyApi = {
+  async getWorkbenchSummary() {
+    const { data } = await http.get('/api/v1/story/workbench/summary');
+    return data;
+  },
   async listProjects(params = {}) {
     const { data } = await http.get('/api/v1/story/projects', { params });
     return data;

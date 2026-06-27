@@ -56,6 +56,41 @@ public class StoryWorkspaceService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public Map<String, Object> workbenchSummary() {
+        List<Map<String, Object>> projects = projectMapper.findByTenantId(DEFAULT_TENANT, null).stream()
+                .map(this::projectMap)
+                .toList();
+        List<Map<String, Object>> activeGenerationTasks = generationTaskMapper.findRecent(30).stream()
+                .filter(this::isRunningStatus)
+                .map(this::workbenchGenerationTaskMap)
+                .toList();
+        List<Map<String, Object>> activeRewriteTasks = rewriteTaskMapper.findRecent(30).stream()
+                .filter(this::isRunningStatus)
+                .map(this::workbenchRewriteTaskMap)
+                .toList();
+        List<Map<String, Object>> activeTasks = new ArrayList<>();
+        activeTasks.addAll(activeGenerationTasks);
+        activeTasks.addAll(activeRewriteTasks);
+        long scriptDraftCount = projects.stream()
+                .mapToLong(project -> intValue(project.get("scriptDraftCount"), 0))
+                .sum();
+        long exportReadyCount = projects.stream()
+                .filter(project -> booleanValue(project.get("exportReady")))
+                .count();
+        Map<String, Object> overview = new LinkedHashMap<>();
+        overview.put("projectCount", projects.size());
+        overview.put("runningTaskCount", activeTasks.size());
+        overview.put("scriptDraftCount", scriptDraftCount);
+        overview.put("exportReadyCount", exportReadyCount);
+
+        return Map.of(
+                "overview", overview,
+                "activeTasks", activeTasks,
+                "recentProjects", projects.stream().limit(8).toList()
+        );
+    }
+
     @Transactional
     public Map<String, Object> createProject(Map<String, Object> payload) {
         String type = string(payload.get("type"), "long_novel");
@@ -997,13 +1032,120 @@ public class StoryWorkspaceService {
         map.put("chapterCount", project.getChapterCount() == null ? 0 : project.getChapterCount());
         map.put("scriptDraftCount", project.getScriptDraftCount() == null ? 0 : project.getScriptDraftCount());
         List<ScriptDraft> drafts = draftMapper.findByProjectId(project.getId());
+        List<StoryChapter> chapters = chapterMapper.findByProjectId(project.getId());
+        chapters.stream()
+                .max((a, b) -> Integer.compare(a.getChapterNo() == null ? 0 : a.getChapterNo(), b.getChapterNo() == null ? 0 : b.getChapterNo()))
+                .ifPresent(chapter -> map.put("latestChapter", chapterSummaryMap(chapter)));
+        generationTaskMapper.findRecentByProject(project.getId(), 1).stream()
+                .findFirst()
+                .ifPresent(task -> map.put("latestGenerationTask", generationTaskHistoryMap(task)));
+        rewriteTaskMapper.findRecentByProject(project.getId(), 1).stream()
+                .findFirst()
+                .ifPresent(task -> map.put("latestRewriteTask", rewriteTaskHistoryMap(task)));
         if (!drafts.isEmpty()) {
             ScriptDraft latest = drafts.get(0);
             map.put("latestScriptDraftId", latest.getId());
             map.put("latestScriptDraftTitle", latest.getTitle());
             map.put("latestScriptUpdatedAt", instant(latest.getUpdatedAt()));
+            map.put("qualityScore", latest.getQualityScore() == null ? 0 : latest.getQualityScore());
+            map.put("exportReady", latest.getEpisodeCount() != null && latest.getEpisodeCount() > 0 && latest.getQualityScore() != null && latest.getQualityScore() > 0);
+        } else {
+            map.put("qualityScore", 0);
+            map.put("exportReady", false);
         }
+        Map<String, Object> next = projectNextStep(map);
+        map.put("workflowStage", next.get("workflowStage"));
+        map.put("nextAction", next.get("nextAction"));
+        map.put("nextActionUrl", next.get("nextActionUrl"));
         return map;
+    }
+
+    private Map<String, Object> chapterSummaryMap(StoryChapter chapter) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("id", chapter.getId());
+        map.put("title", chapter.getTitle());
+        map.put("chapterNo", chapter.getChapterNo());
+        map.put("wordCount", chapter.getWordCount());
+        map.put("versionNo", chapter.getVersionNo());
+        map.put("updatedAt", instant(chapter.getUpdatedAt()));
+        return map;
+    }
+
+    private Map<String, Object> projectNextStep(Map<String, Object> project) {
+        Map<String, Object> latestGeneration = objectMap(project.get("latestGenerationTask"));
+        Map<String, Object> latestRewrite = objectMap(project.get("latestRewriteTask"));
+        Long projectId = longValue(project.get("id"));
+        if (isRunningStatus(string(latestGeneration.get("status"), ""))) {
+            return workflowStep("短剧生成中", "查看生成进度", "/creation/projects");
+        }
+        if (isRunningStatus(string(latestRewrite.get("status"), ""))) {
+            return workflowStep("改写中", "查看改写进度", "/creation/projects");
+        }
+        if (latestRewrite.get("taskId") != null && List.of("completed", "failed", "canceled").contains(string(latestRewrite.get("status"), ""))) {
+            return workflowStep("改写待确认", "查看三栏对照", "/creation/rewrite/" + latestRewrite.get("taskId"));
+        }
+        Object latestDraftId = project.get("latestScriptDraftId");
+        if (latestDraftId != null) {
+            if (booleanValue(project.get("exportReady"))) {
+                return workflowStep("可导出", "导出短剧稿", "/creation/scripts/" + latestDraftId + "/export");
+            }
+            return workflowStep("短剧待质检", "质检并修复", "/creation/scripts/" + latestDraftId);
+        }
+        if (intValue(project.get("chapterCount"), 0) > 0) {
+            return workflowStep("写作中", "继续写作", "/creation/projects/" + projectId + "/editor");
+        }
+        return workflowStep("待开稿", "进入作品", "/creation/projects/" + projectId + "/editor");
+    }
+
+    private Map<String, Object> workflowStep(String stage, String action, String url) {
+        Map<String, Object> step = new LinkedHashMap<>();
+        step.put("workflowStage", stage);
+        step.put("nextAction", action);
+        step.put("nextActionUrl", url);
+        return step;
+    }
+
+    private Map<String, Object> workbenchGenerationTaskMap(GenerationTask task) {
+        Map<String, Object> taskMap = generationTaskMap(task);
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("kind", "generation");
+        map.put("taskId", task.getId());
+        map.put("projectId", task.getProjectId());
+        map.put("title", generationTaskTitle(task));
+        map.put("status", task.getStatus());
+        map.put("progress", task.getProgress());
+        map.put("currentStep", task.getCurrentStep());
+        map.put("openUrl", taskMap.get("draftId") != null ? "/creation/scripts/" + taskMap.get("draftId") : "/creation/projects");
+        map.put("canCancel", isRunningStatus(task));
+        map.put("canRetry", List.of("failed", "canceled", "completed").contains(string(task.getStatus(), "")));
+        return map;
+    }
+
+    private Map<String, Object> workbenchRewriteTaskMap(RewriteTask task) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("kind", "rewrite");
+        map.put("taskId", task.getId());
+        map.put("projectId", task.getProjectId());
+        map.put("title", "改小说三栏对照");
+        map.put("status", task.getStatus());
+        map.put("progress", rewriteProgressFallback(task));
+        map.put("currentStep", rewriteStepFallback(task));
+        map.put("openUrl", "/creation/rewrite/" + task.getId());
+        map.put("canCancel", isRunningStatus(task));
+        map.put("canRetry", List.of("failed", "canceled", "completed", "accepted").contains(string(task.getStatus(), "")));
+        return map;
+    }
+
+    private boolean isRunningStatus(GenerationTask task) {
+        return isRunningStatus(string(task.getStatus(), ""));
+    }
+
+    private boolean isRunningStatus(RewriteTask task) {
+        return isRunningStatus(string(task.getStatus(), ""));
+    }
+
+    private boolean isRunningStatus(String status) {
+        return "pending".equals(status) || "running".equals(status);
     }
 
     private Map<String, Object> chapterMap(StoryChapter chapter) {

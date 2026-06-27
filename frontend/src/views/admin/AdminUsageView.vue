@@ -11,7 +11,7 @@
       </div>
     </section>
 
-    <div class="admin-grid-2">
+    <div class="admin-usage-chart-grid">
       <section class="admin-panel admin-chart-box">
         <h2 class="admin-panel-title">每日成本趋势</h2>
         <div v-if="!dailyReport.length" class="admin-empty">暂无趋势数据</div>
@@ -24,6 +24,13 @@
         <div v-if="!modelReport.length" class="admin-empty">暂无模型数据</div>
         <div v-else class="admin-chart-frame">
           <canvas ref="modelChartEl"></canvas>
+        </div>
+      </section>
+      <section class="admin-panel admin-chart-box">
+        <h2 class="admin-panel-title">模型 Token 占比</h2>
+        <div v-if="!hasModelTokenShare" class="admin-empty">暂无 Token 数据</div>
+        <div v-else class="admin-chart-frame">
+          <canvas ref="modelTokenChartEl"></canvas>
         </div>
       </section>
     </div>
@@ -67,10 +74,11 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { Chart, LineController, DoughnutController, CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Tooltip, Legend, Filler } from 'chart.js';
 import * as api from '../../services/api.js';
 import { displayUserName, fmtCost, fmtNum } from './adminFormat.js';
+import { dailyCostChartOptions, fillDailyCostReport } from './adminUsageCharts.js';
 
 Chart.register(LineController, DoughnutController, CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Tooltip, Legend, Filler);
 
@@ -81,8 +89,18 @@ const modelReport = ref([]);
 const userReport = ref([]);
 const costChartEl = ref(null);
 const modelChartEl = ref(null);
+const modelTokenChartEl = ref(null);
 let costChart = null;
 let modelChart = null;
+let modelTokenChart = null;
+
+const modelTokenReport = computed(() => modelReport.value.map(row => ({
+  modelName: row.modelName || 'unknown',
+  totalTokens: Number(row.inputTokens || 0) + Number(row.outputTokens || 0),
+})));
+const hasModelTokenShare = computed(() =>
+  modelTokenReport.value.some(row => row.totalTokens > 0)
+);
 
 onMounted(loadReports);
 
@@ -99,7 +117,7 @@ async function loadReports() {
       api.adminGetModelReport(days.value),
       api.adminGetUserReport(days.value),
     ]);
-    dailyReport.value = dailyRes || [];
+    dailyReport.value = fillDailyCostReport(dailyRes, days.value);
     modelReport.value = modelRes || [];
     userReport.value = userRes || [];
     await nextTick();
@@ -110,28 +128,44 @@ async function loadReports() {
 }
 
 function renderCharts() {
+  costChart?.destroy();
+  costChart = null;
+  modelChart?.destroy();
+  modelChart = null;
+  modelTokenChart?.destroy();
+  modelTokenChart = null;
+
   if (costChartEl.value && dailyReport.value.length) {
-    costChart?.destroy();
     costChart = new Chart(costChartEl.value, {
       type: 'line',
       data: {
         labels: dailyReport.value.map(r => String(r.day).slice(5)),
         datasets: [{ data: dailyReport.value.map(r => Number(r.costUsd || 0)), borderColor: '#4d6bfe', backgroundColor: '#4d6bfe1f', fill: true }],
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-      },
+      options: dailyCostChartOptions(days.value),
     });
   }
   if (modelChartEl.value && modelReport.value.length) {
-    modelChart?.destroy();
     modelChart = new Chart(modelChartEl.value, {
       type: 'doughnut',
       data: {
         labels: modelReport.value.map(r => r.modelName || 'unknown'),
         datasets: [{ data: modelReport.value.map(r => Number(r.costUsd || 0)), backgroundColor: ['#4d6bfe', '#00a96e', '#d69e2e', '#e53e3e'] }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '58%',
+        plugins: { legend: { position: 'bottom' } },
+      },
+    });
+  }
+  if (modelTokenChartEl.value && hasModelTokenShare.value) {
+    modelTokenChart = new Chart(modelTokenChartEl.value, {
+      type: 'doughnut',
+      data: {
+        labels: modelTokenReport.value.map(r => r.modelName),
+        datasets: [{ data: modelTokenReport.value.map(r => r.totalTokens), backgroundColor: ['#4d6bfe', '#00a96e', '#d69e2e', '#e53e3e'] }],
       },
       options: {
         responsive: true,

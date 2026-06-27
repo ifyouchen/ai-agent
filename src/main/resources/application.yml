@@ -213,6 +213,16 @@ security:
     per-minute: 10
     per-day: 500
 
+billing:
+  enforcement-enabled: false
+  usd-cny-rate: 7.30
+  markup-rate: 1.20
+  default-max-output-tokens: 4096
+  max-single-call-cny: 2.000000
+  low-balance-warning-cny: 5.000000
+  reservation-ttl-minutes: 30
+  order-ttl-minutes: 15
+
 auth:
   email:
     code-ttl-minutes: 10

@@ -1,171 +1,110 @@
 <template>
-  <div v-if="mode === 'home'" class="creation-view">
-    <header class="creation-header">
-      <div><h1>创作中心</h1><p>写小说、改小说、转短剧分场稿的一体化工作台。</p></div>
-      <button class="creation-primary-btn" type="button" @click="openCreateDialog('long_novel')">新建作品</button>
-    </header>
-    <section class="creation-command-center">
-      <div class="creation-command-copy">
-        <span class="creation-kicker">今日创作台</span>
-        <h2>{{ creationFocusTitle }}</h2>
-        <p>{{ creationFocusHint }}</p>
-      </div>
-      <div class="creation-command-stats" aria-label="创作概览">
-        <div v-for="item in creationOverview" :key="item.label" class="creation-command-stat">
-          <strong>{{ item.value }}</strong>
-          <span>{{ item.label }}</span>
-        </div>
-      </div>
-      <div class="creation-command-actions">
-        <button class="creation-primary-btn" type="button" @click="openCreateDialog('long_novel')">新建长篇</button>
-        <button class="creation-secondary-btn" type="button" @click="router.push('/creation/projects')">进入作品库</button>
-      </div>
-    </section>
-    <section class="creation-grid">
-      <button v-for="item in shortcuts" :key="item.key" class="creation-action-card" :class="`action-${item.key}`" type="button" @click="item.action">
-        <span class="creation-action-icon">{{ item.icon }}</span><strong>{{ item.title }}</strong><small>{{ item.desc }}</small>
-      </button>
-    </section>
-    <CreationTaskCard
-      v-if="activeTask"
-      :task="activeTask"
-      :title="taskPanelTitle"
-      :subtitle="activeTaskName"
-      :status-label="activeTaskStatusLabel"
-      :progress="activeTaskProgress"
-      :open-label="activeTaskOpenLabel"
-      :can-open="taskCanOpen"
-      :can-cancel="taskCanCancel"
-      :can-retry="taskCanRetry"
-      :busy="taskActionBusy"
-      :token-usage="activeTask.tokenUsage"
-      show-dismiss
-      @open="openActiveTask"
-      @refresh="refreshTask"
-      @cancel="cancelTask"
-      @retry="retryTask"
-      @dismiss="dismissTask"
-    />
-    <CreationTaskCard
-      v-if="activeRewriteTask"
-      :task="activeRewriteTask"
-      :title="rewriteTaskPanelTitle"
-      subtitle="改小说三栏对照"
-      :status-label="rewriteTaskStatusLabel"
-      :progress="rewriteTaskProgress"
-      :open-label="rewriteTaskOpenLabel"
-      :can-open="rewriteTaskCanOpen"
-      :can-cancel="rewriteTaskCanCancel"
-      :can-retry="rewriteTaskCanRetry"
-      :busy="rewriteTaskActionBusy"
-      show-dismiss
-      @open="openActiveRewriteTask"
-      @refresh="refreshRewriteTask"
-      @cancel="cancelActiveRewriteTask"
-      @retry="retryActiveRewriteTask"
-      @dismiss="dismissRewriteTask"
-    />
-    <template v-if="projectsLoading && !projects.length">
-      <div class="creation-grid">
-        <div v-for="i in 6" :key="i" class="loading-item-skeleton" style="flex:1 1 180px; min-width:160px; max-width:240px; height:120px;"></div>
-      </div>
+  <WorkbenchHome
+    v-if="mode === 'home'"
+    :summary="workbenchSummary"
+    :loading="projectsLoading"
+    @create="openCreateDialog"
+    @import="openImportDialog"
+  />
+
+  <ProjectLibrary
+    v-else-if="mode === 'projects'"
+    :projects="filteredProjects"
+    :filters="filters"
+    :filter="filter"
+    :status-options="statusOptions"
+    :status-filter="statusFilter"
+    :sort-options="sortOptions"
+    :sort-order="sortOrder"
+    :search-input="searchInput"
+    :search-active="hasSearchQuery"
+    :loading="projectsLoading"
+    @create="showCreate = true"
+    @import="openImportDialog"
+    @script="startScript"
+    @export="downloadProjectExport"
+    @delete="deleteProject"
+    @search="applyProjectSearch"
+    @clear-search="clearProjectSearch"
+    @update:filter="filter = $event"
+    @update:status-filter="statusFilter = $event"
+    @update:sort-order="sortOrder = $event"
+    @update:search-input="searchInput = $event"
+  >
+    <template #tasks>
+      <CreationTaskCard
+        v-if="filter !== 'history' && activeTask"
+        :task="activeTask"
+        :title="taskPanelTitle"
+        :subtitle="activeTaskName"
+        :status-label="activeTaskStatusLabel"
+        :progress="activeTaskProgress"
+        :open-label="activeTaskOpenLabel"
+        :can-open="taskCanOpen"
+        :can-cancel="taskCanCancel"
+        :can-retry="taskCanRetry"
+        :busy="taskActionBusy"
+        :token-usage="activeTask.tokenUsage"
+        show-dismiss
+        @open="openActiveTask"
+        @refresh="refreshTask"
+        @cancel="cancelTask"
+        @retry="retryTask"
+        @dismiss="dismissTask"
+      />
+      <CreationTaskCard
+        v-if="filter !== 'history' && activeRewriteTask"
+        :task="activeRewriteTask"
+        :title="rewriteTaskPanelTitle"
+        subtitle="改小说三栏对照"
+        :status-label="rewriteTaskStatusLabel"
+        :progress="rewriteTaskProgress"
+        :open-label="rewriteTaskOpenLabel"
+        :can-open="rewriteTaskCanOpen"
+        :can-cancel="rewriteTaskCanCancel"
+        :can-retry="rewriteTaskCanRetry"
+        :busy="rewriteTaskActionBusy"
+        show-dismiss
+        @open="openActiveRewriteTask"
+        @refresh="refreshRewriteTask"
+        @cancel="cancelActiveRewriteTask"
+        @retry="retryActiveRewriteTask"
+        @dismiss="dismissRewriteTask"
+      />
     </template>
-    <ProjectCards v-else title="最近作品" :projects="projects.slice(0, 6)" :converting-project-id="scriptConvertingProjectId || activeScriptProjectId" :exporting-project-id="projectExportingId" :deleting-project-id="projectDeletingId" @script="startScript" @export="downloadProjectExport" @delete="deleteProject" />
-  </div>
+    <template #history>
+      <TaskHistoryPanel
+        :badge-text="taskHistoryBadgeText"
+        :can-expand="taskHistoryCanExpand"
+        :toggle-label="taskHistoryToggleLabel"
+        :loading="taskHistoryLoading"
+        :search-input="taskHistorySearchInput"
+        :visible-tasks="visibleTaskHistory"
+        :expanded="taskHistoryExpanded"
+        :hidden-count="taskHistoryHiddenCount"
+        :search-active="taskHistorySearchActive"
+        :busy-key="historyTaskBusyKey"
+        :busy-action="historyTaskBusyAction"
+        :task-key-for="historyTaskKey"
+        :status-label-for="taskStatusLabelFor"
+        :progress-for="taskProgressFor"
+        :can-open="historyTaskCanOpen"
+        :can-cancel="historyTaskCanCancel"
+        :can-retry="historyTaskCanRetry"
+        @toggle="toggleTaskHistory"
+        @refresh="loadTaskHistory"
+        @update:search-input="updateTaskHistorySearch"
+        @clear-search="clearTaskHistorySearch"
+        @restore="restoreHistoryTask"
+        @open="openHistoryTask"
+        @cancel="cancelHistoryTask"
+        @retry="retryHistoryTask"
+      />
+    </template>
+  </ProjectLibrary>
 
-  <div v-else-if="mode === 'projects'" class="creation-view">
-    <header class="creation-header">
-      <div><h1>作品库</h1><p>统一管理小说项目、改编项目和短剧脚本草稿。</p></div>
-      <div class="creation-row">
-        <button class="creation-secondary-btn" type="button" @click="showImport = true">导入文本/DOCX</button>
-        <button class="creation-primary-btn" type="button" @click="showCreate = true">新建作品</button>
-      </div>
-    </header>
-    <div class="creation-tabs">
-      <button v-for="f in filters" :key="f.value" :class="{ active: filter === f.value }" type="button" @click="filter = f.value">{{ f.label }}</button>
-    </div>
-    <div v-if="filter !== 'history'" class="creation-toolbar">
-      <div class="creation-filters">
-        <label>状态<CreationSelect v-model="statusFilter" :options="statusOptions" /></label>
-        <label>排序<CreationSelect v-model="sortOrder" :options="sortOptions" /></label>
-      </div>
-      <form class="creation-search" @submit.prevent="applyProjectSearch">
-        <input v-model="searchInput" type="search" placeholder="搜索作品标题" />
-        <button class="creation-primary-btn" type="submit">搜索</button>
-        <button v-if="searchQuery" class="creation-secondary-btn" type="button" @click="clearProjectSearch">清空</button>
-      </form>
-    </div>
-    <CreationTaskCard
-      v-if="filter !== 'history' && activeTask"
-      :task="activeTask"
-      :title="taskPanelTitle"
-      :subtitle="activeTaskName"
-      :status-label="activeTaskStatusLabel"
-      :progress="activeTaskProgress"
-      :open-label="activeTaskOpenLabel"
-      :can-open="taskCanOpen"
-      :can-cancel="taskCanCancel"
-      :can-retry="taskCanRetry"
-      :busy="taskActionBusy"
-      :token-usage="activeTask.tokenUsage"
-      show-dismiss
-      @open="openActiveTask"
-      @refresh="refreshTask"
-      @cancel="cancelTask"
-      @retry="retryTask"
-      @dismiss="dismissTask"
-    />
-    <CreationTaskCard
-      v-if="filter !== 'history' && activeRewriteTask"
-      :task="activeRewriteTask"
-      :title="rewriteTaskPanelTitle"
-      subtitle="改小说三栏对照"
-      :status-label="rewriteTaskStatusLabel"
-      :progress="rewriteTaskProgress"
-      :open-label="rewriteTaskOpenLabel"
-      :can-open="rewriteTaskCanOpen"
-      :can-cancel="rewriteTaskCanCancel"
-      :can-retry="rewriteTaskCanRetry"
-      :busy="rewriteTaskActionBusy"
-      show-dismiss
-      @open="openActiveRewriteTask"
-      @refresh="refreshRewriteTask"
-      @cancel="cancelActiveRewriteTask"
-      @retry="retryActiveRewriteTask"
-      @dismiss="dismissRewriteTask"
-    />
-    <TaskHistoryPanel
-      v-if="filter === 'history'"
-      :badge-text="taskHistoryBadgeText"
-      :can-expand="taskHistoryCanExpand"
-      :toggle-label="taskHistoryToggleLabel"
-      :loading="taskHistoryLoading"
-      :search-input="taskHistorySearchInput"
-      :visible-tasks="visibleTaskHistory"
-      :expanded="taskHistoryExpanded"
-      :hidden-count="taskHistoryHiddenCount"
-      :search-active="taskHistorySearchActive"
-      :busy-key="historyTaskBusyKey"
-      :busy-action="historyTaskBusyAction"
-      :task-key-for="historyTaskKey"
-      :status-label-for="taskStatusLabelFor"
-      :progress-for="taskProgressFor"
-      :can-open="historyTaskCanOpen"
-      :can-cancel="historyTaskCanCancel"
-      :can-retry="historyTaskCanRetry"
-      @toggle="toggleTaskHistory"
-      @refresh="loadTaskHistory"
-      @update:search-input="updateTaskHistorySearch"
-      @clear-search="clearTaskHistorySearch"
-      @restore="restoreHistoryTask"
-      @open="openHistoryTask"
-      @cancel="cancelHistoryTask"
-      @retry="retryHistoryTask"
-    />
-    <ProjectCards v-if="filter !== 'history'" title="全部作品" :projects="filteredProjects" :converting-project-id="scriptConvertingProjectId || activeScriptProjectId" :exporting-project-id="projectExportingId" :deleting-project-id="projectDeletingId" @script="startScript" @export="downloadProjectExport" @delete="deleteProject" />
-  </div>
-
-  <div v-else-if="mode === 'editor'" class="creation-workbench creation-writing-workbench has-ai-config" :class="{ 'ai-config-collapsed': aiConfigCollapsed }">
+  <WritingEditor v-else-if="mode === 'editor'">
+  <div class="creation-workbench creation-writing-workbench has-ai-config" :class="{ 'ai-config-collapsed': aiConfigCollapsed }">
     <aside class="creation-side">
       <div class="creation-side-top">
         <router-link class="creation-back-link" to="/creation/projects">返回作品库</router-link>
@@ -382,7 +321,7 @@
         <button class="creation-secondary-btn full compact" type="button" :disabled="actionForm.loading || promptConfigSaving" @click="savePromptConfig">
           {{ promptConfigSaving ? '保存中...' : '保存 AI 配置' }}
         </button>
-        <label v-if="actionForm.loading || actionForm.result" class="creation-ai-result">
+        <label v-if="actionForm.loading || actionForm.result" class="creation-ai-result creation-draft-result">
           <span>{{ actionResultTitle }}</span>
           <div v-if="actionForm.loading" class="creation-ai-pending">
             <span class="creation-spinner"></span>
@@ -400,6 +339,10 @@
         <div v-if="actionForm.result && !isAssetAction(actionForm.resultTarget || activeAction.type) && (actionForm.resultTarget || activeAction.type) !== 'review'" class="creation-row">
           <button class="creation-secondary-btn" type="button" @click="appendActionResult">追加到正文</button>
           <button class="creation-secondary-btn" type="button" @click="replaceChapterWithResult">替换正文</button>
+          <button class="creation-secondary-btn" type="button" @click="discardActionResult">丢弃草稿</button>
+        </div>
+        <div v-if="actionForm.result && (actionForm.resultTarget || activeAction.type) === 'review'" class="creation-row">
+          <button class="creation-secondary-btn" type="button" @click="discardActionResult">关闭审查建议</button>
         </div>
       </div>
     </aside>
@@ -435,8 +378,9 @@
       </div>
     </aside>
   </div>
+  </WritingEditor>
 
-  <RewriteCompareView
+  <RewriteReview
     v-else-if="mode === 'rewrite'"
     :task="rewriteTask"
     :review-summary="rewriteReviewSummary"
@@ -461,7 +405,7 @@
     @set-segment-status="setRewriteSegmentStatus"
   />
 
-  <ScriptWorkbenchView
+  <ScriptStudio
     v-else-if="mode === 'script'"
     :draft="draft"
     :draft-id="route.params.draftId"
@@ -486,7 +430,7 @@
     @improve-issue="improveFromQualityIssue"
   />
 
-  <ScriptExportView
+  <ExportPreflight
     v-else-if="mode === 'export'"
     :form="exportForm"
     :format-options="exportFormatOptions"
@@ -533,17 +477,19 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import CreateProjectDialog from '../components/creation/CreateProjectDialog.vue';
 import CreationSelect from '../components/creation/CreationSelect.vue';
 import CreationTaskCard from '../components/creation/CreationTaskCard.vue';
+import ExportPreflight from '../components/creation/ExportPreflight.vue';
 import ImportProjectDialog from '../components/creation/ImportProjectDialog.vue';
-import ProjectCards from '../components/creation/ProjectCards.vue';
-const RewriteCompareView = defineAsyncComponent(() => import('../components/creation/RewriteCompareView.vue'));
-const ScriptExportView = defineAsyncComponent(() => import('../components/creation/ScriptExportView.vue'));
-const ScriptWorkbenchView = defineAsyncComponent(() => import('../components/creation/ScriptWorkbenchView.vue'));
+import ProjectLibrary from '../components/creation/ProjectLibrary.vue';
+import RewriteReview from '../components/creation/RewriteReview.vue';
+import ScriptStudio from '../components/creation/ScriptStudio.vue';
 import TaskHistoryPanel from '../components/creation/TaskHistoryPanel.vue';
+import WorkbenchHome from '../components/creation/WorkbenchHome.vue';
+import WritingEditor from '../components/creation/WritingEditor.vue';
 import { storyApi } from '../services/storyApi.js';
 import { useUiStore } from '../stores/ui.js';
 
@@ -551,6 +497,7 @@ const route = useRoute();
 const router = useRouter();
 const ui = useUiStore();
 const projects = ref([]);
+const workbenchSummary = ref({ overview: {}, activeTasks: [], recentProjects: [] });
 const projectsLoading = ref(false);
 const project = ref(null);
 const chapters = ref([]);
@@ -780,6 +727,7 @@ const taskHistoryBadgeText = computed(() =>
     ? `${filteredTaskHistory.value.length}/${taskHistory.value.length} 条`
     : `${taskHistory.value.length} 条`
 );
+const hasSearchQuery = computed(() => Boolean(searchQuery.value));
 const filteredProjects = computed(() => {
   const keyword = searchQuery.value.trim().toLowerCase();
   const list = projects.value
@@ -906,14 +854,6 @@ const exportChecks = computed(() => {
   ];
 });
 const exportIssueCount = computed(() => exportChecks.value.filter(item => !item.pass).length);
-const shortcuts = [
-  { key: 'long', icon: '长', title: '新建长篇', desc: '设定、人物、大纲、章节续写', action: () => openCreateDialog('long_novel') },
-  { key: 'short', icon: '短', title: '新建短篇', desc: '情绪目标、反转、爆点和结尾', action: () => openCreateDialog('short_story') },
-  { key: 'import', icon: '导', title: '导入小说', desc: '支持粘贴文本和 DOCX 文件', action: () => router.push('/creation/projects?import=1') },
-  { key: 'rewrite', icon: '改', title: '改写文本', desc: '润色、去 AI 味、爽点增强', action: () => router.push('/creation/projects') },
-  { key: 'script', icon: '剧', title: '转短剧', desc: '生成分集大纲和分场稿', action: () => router.push('/creation/projects') },
-];
-
 function selectedExportSceneCount(episodes) {
   if (exportForm.scope === 'episode') {
     return episodes.filter(ep => ep.episodeNo === exportForm.episodeNo).flatMap(ep => ep.scenes || []).length;
@@ -944,11 +884,13 @@ async function loadByMode() {
       projectsLoading.value = true;
       const result = await Promise.all([
         storyApi.listProjects(),
+        storyApi.getWorkbenchSummary(),
         mode.value === 'projects' ? loadTaskHistory() : Promise.resolve(),
         (['home', 'projects', 'editor'].includes(mode.value)) ? loadActiveTask() : Promise.resolve(),
         (['home', 'projects', 'editor'].includes(mode.value)) ? loadActiveRewriteTask() : Promise.resolve(),
       ]);
       projects.value = result[0];
+      workbenchSummary.value = result[1] || { overview: {}, activeTasks: [], recentProjects: [] };
       projectsLoading.value = false;
     }
     if (mode.value === 'editor') await loadProject();
@@ -970,6 +912,10 @@ function openCreateDialog(type = 'long_novel') {
   createForm.type = type;
   createForm.description = '从这里开始创作。';
   showCreate.value = true;
+}
+
+function openImportDialog() {
+  showImport.value = true;
 }
 
 async function createProject() {
