@@ -37,13 +37,29 @@ const PURIFY_CONFIG = {
                    'ul', 'ol', 'li', 'br', 'blockquote', 'hr', 'table', 'thead',
                    'tbody', 'tr', 'th', 'td', 'div', 'span', 'details', 'summary',
                    'button', 'a', 'svg', 'path', 'rect'],
-    ALLOWED_ATTR: ['class', 'type', 'data-code', 'href', 'title', 'target', 'rel',
+    ALLOWED_ATTR: ['class', 'type', 'href', 'title', 'target', 'rel',
                    'colspan', 'rowspan', 'data-lang', 'viewBox', 'viewbox', 'fill', 'width',
                    'height', 'd', 'x', 'y', 'rx', 'stroke', 'stroke-width',
-                   'stroke-linecap', 'stroke-linejoin', 'aria-hidden'],
+                   'stroke-linecap', 'stroke-linejoin', 'aria-hidden', 'aria-label'],
     ALLOW_DATA_ATTR: false,
     FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input'],
     FORBID_ATTR: ['style'],
+};
+
+const HIGHLIGHT_LANGUAGE_ALIASES = {
+    sh: 'bash',
+    shell: 'bash',
+    zsh: 'bash',
+    js: 'javascript',
+    jsx: 'javascript',
+    ts: 'typescript',
+    tsx: 'typescript',
+    py: 'python',
+    html: 'xml',
+    htm: 'xml',
+    vue: 'xml',
+    yml: 'yaml',
+    md: 'markdown',
 };
 
 const markdownRenderer = new Renderer();
@@ -70,17 +86,17 @@ markdownRenderer.codespan = ({ text }) =>
 
 markdownRenderer.code = ({ text, lang, escaped }) => {
     const rawCode = text || '';
-    const langName = ((lang || '').match(/^[A-Za-z0-9_-]+/)?.[0] || '').toLowerCase();
-    const normalizedCode = normalizeCodeForLanguage(rawCode, langName);
-    const safeLang = escapeHtml(langName);
-    const langLabel = safeLang || 'text';
+    const language = parseCodeLanguage(lang);
+    const normalizedCode = normalizeCodeForLanguage(rawCode, language.source);
+    const safeLang = escapeHtml(language.source);
+    const langLabel = escapeHtml(language.label);
     const copyIcon = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="2"/></svg>';
     const downloadIcon = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 21h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
-    const copyBtn = `<button type="button" class="code-tool-btn copy-code-btn" data-code="${encodeURIComponent(normalizedCode)}" title="复制代码">${copyIcon}<span>复制</span></button>`;
-    const downloadBtn = `<button type="button" class="code-tool-btn download-code-btn" data-code="${encodeURIComponent(normalizedCode)}" data-lang="${safeLang}" title="下载代码">${downloadIcon}<span>下载</span></button>`;
+    const copyBtn = `<button type="button" class="code-tool-btn copy-code-btn" title="复制代码" aria-label="复制代码">${copyIcon}<span>复制</span></button>`;
+    const downloadBtn = `<button type="button" class="code-tool-btn download-code-btn" data-lang="${safeLang}" title="下载代码" aria-label="下载代码">${downloadIcon}<span>下载</span></button>`;
     const codeClass = safeLang ? `code-block language-${safeLang}` : 'code-block';
-    const codeHtml = highlightedCode(normalizedCode, langName, escaped);
-    return `<div class="code-block-wrap"><div class="code-block-toolbar"><span class="code-lang">${langLabel}</span><div class="code-block-actions">${copyBtn}${downloadBtn}</div></div><pre class="${codeClass}"><code>${codeHtml}</code></pre></div>\n`;
+    const codeHtml = highlightedCode(normalizedCode, language.highlight, escaped);
+    return `<div class="code-block-wrap" data-lang="${safeLang}"><div class="code-block-toolbar"><span class="code-lang">${langLabel}</span><div class="code-block-actions">${copyBtn}${downloadBtn}</div></div><pre class="${codeClass}"><code>${codeHtml}</code></pre></div>\n`;
 };
 
 marked.setOptions({
@@ -101,89 +117,56 @@ function highlightedCode(rawCode, langName, escaped) {
     }
 }
 
+function parseCodeLanguage(lang) {
+    const source = ((lang || '').match(/^[A-Za-z0-9_+-]+/)?.[0] || '').toLowerCase();
+    return {
+        source,
+        label: source || 'text',
+        highlight: HIGHLIGHT_LANGUAGE_ALIASES[source] || source,
+    };
+}
+
 function normalizeCodeForLanguage(code, langName) {
-    const normalizedLang = String(langName || '').toLowerCase();
-    if (normalizedLang === 'java') {
-        return normalizeJavaCode(code);
-    }
-    if (['c', 'cpp', 'c++', 'csharp', 'cs'].includes(normalizedLang)) {
-        return normalizeCStyleCode(code);
-    }
-    if (['javascript', 'js', 'typescript', 'ts'].includes(normalizedLang)) {
-        return normalizeJsLikeCode(code);
-    }
-    if (['python', 'py'].includes(normalizedLang)) {
-        return normalizePythonCode(code);
-    }
-    if (normalizedLang === 'json') {
-        return normalizeJsonCode(code);
-    }
-    return code;
-}
-
-function normalizeJavaCode(code) {
-    let result = normalizeCStyleCode(code);
-    const modifiers = 'public|private|protected|static|final|abstract|synchronized|native|strictfp';
-    const types = `${modifiers}|void|boolean|byte|short|int|long|float|double|char|String|class|interface|enum`;
-    const modifierJoinPattern = new RegExp(`\\b(${modifiers})(?=(${types}))`, 'g');
-
-    for (let i = 0; i < 4; i++) {
-        result = result.replace(modifierJoinPattern, '$1 ');
-    }
-
-    return result
-        .replace(/\b(class|interface|enum)(?=[A-Z_$])/g, '$1 ')
-        .replace(/\b(void|boolean|byte|short|int|long|float|double|char|String)(?=[A-Za-z_$])/g, '$1 ')
-        .replace(/\b(String\s*\[\])(?=[A-Za-z_$])/g, '$1 ')
-        .replace(/\bmain\s*\(\s*String\s*\[\]\s*([A-Za-z_$][\w$]*)\s*\)/g, 'main(String[] $1)')
-        .replace(/\b(class|interface|enum)\s+([A-Za-z_$][\w$]*)\s*\{/g, '$1 $2 {')
-        .replace(/\)\s*\{/g, ') {');
-}
-
-function normalizeCStyleCode(code) {
-    return String(code)
-        .replace(/^(\s*)(class|struct|enum|interface)(?=[A-Z_$])/gm, '$1$2 ')
-        .replace(/^(\s*)(void|bool|boolean|char|byte|short|int|long|float|double|String|string|auto)(?=[A-Za-z_$])/gm, '$1$2 ')
-        .replace(/\b(if|for|while|switch|catch)\s*\(/g, '$1 (')
-        .replace(/\)\s*\{/g, ') {')
-        .replace(/\b(class|struct|enum|interface)\s+([A-Za-z_$][\w$]*)\s*\{/g, '$1 $2 {');
-}
-
-function normalizeJsLikeCode(code) {
-    return normalizeCStyleCode(code)
-        .replace(/^(\s*)(async)(?=function\b|[A-Za-z_$])/gm, '$1$2 ')
-        .replace(/^(\s*)(function)(?=[A-Za-z_$])/gm, '$1$2 ')
-        .replace(/^(\s*)(const|let|var)(?=[A-Za-z_$])/gm, '$1$2 ')
-        .replace(/^(\s*)(export|default|import|from|return|await|yield)(?=[A-Za-z_$])/gm, '$1$2 ')
-        .replace(/\b(function)\s+([A-Za-z_$][\w$]*)\s*\(/g, '$1 $2(');
-}
-
-function normalizePythonCode(code) {
-    return String(code)
-        .replace(/^(\s*)(def)(?=[A-Za-z_])/gm, '$1$2 ')
-        .replace(/^(\s*)(class)(?=[A-Za-z_])/gm, '$1$2 ')
-        .replace(/^(\s*)(import|from)(?=[A-Za-z_])/gm, '$1$2 ')
-        .replace(/^(\s*)(if|elif|for|while|with|except)(?=[A-Za-z_(])/gm, '$1$2 ')
-        .replace(/\b(def|class)\s+([A-Za-z_][\w]*)\s*\(/g, '$1 $2(');
-}
-
-function normalizeJsonCode(code) {
-    try {
-        return JSON.stringify(JSON.parse(code), null, 2);
-    } catch {
-        return code;
-    }
+    return String(code).replace(/\r\n?/g, '\n');
 }
 
 function normalizeMarkdownText(text) {
     const normalized = String(text)
-        .replace(/\r\n?/g, '\n')
-        .replace(/[ \t]+\n/g, '\n');
+        .replace(/\r\n?/g, '\n');
 
-    return normalizeMarkdownSyntaxOutsideCode(normalized)
+    return normalizeMarkdownSyntaxOutsideCode(wrapPlainSourceIfNeeded(normalized))
         .replace(/^\s*[-*+]\s*-{2,}\s*$/gm, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
+}
+
+function wrapPlainSourceIfNeeded(text) {
+    const value = String(text || '').trim();
+    if (!value || /```|~~~/.test(value)) return text;
+    const inferred = inferPlainSourceLanguage(value);
+    return inferred ? `\`\`\`${inferred}\n${value}\n\`\`\`` : text;
+}
+
+function inferPlainSourceLanguage(text) {
+    const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+    if (lines.length < 6) return '';
+    const codeLines = lines.filter(isCodeLikeLine).length;
+    if (codeLines / lines.length < 0.5) return '';
+
+    if (/^(package|import)\s+[\w.*]+;|public\s+(?:class|interface|enum)\s+\w+/m.test(text)) return 'java';
+    if (/<!doctype\s+html|<html\b|<\/[a-z][\w-]*>/i.test(text)) return 'html';
+    if (/\b(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\b[\s\S]+\b(FROM|TABLE|WHERE|VALUES|SET)\b/i.test(text)) return 'sql';
+    if (/^(from\s+\w+\s+import|import\s+\w+|def\s+\w+\s*\(|class\s+\w+[:(])/m.test(text)) return 'python';
+    if (/^(const|let|var|function|import|export)\s|\b=>\b/m.test(text)) return 'javascript';
+    if (/^\s*(npm|pnpm|yarn|git|cd|mkdir|rm|cp|mv|docker|kubectl)\s+/m.test(text)) return 'shell';
+    if (/^[.#]?[\w-]+\s*\{[\s\S]*:[\s\S]*;[\s\S]*\}/m.test(text)) return 'css';
+    return '';
+}
+
+function isCodeLikeLine(line) {
+    return /[;{}()[\]=<>]/.test(line)
+        || /^(import|package|public|private|protected|class|interface|enum|def|from|const|let|var|function|if|for|while|return|SELECT|CREATE|INSERT|UPDATE|DELETE)\b/i.test(line)
+        || /^\s*(\/\/|\/\*|\*|#|--)/.test(line);
 }
 
 function normalizeMarkdownSyntaxOutsideCode(text) {
@@ -200,6 +183,7 @@ function normalizeMarkdownSyntaxOutsideCode(text) {
 
 function normalizeMarkdownBlock(text) {
     return text
+        .replace(/[ \t]+\n/g, '\n')
         .replace(/^(#{1,6})(?=\S)/gm, '$1 ')
         .replace(/^(\s{0,3})([-*+])(?=[^\s-*+])/gm, '$1$2 ')
         .replace(/^(\s{0,3})(\d+[.)])(?=\S)/gm, '$1$2 ');

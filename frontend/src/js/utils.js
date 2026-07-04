@@ -52,14 +52,23 @@ export async function copyText(text) {
  * 代码块复制：事件委托处理器（挂载到 document 上）
  * 在 App.vue 的 onMounted 中调用 setupCopyCodeHandler() 一次即可
  */
+let codeHandlerInitialized = false;
+let copyFailureHandler = null;
+
 export function setupCopyCodeHandler(onCopyFailure = null) {
+    if (typeof onCopyFailure === 'function') {
+        copyFailureHandler = onCopyFailure;
+    }
+    if (codeHandlerInitialized) return;
+    codeHandlerInitialized = true;
+
     document.addEventListener('click', (e) => {
         const btn = e.target.closest('.copy-code-btn');
         if (!btn) return;
-        const code = decodeURIComponent(btn.dataset.code || '');
+        const code = readCodeBlockText(btn);
         copyText(code).then((ok) => {
             if (!ok) {
-                onCopyFailure?.();
+                copyFailureHandler?.();
                 return;
             }
             const label = btn.querySelector('span') || btn;
@@ -73,10 +82,16 @@ export function setupCopyCodeHandler(onCopyFailure = null) {
     document.addEventListener('click', (e) => {
         const btn = e.target.closest('.download-code-btn');
         if (!btn) return;
-        const code = decodeURIComponent(btn.dataset.code || '');
-        const lang = btn.dataset.lang || 'txt';
+        const code = readCodeBlockText(btn);
+        const lang = btn.dataset.lang || btn.closest('.code-block-wrap')?.dataset.lang || 'txt';
         downloadCode(code, lang);
     });
+}
+
+function readCodeBlockText(button) {
+    const wrap = button.closest('.code-block-wrap');
+    const code = wrap?.querySelector('pre code');
+    return code?.textContent || '';
 }
 
 function downloadCode(code, lang) {
@@ -93,8 +108,10 @@ function downloadCode(code, lang) {
 function codeFileExtension(lang) {
     const map = {
         javascript: 'js',
+        jsx: 'jsx',
         js: 'js',
         typescript: 'ts',
+        tsx: 'tsx',
         ts: 'ts',
         java: 'java',
         python: 'py',
@@ -110,7 +127,20 @@ function codeFileExtension(lang) {
         md: 'md',
         shell: 'sh',
         bash: 'sh',
+        sh: 'sh',
+        zsh: 'sh',
         sql: 'sql',
+        c: 'c',
+        cpp: 'cpp',
+        'c++': 'cpp',
+        csharp: 'cs',
+        cs: 'cs',
+        go: 'go',
+        rust: 'rs',
+        ruby: 'rb',
+        php: 'php',
+        kotlin: 'kt',
+        swift: 'swift',
     };
     return map[String(lang || '').toLowerCase()] || 'txt';
 }

@@ -4,6 +4,7 @@ import com.example.aiagent.agent.AgentFactory;
 import com.example.aiagent.billing.entity.UsageReservation;
 import com.example.aiagent.billing.service.UsageBillingService;
 import com.example.aiagent.chat.service.ChatHistoryService;
+import com.example.aiagent.chat.service.CodeBlockPostProcessor;
 import com.example.aiagent.dto.ChatRequest;
 import com.example.aiagent.dto.ChatResponse;
 import com.example.aiagent.kb.service.ChatRagContextService;
@@ -66,6 +67,7 @@ public class ChatController {
     private final TokenUsageService tokenUsageService;
     private final TokenUsageIntentService tokenUsageIntentService;
     private final UsageBillingService usageBillingService;
+    private final CodeBlockPostProcessor codeBlockPostProcessor;
 
     private static final OpenAiTokenizer SYNC_TOKENIZER = new OpenAiTokenizer();
 
@@ -177,7 +179,9 @@ public class ChatController {
             }
 
             String userText = injectionCheck.sanitizedInput();
-            String aiText   = outputCheck.filteredContent();
+            String aiText = codeBlockPostProcessor.process(outputCheck.filteredContent(), request.getModel());
+            OutputContentFilter.FilterResult finalOutputCheck = outputContentFilter.filter(aiText);
+            aiText = finalOutputCheck.filteredContent();
 
             int inputTokens = estimatedInputTokens;
             int outputTokens = SYNC_TOKENIZER.estimateTokenCountInText(aiText != null ? aiText : "");

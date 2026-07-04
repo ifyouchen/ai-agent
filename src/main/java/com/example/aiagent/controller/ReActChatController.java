@@ -2,6 +2,7 @@ package com.example.aiagent.controller;
 
 import com.example.aiagent.agent.ReActAgent;
 import com.example.aiagent.chat.service.ChatHistoryService;
+import com.example.aiagent.chat.service.CodeBlockPostProcessor;
 import com.example.aiagent.controller.sse.SseDeltaBuffer;
 import com.example.aiagent.kb.service.ChatRagContextService;
 import com.example.aiagent.memory.ConversationMemoryService;
@@ -76,6 +77,7 @@ public class ReActChatController {
     private final TokenUsageService tokenUsageService;
     private final TokenUsageIntentService tokenUsageIntentService;
     private final LlmMetricsRecorder llmMetricsRecorder;
+    private final CodeBlockPostProcessor codeBlockPostProcessor;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final long REACT_STREAM_TASK_TTL_MS = 120_000L;
@@ -120,6 +122,7 @@ public class ReActChatController {
             TokenUsageService tokenUsageService,
             TokenUsageIntentService tokenUsageIntentService,
             LlmMetricsRecorder llmMetricsRecorder,
+            CodeBlockPostProcessor codeBlockPostProcessor,
             @Qualifier("sseTaskExecutor") Executor sseExecutor) {
         this.reActAgent = reActAgent;
         this.promptInjectionFilter = promptInjectionFilter;
@@ -133,6 +136,7 @@ public class ReActChatController {
         this.tokenUsageService = tokenUsageService;
         this.tokenUsageIntentService = tokenUsageIntentService;
         this.llmMetricsRecorder = llmMetricsRecorder;
+        this.codeBlockPostProcessor = codeBlockPostProcessor;
         this.sseExecutor = sseExecutor;
     }
 
@@ -251,7 +255,9 @@ public class ReActChatController {
                         "ReAct 输出脱敏，检测到：" + outputCheck.detectedTypes());
             }
             String userText = injectionCheck.sanitizedInput();
-            String aiText = outputCheck.filteredContent();
+            String aiText = codeBlockPostProcessor.process(outputCheck.filteredContent(), model);
+            OutputContentFilter.FilterResult finalOutputCheck = outputContentFilter.filter(aiText);
+            aiText = finalOutputCheck.filteredContent();
             reActAgent.rememberExchangeAsync(
                     ConversationMemoryService.buildMemoryKey(userId, sessionId), userText, aiText);
             chatHistoryService.saveExchange(sessionId, userId,
@@ -611,7 +617,13 @@ public class ReActChatController {
                     sendSseEvent(emitter, completed, "replace-answer",
                             MAPPER.writeValueAsString(Map.of("answer", outputCheck.filteredContent())));
                 }
-                String aiText = outputCheck.filteredContent();
+                String aiText = codeBlockPostProcessor.process(outputCheck.filteredContent(), model);
+                OutputContentFilter.FilterResult finalOutputCheck = outputContentFilter.filter(aiText);
+                aiText = finalOutputCheck.filteredContent();
+                if (!aiText.equals(result.answer())) {
+                    sendSseEvent(emitter, completed, "replace-answer",
+                            MAPPER.writeValueAsString(Map.of("answer", aiText)));
+                }
                 sendReactJsonEvent(emitter, completed, "answer", Map.of(
                         "answer", aiText,
                         "iterations", result.iterations(),

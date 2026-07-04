@@ -2,6 +2,7 @@ package com.example.aiagent.controller;
 
 import com.example.aiagent.agent.AgentFactory;
 import com.example.aiagent.chat.service.ChatHistoryService;
+import com.example.aiagent.chat.service.CodeBlockPostProcessor;
 import com.example.aiagent.controller.sse.SseDeltaBuffer;
 import com.example.aiagent.kb.service.ChatRagContextService;
 import com.example.aiagent.memory.ConversationMemoryService;
@@ -73,6 +74,7 @@ public class StreamingChatController {
     private final TokenUsageService tokenUsageService;
     private final TokenUsageIntentService tokenUsageIntentService;
     private final LlmMetricsRecorder llmMetricsRecorder;
+    private final CodeBlockPostProcessor codeBlockPostProcessor;
     private final Map<String, PendingStreamChat> pendingStreamChats = new ConcurrentHashMap<>();
     private static final long STREAM_CHAT_TASK_TTL_MS = 120_000L;
 
@@ -317,7 +319,12 @@ public class StreamingChatController {
                             log.info("[SECURITY] 流式输出已脱敏，类型：{}", outputCheck.detectedTypes());
                         }
 
-                        String finalText = outputCheck.filteredContent();
+                        String finalText = codeBlockPostProcessor.process(outputCheck.filteredContent(), model);
+                        OutputContentFilter.FilterResult finalOutputCheck = outputContentFilter.filter(finalText);
+                        finalText = finalOutputCheck.filteredContent();
+                        if (!finalText.equals(fullText)) {
+                            sendSseEvent(emitter, completed, "replace", finalText);
+                        }
 
                         // ── 先落库再 complete，避免 emitter.complete() 后线程被中断导致落库丢失 ──
                         // ── Step 6：异步持久化聊天记录 ──────────

@@ -2,7 +2,13 @@ package com.example.aiagent.controller;
 
 import com.example.aiagent.agent.ReActAgent;
 import com.example.aiagent.chat.service.ChatHistoryService;
+import com.example.aiagent.chat.service.CodeBlockPostProcessor;
 import com.example.aiagent.kb.service.ChatRagContextService;
+import com.example.aiagent.memory.ConversationMemoryService;
+import com.example.aiagent.memory.UserMemoryService;
+import com.example.aiagent.observability.metrics.LlmMetricsRecorder;
+import com.example.aiagent.observability.service.TokenUsageIntentService;
+import com.example.aiagent.observability.service.TokenUsageService;
 import com.example.aiagent.security.filter.OutputContentFilter;
 import com.example.aiagent.security.filter.PromptInjectionFilter;
 import com.example.aiagent.security.service.AuditLogService;
@@ -64,6 +70,24 @@ class ReActChatControllerTest {
 
     @Mock
     ChatHistoryService chatHistoryService;
+
+    @Mock
+    ConversationMemoryService conversationMemoryService;
+
+    @Mock
+    UserMemoryService userMemoryService;
+
+    @Mock
+    TokenUsageService tokenUsageService;
+
+    @Mock
+    TokenUsageIntentService tokenUsageIntentService;
+
+    @Mock
+    LlmMetricsRecorder llmMetricsRecorder;
+
+    @Mock
+    CodeBlockPostProcessor codeBlockPostProcessor;
 
     MockMvc mockMvc;
 
@@ -135,6 +159,8 @@ class ReActChatControllerTest {
         when(chatRagContextService.resolve(USER_ID, null, null)).thenReturn(null);
         when(outputContentFilter.filter("final answer"))
                 .thenReturn(new OutputContentFilter.FilterResult("final answer", java.util.List.of(), false));
+        when(codeBlockPostProcessor.process("final answer", "deepseek-v4-pro"))
+                .thenReturn("final answer");
 
         doAnswer(invocation -> {
             ReActAgent.ReActStreamCallback callback = invocation.getArgument(5);
@@ -148,7 +174,7 @@ class ReActChatControllerTest {
             callback.onAnswerStart(1);
             callback.onAnswerToken("final ");
             callback.onAnswerToken("answer");
-            return new ReActAgent.ReActResult("final answer", java.util.List.of(step), 1, 123);
+            return new ReActAgent.ReActResult("final answer", java.util.List.of(step), 1, 123, 0, 0);
         }).when(reActAgent).executeStreamingWithCallback(
                 eq("hello"),
                 eq("sess-1"),
@@ -179,6 +205,12 @@ class ReActChatControllerTest {
                 auditLogService,
                 chatRagContextService,
                 chatHistoryService,
+                conversationMemoryService,
+                userMemoryService,
+                tokenUsageService,
+                tokenUsageIntentService,
+                llmMetricsRecorder,
+                codeBlockPostProcessor,
                 executor);
         ReflectionTestUtils.setField(controller, "streamFlushIntervalMs", 50L);
         ReflectionTestUtils.setField(controller, "streamFlushMinChars", 40);
@@ -193,6 +225,8 @@ class ReActChatControllerTest {
                 .thenReturn(PromptInjectionFilter.FilterResult.pass("hello"));
         when(rateLimitService.tryAcquire(USER_ID))
                 .thenReturn(RateLimitService.RateLimitResult.allow());
+        when(tokenUsageIntentService.resolve(USER_ID, "hello"))
+                .thenReturn(java.util.Optional.empty());
     }
 
     private MvcResult performReactStream() throws Exception {

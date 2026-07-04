@@ -109,8 +109,11 @@ public class ReActAgent {
             ## 输出格式
             在 Final Answer 中，给出清晰、完整、友好的中文答案。
             可以少量使用自然的 emoji 表达语气，但不要密集使用；不要用 emoji 或装饰图标作为列表前缀。普通回答通常不超过 1 个表情，仍以纯文本、标题、列表和表格为主。
-            输出代码时必须使用对应语言的标准、可运行/可编译格式，保留必要的空格、缩进、换行和标点。
-            不要输出被压缩或粘连的代码；例如 Java 必须写成 public class Main、public static void main(String[] args)，不要写成 publicclassMain 或 publicstaticvoidmain。
+            输出代码时必须使用 Markdown fenced code block，并在围栏后标注语言名，例如 ```java、```javascript、```css、```sql、```html、```python、```bash。
+            代码必须是对应语言的标准、可运行/可编译格式，保留必要的空格、缩进、换行和标点；不要输出被压缩、粘连或拆碎的代码。
+            Java 代码在输出前必须自检：类名、import、变量类型、变量名、常量名、枚举/静态成员访问不能被错误插入或删除空格。
+            Java 正例：import java.awt.*;、public class Main、public static void main(String[] args)、return false;、ButtonGroup modeGroup、JFrame.EXIT_ON_CLOSE、Integer.MIN_VALUE。
+            Java 反例，禁止这样输出：importjava.awt.*;、publicstaticvoidmain、returnfalse;、ButtonGroupmodeGroup、JFram e、BOARD _PIXEL、Integer.MIN _VALUE。
 
             ## 会话上下文
             如果用户使用"再详细点"、"你再好好回复下"、"它/这个/上面"等承接表达，
@@ -123,6 +126,7 @@ public class ReActAgent {
             - 不要继续调用工具。
             - 不要输出 Thought/Action/Observation 标签。
             - 如果知识库片段不足以支持回答，请明确说明当前知识库未找到相关信息。
+            - 如果最终答案包含代码，必须使用带语言名的 Markdown fenced code block，并确保代码 token 没有粘连或拆碎。
             """;
 
     private static final String STREAMING_REACT_PROTOCOL_PROMPT = """
@@ -138,7 +142,8 @@ public class ReActAgent {
             要求：
             - 直接输出面向用户的最终答案，不要调用工具。
             - 不要输出 Thought/Action/Observation 标签。
-            - 如果输出代码，请给出完整、可运行/可直接保存的版本，保留清晰缩进和换行。
+            - 如果输出代码，请给出完整、可运行/可直接保存的版本，使用带语言名的 Markdown fenced code block。
+            - 代码 token 必须完整，禁止 importjava.awt.*;、JFram e、BOARD _PIXEL、ButtonGroupmodeGroup、returnfalse 这类粘连或拆碎错误。
             - 不要先解释很久；先给成品，再补充必要说明。
             """;
 

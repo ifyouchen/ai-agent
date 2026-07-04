@@ -2,6 +2,7 @@ package com.example.aiagent.agent;
 
 import com.example.aiagent.config.DeepSeekModelFactory;
 import com.example.aiagent.memory.RedisChatMemoryStore;
+import com.example.aiagent.memory.UserMemoryService;
 import com.example.aiagent.rag.pipeline.HybridRagPipeline;
 import com.example.aiagent.tool.BusinessTools;
 import dev.langchain4j.agent.tool.ToolSpecification;
@@ -55,6 +56,9 @@ class ReActAgentTest {
     @Mock
     RedisChatMemoryStore redisChatMemoryStore;
 
+    @Mock
+    UserMemoryService userMemoryService;
+
     ReActAgent reActAgent;
 
     @BeforeEach
@@ -65,7 +69,8 @@ class ReActAgentTest {
                 businessTools,
                 hybridRagPipeline,
                 deepSeekModelFactory,
-                redisChatMemoryStore);
+                redisChatMemoryStore,
+                userMemoryService);
         ReflectionTestUtils.setField(reActAgent, "maxMessages", 6);
         ReflectionTestUtils.setField(reActAgent, "cachedToolSpecs", List.<ToolSpecification>of());
     }
