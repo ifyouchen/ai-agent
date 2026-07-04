@@ -103,7 +103,7 @@ class ReActChatControllerTest {
         when(chatRagContextService.resolve(USER_ID, null, null)).thenReturn(null);
         when(reActAgent.executeStreamingWithCallback(
                 eq("hello"),
-                eq("sess-1"),
+                eq("user-1:sess-1"),
                 eq("deepseek-v4-pro"),
                 isNull(String.class),
                 isNull(Long.class),
@@ -177,7 +177,7 @@ class ReActChatControllerTest {
             return new ReActAgent.ReActResult("final answer", java.util.List.of(step), 1, 123, 0, 0);
         }).when(reActAgent).executeStreamingWithCallback(
                 eq("hello"),
-                eq("sess-1"),
+                eq("user-1:sess-1"),
                 eq("deepseek-v4-pro"),
                 isNull(String.class),
                 isNull(Long.class),
@@ -191,7 +191,7 @@ class ReActChatControllerTest {
                 .andExpect(content().string(containsString("event:tool-call")))
                 .andExpect(content().string(containsString("event:tool-result")))
                 .andExpect(content().string(containsString("event:answer-token")))
-                .andExpect(content().string(containsString("data:final answer")))
+                .andExpect(content().string(containsString("\"answer\":\"final answer\"")))
                 .andExpect(content().string(containsString("event:answer")))
                 .andExpect(content().string(containsString("event:done")));
     }

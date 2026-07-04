@@ -182,6 +182,7 @@ public class ChatController {
             String aiText = codeBlockPostProcessor.process(outputCheck.filteredContent(), request.getModel());
             OutputContentFilter.FilterResult finalOutputCheck = outputContentFilter.filter(aiText);
             aiText = finalOutputCheck.filteredContent();
+            conversationMemoryService.replaceLatestAiMessage(memoryKey, aiText);
 
             int inputTokens = estimatedInputTokens;
             int outputTokens = SYNC_TOKENIZER.estimateTokenCountInText(aiText != null ? aiText : "");

@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -72,7 +73,38 @@ public class ConversationMemoryService {
     public void warmup(String memoryKey, String sessionId, String userId) {
         if (memoryKey == null || memoryKey.isBlank()) return;
         backfill(memoryKey, sessionId, userId);
+        refreshFromPersistedHistory(memoryKey, sessionId, userId);
         memoryCompactionService.compact(memoryKey);
+    }
+
+    /**
+     * 将当前会话记忆中的最后一条 AI 回复替换为最终展示版本。
+     *
+     * <p>前置条件：LLM 已经完成回复，且调用方已完成输出脱敏和代码块后处理。后置条件：Redis
+     * 记忆中的最近 AI 消息与前端展示、数据库历史保持一致。该方法吞掉 Redis 异常并记录日志，不影响主流程。
+     *
+     * @param memoryKey   复合记忆 key（userId:sessionId）
+     * @param finalAnswer 已完成后处理的 AI 回复
+     */
+    public void replaceLatestAiMessage(String memoryKey, String finalAnswer) {
+        if (memoryKey == null || memoryKey.isBlank() || finalAnswer == null) return;
+        try {
+            List<ChatMessage> messages = redisChatMemoryStore.getMessages(memoryKey);
+            int latestAiIndex = latestAiMessageIndex(messages);
+            if (latestAiIndex < 0) {
+                return;
+            }
+            ChatMessage current = messages.get(latestAiIndex);
+            if (current instanceof AiMessage aiMessage && finalAnswer.equals(aiMessage.text())) {
+                return;
+            }
+            List<ChatMessage> updated = new ArrayList<>(messages);
+            updated.set(latestAiIndex, AiMessage.from(finalAnswer));
+            redisChatMemoryStore.updateMessages(memoryKey, updated);
+            log.debug("已同步最终 AI 回复到 Redis 记忆 memoryKey={}", memoryKey);
+        } catch (Exception e) {
+            log.warn("同步最终 AI 回复到 Redis 记忆失败 memoryKey={}: {}", memoryKey, e.getMessage());
+        }
     }
 
     private void backfill(String memoryKey, String sessionId, String userId) {
@@ -81,15 +113,7 @@ public class ConversationMemoryService {
             if (existing != null && !existing.isEmpty()) {
                 return;
             }
-            List<com.example.aiagent.chat.entity.ChatMessage> dbMsgs =
-                    chatMessageMapper.listBySessionId(sessionId, maxMessages);
-            if (dbMsgs == null || dbMsgs.isEmpty()) {
-                return;
-            }
-            List<ChatMessage> converted = dbMsgs.stream()
-                    .map(this::toLcMessage)
-                    .filter(Objects::nonNull)
-                    .toList();
+            List<ChatMessage> converted = loadPersistedMessages(sessionId);
             if (converted.isEmpty()) {
                 return;
             }
@@ -98,6 +122,75 @@ public class ConversationMemoryService {
         } catch (Exception e) {
             log.warn("记忆回灌失败 sessionId={}: {}", sessionId, e.getMessage());
         }
+    }
+
+    private void refreshFromPersistedHistory(String memoryKey, String sessionId, String userId) {
+        try {
+            List<ChatMessage> existing = redisChatMemoryStore.getMessages(memoryKey);
+            if (existing == null || existing.isEmpty()) {
+                return;
+            }
+            List<ChatMessage> persisted = loadPersistedMessages(sessionId);
+            if (persisted.isEmpty() || hasSameConversationTail(existing, persisted)) {
+                return;
+            }
+            redisChatMemoryStore.updateMessages(memoryKey, persisted);
+            log.info("记忆校准 userId={} sessionId={} count={}", userId, sessionId, persisted.size());
+        } catch (Exception e) {
+            log.warn("记忆校准失败 sessionId={}: {}", sessionId, e.getMessage());
+        }
+    }
+
+    private List<ChatMessage> loadPersistedMessages(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return List.of();
+        }
+        List<com.example.aiagent.chat.entity.ChatMessage> dbMsgs =
+                chatMessageMapper.listRecentBySessionId(sessionId, maxMessages);
+        if (dbMsgs == null || dbMsgs.isEmpty()) {
+            return List.of();
+        }
+        return dbMsgs.stream()
+                .map(this::toLcMessage)
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    private boolean hasSameConversationTail(List<ChatMessage> existing, List<ChatMessage> persisted) {
+        return Objects.equals(latestUserText(existing), latestUserText(persisted))
+                && Objects.equals(latestAiText(existing), latestAiText(persisted));
+    }
+
+    private int latestAiMessageIndex(List<ChatMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return -1;
+        }
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if (messages.get(i) instanceof AiMessage) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private String latestAiText(List<ChatMessage> messages) {
+        int index = latestAiMessageIndex(messages);
+        if (index < 0) {
+            return null;
+        }
+        return ((AiMessage) messages.get(index)).text();
+    }
+
+    private String latestUserText(List<ChatMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return null;
+        }
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if (messages.get(i) instanceof UserMessage userMessage) {
+                return userMessage.singleText();
+            }
+        }
+        return null;
     }
 
     /**

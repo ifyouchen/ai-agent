@@ -325,6 +325,9 @@ public class StreamingChatController {
                         if (!finalText.equals(fullText)) {
                             sendSseEvent(emitter, completed, "replace", finalText);
                         }
+                        if (!isolatedMemory) {
+                            conversationMemoryService.replaceLatestAiMessage(memorySessionId, finalText);
+                        }
 
                         // ── 先落库再 complete，避免 emitter.complete() 后线程被中断导致落库丢失 ──
                         // ── Step 6：异步持久化聊天记录 ──────────

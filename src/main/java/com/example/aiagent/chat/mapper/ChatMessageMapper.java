@@ -19,6 +19,10 @@ public interface ChatMessageMapper {
     List<ChatMessage> listBySessionId(@Param("sessionId") String sessionId,
                                       @Param("limit") int limit);
 
+    /** 查询会话最近消息（返回结果按时间升序，便于直接注入对话记忆） */
+    List<ChatMessage> listRecentBySessionId(@Param("sessionId") String sessionId,
+                                            @Param("limit") int limit);
+
     /** 删除会话的所有消息 */
     void deleteBySessionId(@Param("sessionId") String sessionId);
 
